@@ -1,0 +1,13 @@
+{
+  "name": "neurowallet",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "lint": "echo \"(placeholder) lint: run eslint or similar here\"",
+    "test": "npm --prefix backend test && npm --prefix frontend test"
+  }
+}
