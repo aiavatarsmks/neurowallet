@@ -1,0 +1,1 @@
+self.__REACT_LOADABLE_MANIFEST='{"wallet.tsx -> @/components/NeuraAvatar":{"id":7165,"files":["static/chunks/11d837d1.604396f74cef59f0.js","static/chunks/658.125e8610a9cf7500.js","static/chunks/165.8d847726bce5a98e.js"]}}';

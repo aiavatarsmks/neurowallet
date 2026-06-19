@@ -1,3 +1,48 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+* {
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-color: #080C09;
+  color: #ffffff;
+  font-family: 'Inter', system-ui, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Neon glow utilities */
+.glow-green {
+  text-shadow: 0 0 20px rgba(0, 255, 127, 0.6), 0 0 40px rgba(0, 255, 127, 0.3);
+}
+
+.glow-green-box {
+  box-shadow: 0 0 20px rgba(0, 255, 127, 0.25), 0 0 60px rgba(0, 255, 127, 0.1);
+}
+
+.glow-green-border {
+  box-shadow: inset 0 0 0 1px rgba(0, 255, 127, 0.3), 0 0 20px rgba(0, 255, 127, 0.1);
+}
+
+/* Avatar canvas background fix */
+canvas {
+  outline: none;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: #0D1A10;
+}
+::-webkit-scrollbar-thumb {
+  background: #1A3020;
+  border-radius: 2px;
+}
