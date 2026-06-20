@@ -127,7 +127,7 @@ interface NeuraAvatarProps {
 
 export function NeuraAvatar({ state = 'idle', className = '' }: NeuraAvatarProps) {
   return (
-    <div className={`relative w-full ${className}`} style={{ height: '280px' }}>
+    <div className={`relative w-full ${className}`} style={{ height: '100%' }}>
       {/* Radial green glow behind avatar */}
       <div
         className="absolute inset-0 pointer-events-none"
