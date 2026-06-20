@@ -47,7 +47,7 @@ export default function AuthPage() {
     setLoading(true);
     try {
       if (mode === 'signup') {
-        await signUp(email, password, name);
+        await signUp(email, password);
       } else {
         await signIn(email, password);
       }
