@@ -43,7 +43,7 @@ export const ProfileScreen: React.FC = () => {
   const { user, isDemo, signOut } = useAuth();
   const [policies, setPolicies] = useState<Policy[]>(INITIAL_POLICIES);
 
-  const displayName = isDemo ? 'Demo Mode' : (user?.name ?? 'Пользователь');
+  const displayName = isDemo ? 'Demo Mode' : ((user?.user_metadata?.name as string) ?? user?.email ?? 'Пользователь');
   const displayEmail = isDemo ? 'demo@neurowallet.ai' : (user?.email ?? '');
   const initials = displayName.slice(0, 2).toUpperCase();
 
