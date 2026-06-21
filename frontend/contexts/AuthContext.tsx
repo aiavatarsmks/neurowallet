@@ -1,18 +1,24 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Session, User } from '@supabase/supabase-js';
+import { User as SupabaseUser } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  createdAt: string;
+}
 
 interface AuthState {
   user: User | null;
-  session: Session | null;
   isDemo: boolean;
   isLoading: boolean;
 }
 
 interface AuthContextValue extends AuthState {
-  signUp: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string, name?: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
-  signOut: () => Promise<void>;
+  signOut: () => void;
   enterDemo: () => void;
 }
 
@@ -20,47 +26,53 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 const DEMO_KEY = 'nw_demo';
 
+function toUser(su: SupabaseUser): User {
+  return {
+    id: su.id,
+    email: su.email ?? '',
+    name: (su.user_metadata?.name as string) || (su.email ?? '').split('@')[0],
+    createdAt: su.created_at,
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({
     user: null,
-    session: null,
     isDemo: false,
     isLoading: true,
   });
 
   useEffect(() => {
-    // Check demo mode
-    if (localStorage.getItem(DEMO_KEY) === 'true') {
-      setState({ user: null, session: null, isDemo: true, isLoading: false });
+    if (typeof window !== 'undefined' && localStorage.getItem(DEMO_KEY) === 'true') {
+      setState({ user: null, isDemo: true, isLoading: false });
       return;
     }
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setState({
-        user: session?.user ?? null,
-        session,
-        isDemo: false,
-        isLoading: false,
-      });
+    supabase.auth.getSession().then(({ data }) => {
+      const user = data.session?.user ? toUser(data.session.user) : null;
+      setState({ user, isDemo: false, isLoading: false });
     });
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setState((prev) => ({
-        ...prev,
-        user: session?.user ?? null,
-        session,
-        isLoading: false,
-      }));
+      const user = session?.user ? toUser(session.user) : null;
+      setState(s => ({ ...s, user, isLoading: false }));
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const signUp = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({ email, password });
+  const signUp = async (email: string, password: string, name?: string) => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { name: name?.trim() || email.split('@')[0] } },
+    });
     if (error) throw new Error(translateError(error.message));
+    if (!data.session) {
+      throw new Error('CONFIRM_EMAIL');
+    }
+    const user = data.user ? toUser(data.user) : null;
+    setState(s => ({ ...s, user, isLoading: false }));
   };
 
   const signIn = async (email: string, password: string) => {
@@ -68,15 +80,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw new Error(translateError(error.message));
   };
 
-  const signOut = async () => {
-    localStorage.removeItem(DEMO_KEY);
-    await supabase.auth.signOut();
-    setState({ user: null, session: null, isDemo: false, isLoading: false });
+  const signOut = () => {
+    if (typeof window !== 'undefined') localStorage.removeItem(DEMO_KEY);
+    supabase.auth.signOut();
+    setState({ user: null, isDemo: false, isLoading: false });
   };
 
   const enterDemo = () => {
-    localStorage.setItem(DEMO_KEY, 'true');
-    setState({ user: null, session: null, isDemo: true, isLoading: false });
+    if (typeof window !== 'undefined') localStorage.setItem(DEMO_KEY, 'true');
+    setState({ user: null, isDemo: true, isLoading: false });
   };
 
   return (
@@ -92,7 +104,6 @@ export function useAuth(): AuthContextValue {
   return ctx;
 }
 
-// Translate Supabase errors to Russian
 function translateError(msg: string): string {
   if (msg.includes('User already registered'))  return 'Аккаунт с таким email уже существует';
   if (msg.includes('Invalid login credentials')) return 'Неверный email или пароль';

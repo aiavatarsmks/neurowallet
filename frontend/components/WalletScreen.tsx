@@ -1,43 +1,73 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { fetchRealBalances, fetchPrices, WalletBalances } from '@/lib/crypto/balances';
 
-export interface CryptoAsset {
-  symbol: string;
-  name: string;
-  amount: number;
-  amountDisplay: string;
-  valueEUR: number;
-  change24h: number;
-  color: string;
-  bgColor: string;
-  icon: string;
-}
+// ─── Demo data (shown when no real wallet is set up) ──────────────────────
 
-export const CRYPTO_ASSETS: CryptoAsset[] = [
-  {
-    symbol: 'BTC',  name: 'Bitcoin',  amount: 0.042, amountDisplay: '0.042 BTC',
-    valueEUR: 2310,  change24h: +4.2,  color: '#F7931A', bgColor: 'rgba(247,147,26,0.13)', icon: '₿',
-  },
-  {
-    symbol: 'ETH',  name: 'Ethereum', amount: 1.24,  amountDisplay: '1.24 ETH',
-    valueEUR: 2542,  change24h: +1.8,  color: '#627EEA', bgColor: 'rgba(98,126,234,0.13)',  icon: 'Ξ',
-  },
-  {
-    symbol: 'USDT', name: 'Tether',   amount: 110,   amountDisplay: '110 USDT',
-    valueEUR: 110,   change24h: 0,     color: '#26A17B', bgColor: 'rgba(38,161,123,0.13)',  icon: '₮',
-  },
+const DEMO_ASSETS = [
+  { symbol: 'BTC',  name: 'Bitcoin',  amount: 0.042, valueEUR: 2310, change24h: +4.2,  color: '#F7931A', bgColor: 'rgba(247,147,26,0.13)',  icon: '₿' },
+  { symbol: 'ETH',  name: 'Ethereum', amount: 1.24,  valueEUR: 2542, change24h: +1.8,  color: '#627EEA', bgColor: 'rgba(98,126,234,0.13)',   icon: 'Ξ' },
+  { symbol: 'SOL',  name: 'Solana',   amount: 12.5,  valueEUR: 1500, change24h: +3.4,  color: '#9945FF', bgColor: 'rgba(153,69,255,0.13)',   icon: '◎' },
+  { symbol: 'USDT', name: 'Tether',   amount: 110,   valueEUR: 110,  change24h: 0,     color: '#26A17B', bgColor: 'rgba(38,161,123,0.13)',   icon: '₮' },
 ];
 
-const CRYPTO_TOTAL = CRYPTO_ASSETS.reduce((s, a) => s + a.valueEUR, 0);
-const FIAT = 2847.50;
-const CHART_BARS = [35,48,40,58,44,66,60,72,55,78,68,82,88,78,92];
+const CHART_BARS = [35, 48, 40, 58, 44, 66, 60, 72, 55, 78, 68, 82, 88, 78, 92];
+
+// ─── Types ─────────────────────────────────────────────────────────────────
+
+interface AssetRow {
+  symbol:    string;
+  name:      string;
+  amount:    number;
+  valueEUR:  number;
+  change24h: number;
+  color:     string;
+  bgColor:   string;
+  icon:      string;
+}
 
 interface WalletScreenProps {
-  onSendCrypto: (symbol: string) => void;
+  onSendCrypto:    (symbol: string) => void;
   onReceiveCrypto: (symbol: string) => void;
 }
 
+// ─── Component ─────────────────────────────────────────────────────────────
+
 export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onReceiveCrypto }) => {
-  const total = FIAT + CRYPTO_TOTAL;
+  const [assets,  setAssets]  = useState<AssetRow[]>(DEMO_ASSETS);
+  const [loading, setLoading] = useState(false);
+  const [isReal,  setIsReal]  = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const eth = localStorage.getItem('wallet_eth_address');
+    const sol = localStorage.getItem('wallet_sol_address');
+    const btc = localStorage.getItem('wallet_btc_address');
+    if (!eth) return; // demo mode — keep demo assets
+
+    setIsReal(true);
+    setLoading(true);
+
+    fetchRealBalances(eth, sol ?? '', btc ?? '').then((b: WalletBalances) => {
+      const priceMap: Record<string, number> = {
+        BTC: b.btcEur, ETH: b.ethEur, SOL: b.solEur, USDT: 1,
+      };
+      const amountMap: Record<string, number> = {
+        BTC: b.btc, ETH: b.eth, SOL: b.sol, USDT: b.usdt,
+      };
+
+      setAssets(
+        DEMO_ASSETS.map((a) => ({
+          ...a,
+          amount:   amountMap[a.symbol] ?? 0,
+          valueEUR: (amountMap[a.symbol] ?? 0) * (priceMap[a.symbol] ?? 1),
+        })),
+      );
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
+
+  const cryptoTotal = assets.reduce((s, a) => s + a.valueEUR, 0);
+  const FIAT        = isReal ? 0 : 2847.50;
 
   return (
     <div className="px-6 pt-2 pb-6 flex flex-col gap-5">
@@ -47,24 +77,30 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
         className="rounded-3xl p-5"
         style={{
           background: 'linear-gradient(135deg, rgba(0,255,127,0.09) 0%, rgba(0,255,127,0.03) 100%)',
-          border: '1px solid rgba(0,255,127,0.18)',
+          border:     '1px solid rgba(0,255,127,0.18)',
         }}
       >
-        <p className="text-[#3A6045] text-xs font-medium mb-1">Крипто-портфель</p>
-        <p className="text-white text-3xl font-bold tracking-tight">
-          €{CRYPTO_TOTAL.toLocaleString('ru-RU', { minimumFractionDigits: 2 })}
+        <p className="text-[#3A6045] text-xs font-medium mb-1">
+          {isReal ? 'Реальный крипто-портфель' : 'Крипто-портфель (демо)'}
         </p>
-        <div className="flex items-center gap-2 mt-1">
-          <span className="text-[#00FF7F] text-sm font-semibold">+€521.30</span>
-          <span className="text-[#3A6045] text-xs">+11.7% за месяц</span>
-        </div>
+        {loading ? (
+          <div className="flex items-center gap-2 py-1">
+            <div className="w-2 h-2 rounded-full bg-[#00FF7F] opacity-60" style={{ animation: 'pulse 1s ease-in-out infinite' }} />
+            <span className="text-[#3A6045] text-sm">Загружаем балансы...</span>
+            <style>{`@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}`}</style>
+          </div>
+        ) : (
+          <p className="text-white text-3xl font-bold tracking-tight">
+            €{cryptoTotal.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
+        )}
 
         {/* Mini chart */}
         <div className="mt-3 h-12 flex items-end gap-px">
           {CHART_BARS.map((h, i) => (
             <div
               key={i}
-              className="flex-1 rounded-sm transition-all"
+              className="flex-1 rounded-sm"
               style={{
                 height: `${h}%`,
                 background: i === CHART_BARS.length - 1
@@ -76,34 +112,38 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
         </div>
       </div>
 
-      {/* Fiat row */}
-      <div
-        className="flex items-center justify-between rounded-2xl px-4 py-3"
-        style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.08)' }}
-      >
-        <div className="flex items-center gap-3">
-          <div
-            className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
-            style={{ background: 'rgba(0,255,127,0.12)', color: '#00FF7F', border: '1px solid rgba(0,255,127,0.2)' }}
-          >
-            €
+      {/* Fiat row (hidden when real wallet active) */}
+      {!isReal && (
+        <div
+          className="flex items-center justify-between rounded-2xl px-4 py-3"
+          style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.08)' }}
+        >
+          <div className="flex items-center gap-3">
+            <div
+              className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
+              style={{ background: 'rgba(0,255,127,0.12)', color: '#00FF7F', border: '1px solid rgba(0,255,127,0.2)' }}
+            >
+              €
+            </div>
+            <div>
+              <p className="text-white text-sm font-medium">Евро EUR</p>
+              <p className="text-[#3A6045] text-xs">Текущий счёт (демо)</p>
+            </div>
           </div>
-          <div>
-            <p className="text-white text-sm font-medium">Евро EUR</p>
-            <p className="text-[#3A6045] text-xs">Текущий счёт</p>
+          <div className="text-right">
+            <p className="text-white text-sm font-semibold">
+              €{FIAT.toLocaleString('ru-RU', { minimumFractionDigits: 2 })}
+            </p>
+            <p className="text-[#3A6045] text-xs">стабильно</p>
           </div>
         </div>
-        <div className="text-right">
-          <p className="text-white text-sm font-semibold">€{FIAT.toLocaleString('ru-RU', { minimumFractionDigits: 2 })}</p>
-          <p className="text-[#3A6045] text-xs">стабильно</p>
-        </div>
-      </div>
+      )}
 
       {/* Crypto assets */}
       <div>
         <p className="text-white text-sm font-semibold mb-3">Крипто-активы</p>
         <div className="flex flex-col gap-3">
-          {CRYPTO_ASSETS.map((asset) => (
+          {assets.map((asset) => (
             <div
               key={asset.symbol}
               className="rounded-2xl p-4"
@@ -118,10 +158,14 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-white text-sm font-medium">{asset.name}</p>
-                  <p className="text-[#3A6045] text-xs">{asset.amountDisplay}</p>
+                  <p className="text-[#3A6045] text-xs">
+                    {loading ? '...' : `${asset.amount.toLocaleString('ru-RU', { maximumFractionDigits: 6 })} ${asset.symbol}`}
+                  </p>
                 </div>
                 <div className="text-right flex-shrink-0">
-                  <p className="text-white text-sm font-semibold">€{asset.valueEUR.toLocaleString('ru-RU')}</p>
+                  <p className="text-white text-sm font-semibold">
+                    {loading ? '—' : `€${asset.valueEUR.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}`}
+                  </p>
                   <p
                     className="text-xs font-semibold"
                     style={{ color: asset.change24h > 0 ? '#00FF7F' : asset.change24h < 0 ? '#FF5252' : '#3A6045' }}
@@ -158,19 +202,26 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
         style={{ background: 'rgba(0,255,127,0.04)', border: '1px solid rgba(0,255,127,0.1)' }}
       >
         <div>
-          <p className="text-[#3A6045] text-xs">Общий капитал (фиат + крипто)</p>
-          <p className="text-white text-xl font-bold mt-0.5">€{total.toLocaleString('ru-RU', { minimumFractionDigits: 2 })}</p>
+          <p className="text-[#3A6045] text-xs">{isReal ? 'Крипто-портфель' : 'Общий капитал (фиат + крипто)'}</p>
+          <p className="text-white text-xl font-bold mt-0.5">
+            €{(cryptoTotal + (isReal ? 0 : FIAT)).toLocaleString('ru-RU', { minimumFractionDigits: 2 })}
+          </p>
         </div>
-        <div className="text-right">
-          <p className="text-[#00FF7F] text-sm font-semibold">+8.7%</p>
-          <p className="text-[#3A6045] text-xs">за месяц</p>
-        </div>
+        {!isReal && (
+          <div className="text-right">
+            <p className="text-[#00FF7F] text-sm font-semibold">+8.7%</p>
+            <p className="text-[#3A6045] text-xs">за месяц</p>
+          </div>
+        )}
       </div>
 
       {/* Staking */}
       <div
         className="rounded-2xl p-4"
-        style={{ background: 'linear-gradient(135deg, rgba(0,255,127,0.06) 0%, rgba(0,255,127,0.02) 100%)', border: '1px solid rgba(0,255,127,0.12)' }}
+        style={{
+          background: 'linear-gradient(135deg, rgba(0,255,127,0.06) 0%, rgba(0,255,127,0.02) 100%)',
+          border:     '1px solid rgba(0,255,127,0.12)',
+        }}
       >
         <div className="flex items-center justify-between mb-1">
           <p className="text-white text-sm font-semibold">Стейкинг ETH</p>
@@ -193,5 +244,9 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
     </div>
   );
 };
+
+// Export CRYPTO_ASSETS for backward compat (CryptoSendScreen uses it via wallet.tsx)
+export const CRYPTO_ASSETS = DEMO_ASSETS;
+export type  CryptoAsset   = AssetRow;
 
 export default WalletScreen;

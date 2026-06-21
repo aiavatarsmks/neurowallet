@@ -6,3 +6,7 @@ coverage
 *.log
 *.env
 **/.DS_Store
+.vercel
+.env*
+.next/
+frontend/.next/

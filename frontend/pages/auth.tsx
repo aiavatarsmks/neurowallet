@@ -47,13 +47,16 @@ export default function AuthPage() {
     setLoading(true);
     try {
       if (mode === 'signup') {
-        await signUp(email, password);
+        await signUp(email, password, name);
+        router.push('/onboarding');
       } else {
         await signIn(email, password);
+        const hasWallet = typeof window !== 'undefined' && !!localStorage.getItem('wallet_eth_address');
+        router.push(hasWallet ? '/wallet' : '/onboarding');
       }
-      router.push('/wallet');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Что-то пошло не так');
+      const msg = err instanceof Error ? err.message : 'Что-то пошло не так';
+      setError(msg === 'CONFIRM_EMAIL' ? 'Проверь почту — мы отправили ссылку для подтверждения' : msg);
     } finally {
       setLoading(false);
     }

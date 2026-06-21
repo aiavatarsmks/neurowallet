@@ -18,46 +18,29 @@ const QUICK_PROMPTS = [
   'Конвертировать в евро',
 ];
 
-const RESPONSES: Record<string, string> = {
-  'мои расходы':
-    'За этот месяц ты потратил €847. Рестораны выросли на 23% — €196 vs обычных €160. Самая крупная трата: ужин в Nobu €89. Подписки стабильны: €25.98/мес. Хочешь поставить лимит?',
+const FALLBACK_RESPONSE =
+  'AI временно недоступен, попробуй чуть позже.';
 
-  'мой крипто-портфель':
-    'Твой крипто-портфель: BTC 0.042 → €2 310 (+4.2% сегодня), ETH 1.24 → €2 542 (+1.8%), USDT 110 → €110 (стабильно). Итого: €4 962. За месяц +11.7%. BTC занимает 46% — диверсификация нормальная.',
-
-  'есть аномалии?':
-    'Нашла 2 аномалии: ① Подписка Adobe €54 — ты не открывал её 3 месяца. ② Двойное списание Netflix €15.99 в пятницу. Хочешь, я подготовлю черновик оспаривания по Netflix?',
-
-  'когда продавать btc':
-    'Анализирую... RSI = 58 (не перекуплен). BTC выше 200-дневной MA. Ближайший резистанс: €59 400. Мой сигнал: удерживай позицию. Если хочешь зафиксировать прибыль — рассмотри продажу 30% при €60K.',
-
-  'оптимизировать бюджет':
-    'Три шага: ① Отмени Adobe €54/мес — ты им не пользуешься. ② Spotify: переключись на годовой план, экономия €24/год. ③ Авто-резерв 10% от любого входящего. Итого экономия: €78+. Применить правила?',
-
-  'конвертировать в евро':
-    'Текущий курс: 0.042 BTC = €2 310.90, 1.24 ETH = €2 542.36. Если конвертировать всё крипто в EUR — получишь €4 962 (минус комиссия биржи ~0.1%). Хочешь рассчитать сумму после налогов?',
-
-  'налоговый резерв':
-    'По твоим данным: €3 600/мес в среднем. Рекомендую откладывать €720/мес (20%). Сейчас в резерве: €0. Хочешь, я настрою авто-перевод каждый месяц?',
-
-  'btc': 'У тебя 0.042 BTC ≈ €2 310. За последние 24ч BTC вырос на +4.2%. Хочешь посмотреть аналитику или конвертировать?',
-  'биткоин': 'У тебя 0.042 BTC ≈ €2 310. За последние 24ч BTC вырос на +4.2%. Хочешь посмотреть аналитику или конвертировать?',
-  'eth':  'У тебя 1.24 ETH ≈ €2 542 (+1.8% за 24ч). Доступен стейкинг до 5.2% APY — хочешь включить?',
-  'ethereum': 'У тебя 1.24 ETH ≈ €2 542 (+1.8% за 24ч). Доступен стейкинг до 5.2% APY — хочешь включить?',
-  'usdt': 'У тебя 110 USDT ≈ €110 (стабильно). USDT — хорошая парковка для ликвидности.',
-  'крипто': 'Твой крипто-портфель: €4 962 (+11.7% за месяц). BTC, ETH, USDT. Хочешь детали или оптимизацию?',
-  'стейкинг': 'ETH стейкинг доступен со ставкой 5.2% APY. С твоими 1.24 ETH это ≈ €132/год. Минимальная блокировка — 30 дней. Запустить?',
-
-  default:
-    'Я анализирую твои финансы в реальном времени. Спроси о расходах, крипто-портфеле, аномалиях или бюджете — или скажи что нужно сделать.',
-};
-
-function getResponse(text: string): string {
-  const lower = text.toLowerCase().trim();
-  for (const [key, response] of Object.entries(RESPONSES)) {
-    if (key !== 'default' && lower.includes(key)) return response;
+async function getResponse(
+  history: { from: 'neura' | 'user'; text: string }[],
+): Promise<string> {
+  try {
+    const res = await fetch('/api/neura-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: history.map((m) => ({
+          role: m.from === 'user' ? 'user' : 'assistant',
+          content: m.text,
+        })),
+      }),
+    });
+    const data = await res.json();
+    if (data.error) return data.error;
+    return data.reply ?? FALLBACK_RESPONSE;
+  } catch {
+    return FALLBACK_RESPONSE;
   }
-  return RESPONSES.default;
 }
 
 const OPENING: Message = {
@@ -70,12 +53,14 @@ const OPENING: Message = {
 interface NeuraChatProps {
   onAvatarState?: (state: 'idle' | 'talking' | 'thinking') => void;
   avatarHeight?: number;
+  onFirstMessage?: () => void;
 }
 
-export const NeuraChat: React.FC<NeuraChatProps> = ({ onAvatarState, avatarHeight = 160 }) => {
+export const NeuraChat: React.FC<NeuraChatProps> = ({ onAvatarState, avatarHeight = 160, onFirstMessage }) => {
   const [messages, setMessages] = useState<Message[]>([OPENING]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [hasUserMessages, setHasUserMessages] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -84,21 +69,24 @@ export const NeuraChat: React.FC<NeuraChatProps> = ({ onAvatarState, avatarHeigh
 
   const sendMessage = (text: string) => {
     if (!text.trim() || isTyping) return;
+    if (!hasUserMessages) {
+      setHasUserMessages(true);
+      onFirstMessage?.();
+    }
     const userMsg: Message = { id: Date.now().toString(), from: 'user', text: text.trim(), timestamp: now() };
+    const historyForApi = [...messages, userMsg];
     setMessages((m) => [...m, userMsg]);
     setInput('');
     setIsTyping(true);
     onAvatarState?.('thinking');
 
-    const delay = 800 + Math.random() * 700;
-    setTimeout(() => {
-      const response = getResponse(text);
+    getResponse(historyForApi).then((response) => {
       const neuraMsg: Message = { id: (Date.now() + 1).toString(), from: 'neura', text: response, timestamp: now() };
       setMessages((m) => [...m, neuraMsg]);
       setIsTyping(false);
       onAvatarState?.('talking');
       setTimeout(() => onAvatarState?.('idle'), 2500);
-    }, delay);
+    });
   };
 
   // header ~90px, avatar, bottom padding ~100px

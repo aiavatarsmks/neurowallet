@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-type Coin = 'BTC' | 'ETH' | 'USDT';
+type Coin = 'BTC' | 'ETH' | 'SOL' | 'USDT';
 type Step = 'form' | 'confirm' | 'done';
 
 interface CoinInfo {
@@ -15,10 +15,11 @@ interface CoinInfo {
 const COINS: Record<Coin, CoinInfo> = {
   BTC:  { icon: '₿', color: '#F7931A', bgColor: 'rgba(247,147,26,0.15)', available: 0.042, priceEUR: 55000, placeholder: 'bc1q...' },
   ETH:  { icon: 'Ξ', color: '#627EEA', bgColor: 'rgba(98,126,234,0.15)',  available: 1.24,  priceEUR: 2050,  placeholder: '0x...' },
-  USDT: { icon: '₮', color: '#26A17B', bgColor: 'rgba(38,161,123,0.15)', available: 110,   priceEUR: 1,     placeholder: 'T...' },
+  SOL:  { icon: '◎', color: '#9945FF', bgColor: 'rgba(153,69,255,0.15)',  available: 12.5,  priceEUR: 120,   placeholder: 'So1...' },
+  USDT: { icon: '₮', color: '#26A17B', bgColor: 'rgba(38,161,123,0.15)', available: 110,   priceEUR: 1,     placeholder: '0x...' },
 };
 
-const FEE: Record<Coin, number> = { BTC: 0.80, ETH: 0.35, USDT: 0.05 };
+const FEE: Record<Coin, number> = { BTC: 0.80, ETH: 0.35, SOL: 0.000005, USDT: 0.05 };
 
 interface CryptoSendScreenProps {
   initialCoin?: Coin;
@@ -136,7 +137,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       <div>
         <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider mb-2">Монета</p>
         <div className="flex gap-2">
-          {(['BTC', 'ETH', 'USDT'] as Coin[]).map((c) => {
+          {(['BTC', 'ETH', 'SOL', 'USDT'] as Coin[]).map((c) => {
             const d = COINS[c];
             return (
               <button

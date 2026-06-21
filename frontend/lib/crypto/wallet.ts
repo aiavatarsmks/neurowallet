@@ -1,0 +1,117 @@
+/**
+ * lib/crypto/wallet.ts
+ * BIP39 + BIP44 HD wallet for ETH (EVM) and Solana.
+ * All operations are client-side only — call inside useEffect or event handlers.
+ */
+
+import * as bip39 from 'bip39';
+import { ethers, encryptKeystoreJson } from 'ethers';
+import { ed25519 } from '@noble/curves/ed25519';
+import bs58 from 'bs58';
+import { derivePath } from 'ed25519-hd-key';
+
+export interface CryptoWallet {
+  eth: string;        // Ethereum address (BIP44 m/44'/60'/0'/0/0)
+  sol: string;        // Solana address (Ed25519 pubkey, Base58)
+  btc: string;        // Bitcoin P2PKH address (BIP44 m/44'/0'/0'/0/0)
+  mnemonic: string;   // 12-word BIP39 phrase
+  keystore: string;   // Encrypted ETH keystore JSON (AES-256 + scrypt)
+}
+
+// ─── Base58 (used for BTC P2PKH checksum address) ─────────────────────────
+
+const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+
+function base58CheckEncode(bytes: Uint8Array): string {
+  let n = 0n;
+  for (const b of bytes) n = (n << 8n) | BigInt(b);
+  let out = '';
+  while (n > 0n) { out = B58[Number(n % 58n)] + out; n = n / 58n; }
+  for (const b of bytes) { if (b !== 0) break; out = '1' + out; }
+  return out;
+}
+
+function pubKeyToBTCAddress(compressedPubKey: string): string {
+  const sha256d = ethers.sha256(compressedPubKey);
+  const hash160 = ethers.ripemd160(sha256d);
+  const withVersion = '0x00' + hash160.slice(2);
+  const chk = ethers.sha256(ethers.sha256(withVersion));
+  return base58CheckEncode(ethers.getBytes(withVersion + chk.slice(2, 10)));
+}
+
+// ─── Core wallet generation ────────────────────────────────────────────────
+
+export function generateMnemonic(): string {
+  return bip39.generateMnemonic(128);
+}
+
+export function validateMnemonic(phrase: string): boolean {
+  return bip39.validateMnemonic(phrase.trim().toLowerCase().replace(/\s+/g, ' '));
+}
+
+export async function importWalletFromMnemonic(
+  mnemonic: string,
+  password: string,
+): Promise<CryptoWallet> {
+  const normalized = mnemonic.trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!bip39.validateMnemonic(normalized)) {
+    throw new Error('Неверная мнемоническая фраза. Проверь порядок и написание слов.');
+  }
+
+  // ETH — BIP44 m/44'/60'/0'/0/0
+  const ethWallet = ethers.HDNodeWallet.fromPhrase(normalized, '', "m/44'/60'/0'/0/0");
+
+  // BTC — BIP44 m/44'/0'/0'/0/0 → P2PKH
+  const btcNode = ethers.HDNodeWallet.fromPhrase(normalized, '', "m/44'/0'/0'/0/0");
+  const btc = pubKeyToBTCAddress(btcNode.publicKey);
+
+  // SOL — SLIP-0010 ed25519 at m/44'/501'/0'/0' (Phantom/Solflare standard)
+  const seed = await bip39.mnemonicToSeed(normalized);
+  const { key: solPrivKey } = derivePath("m/44'/501'/0'/0'", seed.toString('hex'));
+  const solPubKey = ed25519.getPublicKey(solPrivKey);
+  const sol = bs58.encode(solPubKey);
+
+  // Encrypt ETH private key — scrypt N=8192 (~1-3 s, fast enough for mobile)
+  const keystore = await encryptKeystoreJson(
+    { address: ethWallet.address, privateKey: ethWallet.privateKey },
+    password,
+    { scrypt: { N: 8192 } },
+  );
+
+  return { eth: ethWallet.address, sol, btc, mnemonic: normalized, keystore };
+}
+
+// ─── localStorage helpers ──────────────────────────────────────────────────
+
+const LS = {
+  ETH: 'wallet_eth_address',
+  SOL: 'wallet_sol_address',
+  BTC: 'wallet_btc_address',
+  KS:  'wallet_keystore',
+};
+
+export function saveWalletToStorage(w: CryptoWallet): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(LS.ETH, w.eth);
+  localStorage.setItem(LS.SOL, w.sol);
+  localStorage.setItem(LS.BTC, w.btc);
+  localStorage.setItem(LS.KS,  w.keystore);
+}
+
+export function loadAddressesFromStorage(): { eth: string; sol: string; btc: string } | null {
+  if (typeof window === 'undefined') return null;
+  const eth = localStorage.getItem(LS.ETH);
+  const sol = localStorage.getItem(LS.SOL);
+  const btc = localStorage.getItem(LS.BTC);
+  return eth ? { eth, sol: sol ?? '', btc: btc ?? '' } : null;
+}
+
+export function hasWallet(): boolean {
+  if (typeof window === 'undefined') return false;
+  return !!localStorage.getItem(LS.ETH);
+}
+
+export function clearWalletFromStorage(): void {
+  if (typeof window === 'undefined') return;
+  Object.values(LS).forEach((k) => localStorage.removeItem(k));
+}

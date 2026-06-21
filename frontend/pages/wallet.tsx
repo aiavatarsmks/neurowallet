@@ -54,9 +54,10 @@ export default function WalletPage() {
   const { user, isDemo, isLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('home');
   const [avatarState, setAvatarState] = useState<'idle' | 'talking' | 'thinking'>('idle');
+  const [chatHasMessages, setChatHasMessages] = useState(false);
   const [insightDismissed, setInsightDismissed] = useState(false);
-  const [receiveCoin, setReceiveCoin] = useState<'BTC' | 'ETH' | 'USDT'>('ETH');
-  const [cryptoSendCoin, setCryptoSendCoin] = useState<'BTC' | 'ETH' | 'USDT'>('BTC');
+  const [receiveCoin, setReceiveCoin] = useState<'BTC' | 'ETH' | 'SOL' | 'USDT'>('ETH');
+  const [cryptoSendCoin, setCryptoSendCoin] = useState<'BTC' | 'ETH' | 'SOL' | 'USDT'>('ETH');
 
   useEffect(() => {
     if (!isLoading && !user && !isDemo) {
@@ -79,7 +80,8 @@ export default function WalletPage() {
   const isHome = activeTab === 'home';
   const isChat = activeTab === 'add';
   const showAvatar = isHome || isChat;
-  const avatarHeight = isChat ? 160 : 280;
+  const chatAvatarHeight = chatHasMessages ? 64 : 160;
+  const avatarHeight = isHome ? 280 : chatAvatarHeight;
   const showBack = BACK_TABS.includes(activeTab);
 
   // Which tab to highlight in bottom nav
@@ -88,12 +90,12 @@ export default function WalletPage() {
     : 'home';
 
   const handleSendCrypto = (symbol: string) => {
-    setCryptoSendCoin(symbol as 'BTC' | 'ETH' | 'USDT');
+    setCryptoSendCoin(symbol as 'BTC' | 'ETH' | 'SOL' | 'USDT');
     setActiveTab('crypto-send');
   };
 
   const handleReceiveCrypto = (symbol: string) => {
-    setReceiveCoin(symbol as 'BTC' | 'ETH' | 'USDT');
+    setReceiveCoin(symbol as 'BTC' | 'ETH' | 'SOL' | 'USDT');
     setActiveTab('receive');
   };
 
@@ -143,7 +145,7 @@ export default function WalletPage() {
 
       {/* ── Avatar ─────────────────────────────────────────── */}
       {showAvatar && (
-        <div style={{ transition: 'height 0.4s ease', height: avatarHeight, flexShrink: 0 }}>
+        <div style={{ transition: 'height 0.4s ease', height: avatarHeight, flexShrink: 0, overflow: 'hidden' }}>
           <NeuraAvatar state={avatarState} />
         </div>
       )}
@@ -215,7 +217,11 @@ export default function WalletPage() {
 
       {/* ── Нейра Chat ─────────────────────────────────────── */}
       {activeTab === 'add' && (
-        <NeuraChat onAvatarState={setAvatarState} avatarHeight={160} />
+        <NeuraChat
+          onAvatarState={setAvatarState}
+          avatarHeight={chatAvatarHeight}
+          onFirstMessage={() => setChatHasMessages(true)}
+        />
       )}
 
       {/* ── Cards (virtual card) ────────────────────────────── */}
