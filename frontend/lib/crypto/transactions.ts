@@ -15,6 +15,10 @@ import {
   broadcastBtcTx,
   isValidBtcAddress as _isValidBtcAddress,
 } from './btc-tx';
+import {
+  sendUsdtTrc20Raw,
+  isValidTronAddress as _isValidTronAddress,
+} from './tron-tx';
 
 const ETH_RPC   = 'https://cloudflare-eth.com';
 const SOL_RPC   = 'https://api.mainnet-beta.solana.com';
@@ -220,6 +224,27 @@ export async function sendSol(
   return bs58.encode(signature);
 }
 
+// ─── Send USDT TRC-20 (Tron) ─────────────────────────────────────────────────
+//
+// Tron private key stored as XOR with ETH private key (wallet_tron_xor).
+// Same single-password unlock pattern as SOL and BTC.
+
+export async function sendUsdtTrc20(
+  keystoreJson: string,
+  tronXorHex:  string,
+  password:    string,
+  toAddress:   string,
+  amountUsdt:  number,
+): Promise<string> {
+  const ethWallet     = await ethers.Wallet.fromEncryptedJson(keystoreJson, password);
+  const ethPrivBytes  = ethers.getBytes(ethWallet.privateKey);
+  const xorBytes      = new Uint8Array(tronXorHex.match(/.{2}/g)!.map((h) => parseInt(h, 16)));
+  const tronPrivKey   = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) tronPrivKey[i] = xorBytes[i] ^ ethPrivBytes[i];
+
+  return sendUsdtTrc20Raw(tronPrivKey, toAddress, amountUsdt);
+}
+
 // ─── Send BTC ─────────────────────────────────────────────────────────────────
 //
 // BTC private key stored as XOR with ETH private key (wallet_btc_xor).
@@ -274,3 +299,4 @@ export function isValidSolAddress(addr: string): boolean {
 }
 
 export { _isValidBtcAddress as isValidBtcAddress };
+export { _isValidTronAddress as isValidTronAddress };

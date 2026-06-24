@@ -5,31 +5,35 @@
  */
 
 import { ethers } from 'ethers';
+import { fetchUsdtTrc20Balance } from './tron-tx';
 
 const ETH_RPC    = 'https://cloudflare-eth.com';
 const SOL_RPC    = 'https://api.mainnet-beta.solana.com';
 const USDT_ADDR  = '0xdAC17F958D2ee523a2206206994597C13D831ec7'; // ERC-20 Mainnet
 const ERC20_ABI  = ['function balanceOf(address) view returns (uint256)'];
 const PRICES_URL =
-  'https://api.coingecko.com/api/v3/simple/price?ids=ethereum,solana,bitcoin&vs_currencies=eur';
+  'https://api.coingecko.com/api/v3/simple/price?ids=ethereum,solana,bitcoin,tron-network&vs_currencies=eur';
 
 const PRICE_CACHE_KEY = 'nw_prices_cache';
 const PRICE_TTL_MS    = 60_000; // 60 s
 
 export interface WalletBalances {
-  eth: number;
-  usdt: number;
-  sol: number;
-  btc: number;
-  ethEur: number;
-  solEur: number;
-  btcEur: number;
+  eth:      number;
+  usdt:     number;   // ERC-20
+  usdtTrc:  number;   // TRC-20
+  sol:      number;
+  btc:      number;
+  ethEur:   number;
+  solEur:   number;
+  btcEur:   number;
+  trxEur:   number;
 }
 
 export interface PriceData {
-  ethEur: number;
-  solEur: number;
-  btcEur: number;
+  ethEur:   number;
+  solEur:   number;
+  btcEur:   number;
+  trxEur:   number;
   fetchedAt: number;
 }
 
@@ -48,9 +52,10 @@ export async function fetchPrices(): Promise<PriceData> {
     const res  = await fetch(PRICES_URL);
     const data = await res.json();
     const prices: PriceData = {
-      ethEur:    data.ethereum?.eur ?? 2800,
-      solEur:    data.solana?.eur   ?? 120,
-      btcEur:    data.bitcoin?.eur  ?? 55000,
+      ethEur:    data.ethereum?.eur       ?? 2800,
+      solEur:    data.solana?.eur         ?? 120,
+      btcEur:    data.bitcoin?.eur        ?? 55000,
+      trxEur:    data['tron-network']?.eur ?? 0.22,
       fetchedAt: Date.now(),
     };
     if (typeof window !== 'undefined') {
@@ -58,7 +63,7 @@ export async function fetchPrices(): Promise<PriceData> {
     }
     return prices;
   } catch {
-    return { ethEur: 2800, solEur: 120, btcEur: 55000, fetchedAt: 0 };
+    return { ethEur: 2800, solEur: 120, btcEur: 55000, trxEur: 0.22, fetchedAt: 0 };
   }
 }
 
@@ -123,37 +128,42 @@ async function fetchSolBalance(address: string): Promise<number> {
 // ─── Public API ────────────────────────────────────────────────────────────
 
 export async function fetchRealBalances(
-  ethAddress: string,
-  solAddress: string,
-  btcAddress = '',
+  ethAddress:  string,
+  solAddress:  string,
+  btcAddress   = '',
+  tronAddress  = '',
 ): Promise<WalletBalances> {
-  const [ethResult, solResult, btcResult, prices] = await Promise.allSettled([
+  const [ethResult, solResult, btcResult, trc20Result, prices] = await Promise.allSettled([
     fetchEthBalance(ethAddress),
     fetchSolBalance(solAddress),
     fetchBtcBalance(btcAddress),
+    tronAddress ? fetchUsdtTrc20Balance(tronAddress) : Promise.resolve(0),
     fetchPrices(),
   ]);
 
   const { eth, usdt } =
     ethResult.status === 'fulfilled' ? ethResult.value : { eth: 0, usdt: 0 };
-  const sol   = solResult.status === 'fulfilled' ? solResult.value : 0;
-  const btc   = btcResult.status === 'fulfilled' ? btcResult.value : 0;
+  const sol      = solResult.status  === 'fulfilled' ? solResult.value  : 0;
+  const btc      = btcResult.status  === 'fulfilled' ? btcResult.value  : 0;
+  const usdtTrc  = trc20Result.status === 'fulfilled' ? trc20Result.value : 0;
   const priceData =
     prices.status === 'fulfilled'
       ? prices.value
-      : { ethEur: 2800, solEur: 120, btcEur: 55000 };
+      : { ethEur: 2800, solEur: 120, btcEur: 55000, trxEur: 0.22 };
 
   return {
     eth,
     usdt,
+    usdtTrc,
     sol,
     btc,
-    ethEur: priceData.ethEur,
-    solEur: priceData.solEur,
-    btcEur: priceData.btcEur,
+    ethEur:  priceData.ethEur,
+    solEur:  priceData.solEur,
+    btcEur:  priceData.btcEur,
+    trxEur:  priceData.trxEur,
   };
 }
 
 export function totalPortfolioEur(b: WalletBalances): number {
-  return b.eth * b.ethEur + b.usdt + b.sol * b.solEur + b.btc * b.btcEur;
+  return b.eth * b.ethEur + b.usdt + b.usdtTrc + b.sol * b.solEur + b.btc * b.btcEur;
 }

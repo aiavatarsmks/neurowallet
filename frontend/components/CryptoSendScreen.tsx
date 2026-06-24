@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { sendEth, sendUsdt, sendSol, sendBtc, isValidEthAddress, isValidSolAddress, isValidBtcAddress } from '@/lib/crypto/transactions';
+import { sendEth, sendUsdt, sendUsdtTrc20, sendSol, sendBtc, isValidEthAddress, isValidSolAddress, isValidBtcAddress, isValidTronAddress } from '@/lib/crypto/transactions';
 import { fetchRealBalances } from '@/lib/crypto/balances';
 
-type Coin = 'BTC' | 'ETH' | 'SOL' | 'USDT';
+type Coin = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TRC20';
 type Step = 'form' | 'confirm' | 'password' | 'sending' | 'done';
 
 interface CoinMeta {
@@ -17,12 +17,13 @@ const COINS: Record<Coin, CoinMeta> = {
   ETH:  { icon: 'Ξ', color: '#627EEA', bgColor: 'rgba(98,126,234,0.15)',  placeholder: '0x…',  implemented: true  },
   SOL:  { icon: '◎', color: '#9945FF', bgColor: 'rgba(153,69,255,0.15)',  placeholder: 'So1…', implemented: true  },
   BTC:  { icon: '₿', color: '#F7931A', bgColor: 'rgba(247,147,26,0.15)',  placeholder: '1…',   implemented: true  },
-  USDT: { icon: '₮', color: '#26A17B', bgColor: 'rgba(38,161,123,0.15)', placeholder: '0x…',   implemented: true  },
+  USDT:  { icon: '₮', color: '#26A17B', bgColor: 'rgba(38,161,123,0.15)', placeholder: '0x…', implemented: true },
+  TRC20: { icon: '₮', color: '#EF0027', bgColor: 'rgba(239,0,39,0.12)',   placeholder: 'T…',  implemented: true },
 };
 
 // Estimated fees shown in UI (ETH fee is fetched from chain later)
 const FEE_EUR: Record<Coin, string> = {
-  ETH: '~€0.30–1.50', BTC: '~€0.50–2.00', SOL: '< €0.01', USDT: '~€0.30',
+  ETH: '~€0.30–1.50', BTC: '~€0.50–2.00', SOL: '< €0.01', USDT: '~€0.30', TRC20: '< €0.50',
 };
 
 interface CryptoSendScreenProps {
@@ -43,19 +44,20 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   const [sending,  setSending]  = useState(false);
   const [txHash,   setTxHash]   = useState('');
   const [sendErr,  setSendErr]  = useState('');
-  const [balances, setBalances] = useState<Record<Coin, number>>({ ETH: 0, BTC: 0, SOL: 0, USDT: 0 });
+  const [balances, setBalances] = useState<Record<Coin, number>>({ ETH: 0, BTC: 0, SOL: 0, USDT: 0, TRC20: 0 });
   const [balReady, setBalReady] = useState(false);
 
   // Load real balances once on mount
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const eth = localStorage.getItem('wallet_eth_address') || '';
-    const sol = localStorage.getItem('wallet_sol_address') || '';
-    const btc = localStorage.getItem('wallet_btc_address') || '';
+    const eth  = localStorage.getItem('wallet_eth_address')  || '';
+    const sol  = localStorage.getItem('wallet_sol_address')  || '';
+    const btc  = localStorage.getItem('wallet_btc_address')  || '';
+    const tron = localStorage.getItem('wallet_tron_address') || '';
     if (!eth) { setBalReady(true); return; }
-    fetchRealBalances(eth, sol, btc)
+    fetchRealBalances(eth, sol, btc, tron)
       .then((b) => {
-        setBalances({ ETH: b.eth, BTC: b.btc, SOL: b.sol, USDT: b.usdt });
+        setBalances({ ETH: b.eth, BTC: b.btc, SOL: b.sol, USDT: b.usdt, TRC20: b.usdtTrc });
         setBalReady(true);
       })
       .catch(() => setBalReady(true));
@@ -66,11 +68,11 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   const available  = balances[coin];
   const insufficient = amountNum > 0 && amountNum > available;
 
-  const addressValid = coin === 'ETH' || coin === 'USDT'
-    ? isValidEthAddress(address.trim())
-    : coin === 'SOL'
-    ? isValidSolAddress(address.trim())
-    : isValidBtcAddress(address.trim()); // BTC — full checksum validation
+  const addressValid =
+    coin === 'ETH' || coin === 'USDT' ? isValidEthAddress(address.trim())
+    : coin === 'SOL'   ? isValidSolAddress(address.trim())
+    : coin === 'TRC20' ? isValidTronAddress(address.trim())
+    : isValidBtcAddress(address.trim()); // BTC
 
   const reset = () => {
     setStep('form');
@@ -116,6 +118,10 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         hash = await sendBtc(keystore, btcXor, password, address.trim(), amountNum, btcAddr);
       } else if (coin === 'USDT') {
         hash = await sendUsdt(keystore, password, address.trim(), amountNum);
+      } else if (coin === 'TRC20') {
+        const tronXor = localStorage.getItem('wallet_tron_xor');
+        if (!tronXor) throw new Error('NO_TRON_XOR');
+        hash = await sendUsdtTrc20(keystore, tronXor, password, address.trim(), amountNum);
       } else {
         // ETH
         hash = await sendEth(keystore, password, address.trim(), amountNum);
@@ -138,6 +144,10 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         setSendErr('Предыдущая транзакция ещё не завершилась. Подожди немного.');
       } else if (msg.includes('no_btc_xor')) {
         setSendErr('BTC-ключ не найден. Пересоздай кошелёк через онбординг.');
+      } else if (msg.includes('no_tron_xor')) {
+        setSendErr('Tron-ключ не найден. Пересоздай кошелёк через онбординг.');
+      } else if (msg.includes('trongrid') || msg.includes('tron') && msg.includes('недоступен')) {
+        setSendErr('TronGrid недоступен. Проверь соединение и попробуй позже.');
       } else if (msg.includes('utxo') || msg.includes('подтверждённых')) {
         setSendErr('Нет подтверждённых UTXO. Подожди подтверждения входящих транзакций (обычно ~10 мин).');
       } else if (msg.includes('dust') || msg.includes('546')) {
@@ -188,18 +198,19 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
                   ? `https://solscan.io/tx/${txHash}`
                   : coin === 'BTC'
                   ? `https://blockstream.info/tx/${txHash}`
-                  : `https://etherscan.io/tx/${txHash}` // ETH and USDT
+                  : coin === 'TRC20'
+                  ? `https://tronscan.org/#/transaction/${txHash}`
+                  : `https://etherscan.io/tx/${txHash}`
               }
               target="_blank"
               rel="noopener noreferrer"
               className="mt-2 inline-block text-xs font-semibold"
               style={{ color: '#00FF7F' }}
             >
-              {coin === 'SOL'
-                ? 'Посмотреть на Solscan →'
-                : coin === 'BTC'
-                ? 'Посмотреть на Blockstream →'
-                : 'Посмотреть на Etherscan →'}
+              {coin === 'SOL'   ? 'Посмотреть на Solscan →'
+               : coin === 'BTC'   ? 'Посмотреть на Blockstream →'
+               : coin === 'TRC20' ? 'Посмотреть на Tronscan →'
+               : 'Посмотреть на Etherscan →'}
             </a>
           </div>
         )}
@@ -211,7 +222,9 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           <p className="text-[#00FF7F] text-xs font-semibold mb-1">Нейра</p>
           <p className="text-white text-xs leading-relaxed">
             {txHash
-              ? coin === 'USDT'
+              ? coin === 'TRC20'
+                ? 'USDT TRC-20 отправлен. Tron подтверждает транзакции за 3–5 секунд и берёт минимальную комиссию.'
+                : coin === 'USDT'
                 ? 'USDT переведён. Транзакция подтвердится за 1–2 минуты, после чего баланс обновится.'
                 : coin === 'BTC'
                 ? 'BTC отправлен. Обычно подтверждается за 10–60 минут.'
@@ -413,7 +426,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       <div>
         <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider mb-2">Монета</p>
         <div className="flex gap-2">
-          {(['ETH', 'BTC', 'SOL', 'USDT'] as Coin[]).map((c) => {
+          {(['ETH', 'BTC', 'SOL', 'USDT', 'TRC20'] as Coin[]).map((c) => {
             const d = COINS[c];
             return (
               <button
@@ -426,7 +439,9 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
                 }}
               >
                 <span className="text-lg font-bold" style={{ color: d.color }}>{d.icon}</span>
-                <span className="text-[10px] font-semibold" style={{ color: coin === c ? d.color : '#3A6045' }}>{c}</span>
+                <span className="text-[10px] font-semibold leading-tight text-center" style={{ color: coin === c ? d.color : '#3A6045' }}>
+                  {c === 'USDT' ? 'USDT\nERC' : c === 'TRC20' ? 'USDT\nTRC' : c}
+                </span>
                 {!d.implemented && (
                   <span
                     className="absolute -top-1.5 -right-1 text-[8px] font-bold px-1 rounded-full"

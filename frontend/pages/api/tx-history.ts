@@ -13,16 +13,18 @@ const BLOCKSTREAM    = 'https://blockstream.info/api';
 
 interface TxRow {
   id:       string;
-  chain:    'ETH' | 'SOL' | 'BTC' | 'USDT';
+  chain:    'ETH' | 'SOL' | 'BTC' | 'USDT' | 'TRC20';
   type:     'in' | 'out';
-  amount:   number;   // in native units (ETH / SOL / BTC / USDT)
+  amount:   number;   // in native units
   address:  string;   // counterparty
   hash:     string;   // tx hash / signature
   date:     string;   // ISO date string
   fee:      number;   // in native units
 }
 
-const USDT_CONTRACT = '0xdac17f958d2ee523a2206206994597c13d831ec7';
+const USDT_CONTRACT      = '0xdac17f958d2ee523a2206206994597c13d831ec7';
+const USDT_TRC20_CONTRACT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
+const TRONGRID           = 'https://api.trongrid.io';
 
 // ─── ETH (Etherscan) ──────────────────────────────────────────────────────────
 
@@ -75,6 +77,39 @@ async function fetchUsdtTxs(address: string): Promise<TxRow[]> {
       date:    new Date(parseInt(tx.timeStamp) * 1000).toISOString(),
       fee:     (parseInt(tx.gasUsed) * parseInt(tx.gasPrice)) / 1e18, // fee in ETH
     }));
+}
+
+// ─── USDT TRC-20 (TronGrid) ───────────────────────────────────────────────────
+
+async function fetchTrc20Txs(address: string): Promise<TxRow[]> {
+  try {
+    const url =
+      `${TRONGRID}/v1/accounts/${address}/transactions/trc20` +
+      `?contract_address=${USDT_TRC20_CONTRACT}&limit=20&order_by=block_timestamp,desc`;
+    const res  = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (!Array.isArray(data.data)) return [];
+
+    const addr = address.toLowerCase();
+    return data.data.map((tx: Record<string, unknown>) => {
+      const from  = (tx.from as string).toLowerCase();
+      const to    = (tx.to   as string).toLowerCase();
+      const isOut = from === addr;
+      return {
+        id:      `trc20-${tx.transaction_id as string}`,
+        chain:   'TRC20' as const,
+        type:    isOut ? 'out' : 'in',
+        amount:  parseInt(tx.value as string, 10) / 1e6,
+        address: isOut ? (tx.to as string) : (tx.from as string),
+        hash:    tx.transaction_id as string,
+        date:    new Date(tx.block_timestamp as number).toISOString(),
+        fee:     0, // TRC-20 fees are in TRX, not tracked here
+      };
+    });
+  } catch {
+    return [];
+  }
 }
 
 // ─── SOL (Solana JSON-RPC) ────────────────────────────────────────────────────
@@ -219,21 +254,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { eth, sol, btc } = req.query as Record<string, string>;
+  const { eth, sol, btc, tron } = req.query as Record<string, string>;
 
   try {
-    const [ethTxs, usdtTxs, solTxs, btcTxs] = await Promise.allSettled([
-      eth ? fetchEthTxs(eth)  : Promise.resolve([]),
-      eth ? fetchUsdtTxs(eth) : Promise.resolve([]),
-      sol ? fetchSolTxs(sol)  : Promise.resolve([]),
-      btc ? fetchBtcTxs(btc)  : Promise.resolve([]),
+    const [ethTxs, usdtTxs, trc20Txs, solTxs, btcTxs] = await Promise.allSettled([
+      eth  ? fetchEthTxs(eth)    : Promise.resolve([]),
+      eth  ? fetchUsdtTxs(eth)   : Promise.resolve([]),
+      tron ? fetchTrc20Txs(tron) : Promise.resolve([]),
+      sol  ? fetchSolTxs(sol)    : Promise.resolve([]),
+      btc  ? fetchBtcTxs(btc)    : Promise.resolve([]),
     ]);
 
     const all: TxRow[] = [
-      ...(ethTxs.status  === 'fulfilled' ? ethTxs.value  : []),
-      ...(usdtTxs.status === 'fulfilled' ? usdtTxs.value : []),
-      ...(solTxs.status  === 'fulfilled' ? solTxs.value  : []),
-      ...(btcTxs.status  === 'fulfilled' ? btcTxs.value  : []),
+      ...(ethTxs.status   === 'fulfilled' ? ethTxs.value   : []),
+      ...(usdtTxs.status  === 'fulfilled' ? usdtTxs.value  : []),
+      ...(trc20Txs.status === 'fulfilled' ? trc20Txs.value : []),
+      ...(solTxs.status   === 'fulfilled' ? solTxs.value   : []),
+      ...(btcTxs.status   === 'fulfilled' ? btcTxs.value   : []),
     ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     return res.status(200).json({ transactions: all });

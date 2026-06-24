@@ -114,12 +114,14 @@ export default function OnboardingWalletPage() {
     try {
       const wallet = await importWalletFromMnemonic(mnemonic, password);
       if (typeof window !== 'undefined') {
-        localStorage.setItem('wallet_eth_address', wallet.eth);
-        localStorage.setItem('wallet_sol_address', wallet.sol);
-        localStorage.setItem('wallet_btc_address', wallet.btc);
-        localStorage.setItem('wallet_keystore',    wallet.keystore);
-        localStorage.setItem('wallet_sol_xor',     wallet.solXor);
-        localStorage.setItem('wallet_btc_xor',     wallet.btcXor);
+        localStorage.setItem('wallet_eth_address',  wallet.eth);
+        localStorage.setItem('wallet_sol_address',  wallet.sol);
+        localStorage.setItem('wallet_btc_address',  wallet.btc);
+        localStorage.setItem('wallet_tron_address', wallet.tron);
+        localStorage.setItem('wallet_keystore',     wallet.keystore);
+        localStorage.setItem('wallet_sol_xor',      wallet.solXor);
+        localStorage.setItem('wallet_btc_xor',      wallet.btcXor);
+        localStorage.setItem('wallet_tron_xor',     wallet.tronXor);
       }
       router.push('/wallet');
     } catch (e) {

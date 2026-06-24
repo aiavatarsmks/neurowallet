@@ -114,19 +114,22 @@ export const ProfileScreen: React.FC = () => {
   const router = useRouter();
   const { user, isDemo, signOut } = useAuth();
 
-  const [ethAddr, setEthAddr] = useState('');
-  const [solAddr, setSolAddr] = useState('');
-  const [btcAddr, setBtcAddr] = useState('');
+  const [ethAddr,  setEthAddr]  = useState('');
+  const [solAddr,  setSolAddr]  = useState('');
+  const [btcAddr,  setBtcAddr]  = useState('');
+  const [tronAddr, setTronAddr] = useState('');
   const [hasWallet, setHasWallet] = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const eth = localStorage.getItem('wallet_eth_address') || '';
-    const sol = localStorage.getItem('wallet_sol_address') || '';
-    const btc = localStorage.getItem('wallet_btc_address') || '';
+    const eth  = localStorage.getItem('wallet_eth_address')  || '';
+    const sol  = localStorage.getItem('wallet_sol_address')  || '';
+    const btc  = localStorage.getItem('wallet_btc_address')  || '';
+    const tron = localStorage.getItem('wallet_tron_address') || '';
     setEthAddr(eth);
     setSolAddr(sol);
     setBtcAddr(btc);
+    setTronAddr(tron);
     setHasWallet(!!eth);
   }, []);
 
@@ -188,6 +191,13 @@ export const ProfileScreen: React.FC = () => {
               color="#F7931A"
               address={btcAddr}
               explorerUrl={`https://blockstream.info/address/${btcAddr}`}
+            />
+            <AddressRow
+              label="USDT TRC-20 (Tron)"
+              icon="₮"
+              color="#EF0027"
+              address={tronAddr}
+              explorerUrl={`https://tronscan.org/#/address/${tronAddr}`}
             />
           </div>
         </div>
