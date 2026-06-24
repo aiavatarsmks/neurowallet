@@ -89,7 +89,8 @@ export default function OnboardingWalletPage() {
         localStorage.setItem('wallet_eth_address', wallet.eth);
         localStorage.setItem('wallet_sol_address', wallet.sol);
         localStorage.setItem('wallet_btc_address', wallet.btc);
-        localStorage.setItem('wallet_keystore', wallet.keystore);
+        localStorage.setItem('wallet_keystore',    wallet.keystore);
+        localStorage.setItem('wallet_sol_xor',     wallet.solXor);
       }
       router.push('/wallet');
     } catch (e) {

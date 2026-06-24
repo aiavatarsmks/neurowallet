@@ -16,6 +16,7 @@ export interface CryptoWallet {
   btc: string;        // Bitcoin P2PKH address (BIP44 m/44'/0'/0'/0/0)
   mnemonic: string;   // 12-word BIP39 phrase
   keystore: string;   // Encrypted ETH keystore JSON (AES-256 + scrypt)
+  solXor: string;     // SOL privkey XOR ETH privkey (hex). Needs password to unlock.
 }
 
 // ─── Base58 (used for BTC P2PKH checksum address) ─────────────────────────
@@ -78,24 +79,35 @@ export async function importWalletFromMnemonic(
     { scrypt: { N: 131072 } },
   );
 
-  return { eth: ethWallet.address, sol, btc, mnemonic: normalized, keystore };
+  // Store SOL private key as XOR with ETH private key.
+  // Neither key is recoverable from solXor alone — password required to unlock ETH key first.
+  const ethPrivBytes = ethers.getBytes(ethWallet.privateKey); // Uint8Array(32)
+  const solXorArr = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) {
+    solXorArr[i] = (solPrivKey as unknown as Uint8Array)[i] ^ ethPrivBytes[i];
+  }
+  const solXor = Array.from(solXorArr).map((b) => b.toString(16).padStart(2, '0')).join('');
+
+  return { eth: ethWallet.address, sol, btc, mnemonic: normalized, keystore, solXor };
 }
 
 // ─── localStorage helpers ──────────────────────────────────────────────────
 
 const LS = {
-  ETH: 'wallet_eth_address',
-  SOL: 'wallet_sol_address',
-  BTC: 'wallet_btc_address',
-  KS:  'wallet_keystore',
+  ETH:     'wallet_eth_address',
+  SOL:     'wallet_sol_address',
+  BTC:     'wallet_btc_address',
+  KS:      'wallet_keystore',
+  SOL_XOR: 'wallet_sol_xor',
 };
 
 export function saveWalletToStorage(w: CryptoWallet): void {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(LS.ETH, w.eth);
-  localStorage.setItem(LS.SOL, w.sol);
-  localStorage.setItem(LS.BTC, w.btc);
-  localStorage.setItem(LS.KS,  w.keystore);
+  localStorage.setItem(LS.ETH,     w.eth);
+  localStorage.setItem(LS.SOL,     w.sol);
+  localStorage.setItem(LS.BTC,     w.btc);
+  localStorage.setItem(LS.KS,      w.keystore);
+  localStorage.setItem(LS.SOL_XOR, w.solXor);
 }
 
 export function loadAddressesFromStorage(): { eth: string; sol: string; btc: string } | null {
