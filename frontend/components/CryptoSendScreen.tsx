@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { sendEth, sendSol, sendBtc, isValidEthAddress, isValidSolAddress, isValidBtcAddress } from '@/lib/crypto/transactions';
+import { sendEth, sendUsdt, sendSol, sendBtc, isValidEthAddress, isValidSolAddress, isValidBtcAddress } from '@/lib/crypto/transactions';
 import { fetchRealBalances } from '@/lib/crypto/balances';
 
 type Coin = 'BTC' | 'ETH' | 'SOL' | 'USDT';
@@ -17,7 +17,7 @@ const COINS: Record<Coin, CoinMeta> = {
   ETH:  { icon: 'Ξ', color: '#627EEA', bgColor: 'rgba(98,126,234,0.15)',  placeholder: '0x…',  implemented: true  },
   SOL:  { icon: '◎', color: '#9945FF', bgColor: 'rgba(153,69,255,0.15)',  placeholder: 'So1…', implemented: true  },
   BTC:  { icon: '₿', color: '#F7931A', bgColor: 'rgba(247,147,26,0.15)',  placeholder: '1…',   implemented: true  },
-  USDT: { icon: '₮', color: '#26A17B', bgColor: 'rgba(38,161,123,0.15)', placeholder: '0x…',   implemented: false },
+  USDT: { icon: '₮', color: '#26A17B', bgColor: 'rgba(38,161,123,0.15)', placeholder: '0x…',   implemented: true  },
 };
 
 // Estimated fees shown in UI (ETH fee is fetched from chain later)
@@ -114,8 +114,10 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         if (!btcXor)  throw new Error('NO_BTC_XOR');
         if (!btcAddr) throw new Error('NO_KEYSTORE');
         hash = await sendBtc(keystore, btcXor, password, address.trim(), amountNum, btcAddr);
+      } else if (coin === 'USDT') {
+        hash = await sendUsdt(keystore, password, address.trim(), amountNum);
       } else {
-        // ETH / USDT (ERC-20 send not yet implemented — treats as ETH for now)
+        // ETH
         hash = await sendEth(keystore, password, address.trim(), amountNum);
       }
       setTxHash(hash);
@@ -186,15 +188,17 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
                   ? `https://solscan.io/tx/${txHash}`
                   : coin === 'BTC'
                   ? `https://blockstream.info/tx/${txHash}`
-                  : `https://etherscan.io/tx/${txHash}`
+                  : `https://etherscan.io/tx/${txHash}` // ETH and USDT
               }
               target="_blank"
               rel="noopener noreferrer"
               className="mt-2 inline-block text-xs font-semibold"
               style={{ color: '#00FF7F' }}
             >
-              {coin === 'SOL' ? 'Посмотреть на Solscan →'
-                : coin === 'BTC' ? 'Посмотреть на Blockstream →'
+              {coin === 'SOL'
+                ? 'Посмотреть на Solscan →'
+                : coin === 'BTC'
+                ? 'Посмотреть на Blockstream →'
                 : 'Посмотреть на Etherscan →'}
             </a>
           </div>
@@ -207,7 +211,13 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           <p className="text-[#00FF7F] text-xs font-semibold mb-1">Нейра</p>
           <p className="text-white text-xs leading-relaxed">
             {txHash
-              ? 'Транзакция отправлена. Обычно ETH подтверждается за 1–2 минуты.'
+              ? coin === 'USDT'
+                ? 'USDT переведён. Транзакция подтвердится за 1–2 минуты, после чего баланс обновится.'
+                : coin === 'BTC'
+                ? 'BTC отправлен. Обычно подтверждается за 10–60 минут.'
+                : coin === 'SOL'
+                ? 'SOL отправлен. Подтверждается за несколько секунд.'
+                : 'Транзакция отправлена. Обычно ETH подтверждается за 1–2 минуты.'
               : 'Транзакция отправлена в сеть. Ожидается подтверждение.'}
           </p>
         </div>

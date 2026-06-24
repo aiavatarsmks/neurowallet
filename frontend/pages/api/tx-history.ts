@@ -13,14 +13,16 @@ const BLOCKSTREAM    = 'https://blockstream.info/api';
 
 interface TxRow {
   id:       string;
-  chain:    'ETH' | 'SOL' | 'BTC';
+  chain:    'ETH' | 'SOL' | 'BTC' | 'USDT';
   type:     'in' | 'out';
-  amount:   number;   // in native units (ETH / SOL / BTC)
+  amount:   number;   // in native units (ETH / SOL / BTC / USDT)
   address:  string;   // counterparty
   hash:     string;   // tx hash / signature
   date:     string;   // ISO date string
   fee:      number;   // in native units
 }
+
+const USDT_CONTRACT = '0xdac17f958d2ee523a2206206994597c13d831ec7';
 
 // ─── ETH (Etherscan) ──────────────────────────────────────────────────────────
 
@@ -46,6 +48,32 @@ async function fetchEthTxs(address: string): Promise<TxRow[]> {
       hash:    tx.hash,
       date:    new Date(parseInt(tx.timeStamp) * 1000).toISOString(),
       fee:     (parseInt(tx.gasUsed) * parseInt(tx.gasPrice)) / 1e18,
+    }));
+}
+
+// ─── USDT ERC-20 (Etherscan tokentx) ─────────────────────────────────────────
+
+async function fetchUsdtTxs(address: string): Promise<TxRow[]> {
+  const key = process.env.ETHERSCAN_API_KEY;
+  if (!key) return [];
+
+  const url = `https://api.etherscan.io/api?module=account&action=tokentx&contractaddress=${USDT_CONTRACT}&address=${address}&page=1&offset=20&sort=desc&apikey=${key}`;
+  const res  = await fetch(url);
+  const data = await res.json();
+  if (data.status !== '1' || !Array.isArray(data.result)) return [];
+
+  const addr = address.toLowerCase();
+  return data.result
+    .slice(0, 15)
+    .map((tx: Record<string, string>) => ({
+      id:      `usdt-${tx.hash}`,
+      chain:   'USDT' as const,
+      type:    tx.from.toLowerCase() === addr ? 'out' : 'in',
+      amount:  parseFloat(tx.value) / 1e6,   // USDT has 6 decimals
+      address: tx.from.toLowerCase() === addr ? tx.to : tx.from,
+      hash:    tx.hash,
+      date:    new Date(parseInt(tx.timeStamp) * 1000).toISOString(),
+      fee:     (parseInt(tx.gasUsed) * parseInt(tx.gasPrice)) / 1e18, // fee in ETH
     }));
 }
 
@@ -194,16 +222,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const { eth, sol, btc } = req.query as Record<string, string>;
 
   try {
-    const [ethTxs, solTxs, btcTxs] = await Promise.allSettled([
-      eth ? fetchEthTxs(eth) : Promise.resolve([]),
-      sol ? fetchSolTxs(sol) : Promise.resolve([]),
-      btc ? fetchBtcTxs(btc) : Promise.resolve([]),
+    const [ethTxs, usdtTxs, solTxs, btcTxs] = await Promise.allSettled([
+      eth ? fetchEthTxs(eth)  : Promise.resolve([]),
+      eth ? fetchUsdtTxs(eth) : Promise.resolve([]),
+      sol ? fetchSolTxs(sol)  : Promise.resolve([]),
+      btc ? fetchBtcTxs(btc)  : Promise.resolve([]),
     ]);
 
     const all: TxRow[] = [
-      ...(ethTxs.status === 'fulfilled' ? ethTxs.value : []),
-      ...(solTxs.status === 'fulfilled' ? solTxs.value : []),
-      ...(btcTxs.status === 'fulfilled' ? btcTxs.value : []),
+      ...(ethTxs.status  === 'fulfilled' ? ethTxs.value  : []),
+      ...(usdtTxs.status === 'fulfilled' ? usdtTxs.value : []),
+      ...(solTxs.status  === 'fulfilled' ? solTxs.value  : []),
+      ...(btcTxs.status  === 'fulfilled' ? btcTxs.value  : []),
     ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     return res.status(200).json({ transactions: all });

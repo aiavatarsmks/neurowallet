@@ -16,8 +16,10 @@ import {
   isValidBtcAddress as _isValidBtcAddress,
 } from './btc-tx';
 
-const ETH_RPC = 'https://cloudflare-eth.com';
-const SOL_RPC = 'https://api.mainnet-beta.solana.com';
+const ETH_RPC   = 'https://cloudflare-eth.com';
+const SOL_RPC   = 'https://api.mainnet-beta.solana.com';
+const USDT_ADDR = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
+const USDT_ABI  = ['function transfer(address to, uint256 amount) returns (bool)'];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -73,6 +75,26 @@ export async function sendEth(
 
   await tx.wait();
   return tx.hash;
+}
+
+// ─── Send USDT (ERC-20) ───────────────────────────────────────────────────────
+
+export async function sendUsdt(
+  keystoreJson: string,
+  password:    string,
+  toAddress:   string,
+  amountUsdt:  number,
+): Promise<string> {
+  const wallet    = await ethers.Wallet.fromEncryptedJson(keystoreJson, password);
+  const provider  = new ethers.JsonRpcProvider(ETH_RPC);
+  const connected = wallet.connect(provider);
+  const usdt      = new ethers.Contract(USDT_ADDR, USDT_ABI, connected);
+
+  // USDT has 6 decimals
+  const amount = ethers.parseUnits(String(amountUsdt), 6);
+  const tx     = await usdt.transfer(toAddress, amount);
+  await tx.wait();
+  return tx.hash as string;
 }
 
 // ─── Send SOL ─────────────────────────────────────────────────────────────────

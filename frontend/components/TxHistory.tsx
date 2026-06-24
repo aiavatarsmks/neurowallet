@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 
 interface TxRow {
   id:      string;
-  chain:   'ETH' | 'SOL' | 'BTC';
+  chain:   'ETH' | 'SOL' | 'BTC' | 'USDT';
   type:    'in' | 'out';
   amount:  number;
   address: string;
@@ -12,9 +12,10 @@ interface TxRow {
 }
 
 const CHAIN_META = {
-  ETH: { icon: 'Ξ', color: '#627EEA', explorer: (h: string) => `https://etherscan.io/tx/${h}` },
-  SOL: { icon: '◎', color: '#9945FF', explorer: (h: string) => `https://solscan.io/tx/${h}` },
-  BTC: { icon: '₿', color: '#F7931A', explorer: (h: string) => `https://blockstream.info/tx/${h}` },
+  ETH:  { icon: 'Ξ',  color: '#627EEA', explorer: (h: string) => `https://etherscan.io/tx/${h}` },
+  SOL:  { icon: '◎',  color: '#9945FF', explorer: (h: string) => `https://solscan.io/tx/${h}` },
+  BTC:  { icon: '₿',  color: '#F7931A', explorer: (h: string) => `https://blockstream.info/tx/${h}` },
+  USDT: { icon: '₮',  color: '#26A17B', explorer: (h: string) => `https://etherscan.io/tx/${h}` },
 };
 
 function formatDate(iso: string): string {
@@ -154,7 +155,7 @@ export const TxHistory: React.FC<TxHistoryProps> = ({ limit = 15 }) => {
                     className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0"
                     style={{ background: `${meta.color}1a`, color: meta.color }}
                   >
-                    {tx.chain}
+                    {tx.chain === 'USDT' ? 'ERC-20' : tx.chain}
                   </span>
                 </div>
                 <p className="text-[#3A6045] text-xs mt-0.5">
@@ -167,7 +168,9 @@ export const TxHistory: React.FC<TxHistoryProps> = ({ limit = 15 }) => {
                 className="text-sm font-semibold flex-shrink-0"
                 style={{ color: positive ? '#00FF7F' : '#ffffff' }}
               >
-                {positive ? '+' : '–'}{tx.amount.toLocaleString('ru-RU', { maximumFractionDigits: 6 })} {tx.chain}
+                {positive ? '+' : '–'}{tx.amount.toLocaleString('ru-RU', {
+                  maximumFractionDigits: tx.chain === 'USDT' ? 2 : 6,
+                })} {tx.chain}
               </span>
             </li>
           );
