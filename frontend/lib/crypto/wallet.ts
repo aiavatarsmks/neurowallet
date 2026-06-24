@@ -71,11 +71,11 @@ export async function importWalletFromMnemonic(
   const solPubKey = ed25519.getPublicKey(solPrivKey);
   const sol = bs58.encode(solPubKey);
 
-  // Encrypt ETH private key — scrypt N=8192 (~1-3 s, fast enough for mobile)
+  // Encrypt ETH private key — scrypt N=131072 (2^17, ~3-8 s; OWASP minimum for sensitive keys)
   const keystore = await encryptKeystoreJson(
     { address: ethWallet.address, privateKey: ethWallet.privateKey },
     password,
-    { scrypt: { N: 8192 } },
+    { scrypt: { N: 131072 } },
   );
 
   return { eth: ethWallet.address, sol, btc, mnemonic: normalized, keystore };
