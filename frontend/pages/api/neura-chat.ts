@@ -2,13 +2,13 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 
 /**
  * pages/api/neura-chat.ts
- * Server-side proxy to Gonka Broker (OpenAI-compatible LLM API).
- * The secret key (GONKA_API_KEY) lives only in server env vars —
+ * Server-side proxy to OpenRouter (OpenAI-compatible LLM API).
+ * The secret key (OPENROUTER_API_KEY) lives only in server env vars —
  * it is never exposed to the browser.
  */
 
-const GONKA_URL = 'https://proxy.gonkabroker.com/v1/chat/completions';
-const MODEL = 'Qwen/Qwen3-235B-A22B-Instruct-2507-FP8';
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const MODEL = 'google/gemini-2.0-flash-001';
 
 const SYSTEM_PROMPT = `Ты — Нейра, AI-финансовый советник внутри крипто-кошелька NeuroWallet.
 Отвечай по-русски, дружелюбно и по делу, без лишней воды.
@@ -27,7 +27,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const apiKey = process.env.GONKA_API_KEY;
+  const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     return res.status(500).json({ error: 'AI временно не настроен на сервере (нет ключа).' });
   }
@@ -40,11 +40,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const upstream = await fetch(GONKA_URL, {
+    const upstream = await fetch(OPENROUTER_URL, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://neurowallet.tech',
+        'X-Title': 'NeuroWallet',
       },
       body: JSON.stringify({
         model: MODEL,
@@ -58,8 +60,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const errText = await upstream.text();
       console.error('Gonka API error', upstream.status, errText.slice(0, 500));
       const friendly =
-        upstream.status === 402 || upstream.status === 403
-          ? 'AI временно недоступен — на аккаунте Gonka Broker закончился баланс. Нужно сделать Top Up.'
+        upstream.status === 402 || upstream.status === 429
+          ? 'AI временно недоступен — на аккаунте OpenRouter закончился баланс.'
           : 'AI временно недоступен, попробуй чуть позже.';
       return res.status(200).json({ error: friendly });
     }
