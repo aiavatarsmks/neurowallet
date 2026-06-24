@@ -2,6 +2,12 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { User as SupabaseUser } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 
+// ─── Telegram helper (safe to call on web) ────────────────────────────────────
+function getTelegramInitData(): string {
+  if (typeof window === 'undefined') return '';
+  return (window as Window & { Telegram?: { WebApp?: { initData?: string } } }).Telegram?.WebApp?.initData ?? '';
+}
+
 export interface User {
   id: string;
   email: string;
@@ -16,10 +22,12 @@ interface AuthState {
 }
 
 interface AuthContextValue extends AuthState {
-  signUp: (email: string, password: string, name?: string) => Promise<void>;
-  signIn: (email: string, password: string) => Promise<void>;
-  signOut: () => void;
-  enterDemo: () => void;
+  signUp:              (email: string, password: string, name?: string) => Promise<void>;
+  signIn:              (email: string, password: string) => Promise<void>;
+  signInWithTelegram:  (initData: string) => Promise<void>;
+  signOut:             () => void;
+  enterDemo:           () => void;
+  isTelegramUser:      boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -36,15 +44,37 @@ function toUser(su: SupabaseUser): User {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AuthState>({
-    user: null,
-    isDemo: false,
-    isLoading: true,
-  });
+  const [state, setState]            = useState<AuthState>({ user: null, isDemo: false, isLoading: true });
+  const [isTelegramUser, setIsTgUser] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && localStorage.getItem(DEMO_KEY) === 'true') {
       setState({ user: null, isDemo: true, isLoading: false });
+      return;
+    }
+
+    // Auto-login via Telegram initData if running inside Telegram Mini App
+    const initData = getTelegramInitData();
+    if (initData) {
+      setIsTgUser(true);
+      fetch('/api/tg-auth', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ initData }),
+      })
+        .then(r => r.ok ? r.json() : null)
+        .then(async (data) => {
+          if (data?.access_token) {
+            await supabase.auth.setSession({
+              access_token:  data.access_token,
+              refresh_token: data.refresh_token,
+            });
+            setState({ user: data.user, isDemo: false, isLoading: false });
+          } else {
+            setState({ user: null, isDemo: false, isLoading: false });
+          }
+        })
+        .catch(() => setState({ user: null, isDemo: false, isLoading: false }));
       return;
     }
 
@@ -80,9 +110,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw new Error(translateError(error.message));
   };
 
+  const signInWithTelegram = async (initData: string) => {
+    const res  = await fetch('/api/tg-auth', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ initData }),
+    });
+    if (!res.ok) throw new Error('Telegram auth failed');
+    const data = await res.json();
+    await supabase.auth.setSession({ access_token: data.access_token, refresh_token: data.refresh_token });
+    setIsTgUser(true);
+    setState({ user: data.user, isDemo: false, isLoading: false });
+  };
+
   const signOut = () => {
     if (typeof window !== 'undefined') localStorage.removeItem(DEMO_KEY);
     supabase.auth.signOut();
+    setIsTgUser(false);
     setState({ user: null, isDemo: false, isLoading: false });
   };
 
@@ -92,7 +136,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ ...state, signUp, signIn, signOut, enterDemo }}>
+    <AuthContext.Provider value={{ ...state, signUp, signIn, signInWithTelegram, signOut, enterDemo, isTelegramUser }}>
       {children}
     </AuthContext.Provider>
   );

@@ -15,6 +15,15 @@ body {
   color: #ffffff;
   font-family: 'Inter', system-ui, sans-serif;
   overflow-x: hidden;
+  /* Telegram Mini App: extend background behind status bar and home indicator */
+  padding-top:    env(safe-area-inset-top,    0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Telegram Mini App: prevent iOS rubber-band scroll on the body */
+html, body {
+  height: 100%;
+  overscroll-behavior: none;
 }
 
 /* Neon glow utilities */
