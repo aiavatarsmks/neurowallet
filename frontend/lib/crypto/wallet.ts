@@ -17,6 +17,7 @@ export interface CryptoWallet {
   mnemonic: string;   // 12-word BIP39 phrase
   keystore: string;   // Encrypted ETH keystore JSON (AES-256 + scrypt)
   solXor: string;     // SOL privkey XOR ETH privkey (hex). Needs password to unlock.
+  btcXor: string;     // BTC privkey XOR ETH privkey (hex). Needs password to unlock.
 }
 
 // ─── Base58 (used for BTC P2PKH checksum address) ─────────────────────────
@@ -79,16 +80,24 @@ export async function importWalletFromMnemonic(
     { scrypt: { N: 131072 } },
   );
 
-  // Store SOL private key as XOR with ETH private key.
-  // Neither key is recoverable from solXor alone — password required to unlock ETH key first.
+  // Store SOL and BTC private keys as XOR with ETH private key.
+  // Neither key is recoverable from the XOR blob alone — password required to unlock ETH key first.
   const ethPrivBytes = ethers.getBytes(ethWallet.privateKey); // Uint8Array(32)
+
   const solXorArr = new Uint8Array(32);
   for (let i = 0; i < 32; i++) {
     solXorArr[i] = (solPrivKey as unknown as Uint8Array)[i] ^ ethPrivBytes[i];
   }
   const solXor = Array.from(solXorArr).map((b) => b.toString(16).padStart(2, '0')).join('');
 
-  return { eth: ethWallet.address, sol, btc, mnemonic: normalized, keystore, solXor };
+  const btcPrivBytes = ethers.getBytes(btcNode.privateKey); // Uint8Array(32)
+  const btcXorArr = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) {
+    btcXorArr[i] = btcPrivBytes[i] ^ ethPrivBytes[i];
+  }
+  const btcXor = Array.from(btcXorArr).map((b) => b.toString(16).padStart(2, '0')).join('');
+
+  return { eth: ethWallet.address, sol, btc, mnemonic: normalized, keystore, solXor, btcXor };
 }
 
 // ─── localStorage helpers ──────────────────────────────────────────────────
@@ -99,6 +108,7 @@ const LS = {
   BTC:     'wallet_btc_address',
   KS:      'wallet_keystore',
   SOL_XOR: 'wallet_sol_xor',
+  BTC_XOR: 'wallet_btc_xor',
 };
 
 export function saveWalletToStorage(w: CryptoWallet): void {
@@ -108,6 +118,7 @@ export function saveWalletToStorage(w: CryptoWallet): void {
   localStorage.setItem(LS.BTC,     w.btc);
   localStorage.setItem(LS.KS,      w.keystore);
   localStorage.setItem(LS.SOL_XOR, w.solXor);
+  localStorage.setItem(LS.BTC_XOR, w.btcXor);
 }
 
 export function loadAddressesFromStorage(): { eth: string; sol: string; btc: string } | null {

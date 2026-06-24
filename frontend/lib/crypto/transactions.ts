@@ -7,6 +7,14 @@
 import { ethers } from 'ethers';
 import { ed25519 } from '@noble/curves/ed25519';
 import bs58 from 'bs58';
+import {
+  fetchUTXOs,
+  getBtcFeeRate,
+  selectUTXOs,
+  buildSignedTx,
+  broadcastBtcTx,
+  isValidBtcAddress as _isValidBtcAddress,
+} from './btc-tx';
 
 const ETH_RPC = 'https://cloudflare-eth.com';
 const SOL_RPC = 'https://api.mainnet-beta.solana.com';
@@ -190,6 +198,44 @@ export async function sendSol(
   return bs58.encode(signature);
 }
 
+// ─── Send BTC ─────────────────────────────────────────────────────────────────
+//
+// BTC private key stored as XOR with ETH private key (wallet_btc_xor).
+// Same single-password unlock pattern as SOL.
+
+export async function sendBtc(
+  keystoreJson: string,
+  btcXorHex:   string,
+  password:    string,
+  toAddress:   string,
+  amountBtc:   number,
+  fromAddress: string, // our BTC address (for change output)
+): Promise<string> {
+  // 1. Recover BTC private key
+  const ethWallet    = await ethers.Wallet.fromEncryptedJson(keystoreJson, password);
+  const ethPrivBytes = ethers.getBytes(ethWallet.privateKey);
+  const xorBytes     = new Uint8Array(btcXorHex.match(/.{2}/g)!.map((h) => parseInt(h, 16)));
+  const btcPrivKey   = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) btcPrivKey[i] = xorBytes[i] ^ ethPrivBytes[i];
+
+  const amountSat = BigInt(Math.round(amountBtc * 1e8));
+  if (amountSat <= 546n) throw new Error('Сумма ниже минимума (546 sat / dust limit).');
+
+  // 2. Fetch UTXOs and fee rate
+  const [utxos, feeRate] = await Promise.all([fetchUTXOs(fromAddress), getBtcFeeRate()]);
+  if (utxos.length === 0) throw new Error('Нет подтверждённых UTXO. Подожди подтверждения входящих транзакций.');
+
+  // 3. Select UTXOs and calculate change
+  const { utxos: selected, change } = selectUTXOs(utxos, amountSat, feeRate);
+
+  // 4. Build and sign raw transaction
+  const rawHex = buildSignedTx(btcPrivKey, selected, toAddress, fromAddress, amountSat, change);
+
+  // 5. Broadcast
+  const txid = await broadcastBtcTx(rawHex);
+  return txid;
+}
+
 // ─── Validate addresses ───────────────────────────────────────────────────────
 
 export function isValidEthAddress(addr: string): boolean {
@@ -204,3 +250,5 @@ export function isValidSolAddress(addr: string): boolean {
     return false;
   }
 }
+
+export { _isValidBtcAddress as isValidBtcAddress };

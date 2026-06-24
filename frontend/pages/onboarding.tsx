@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import { useAuth } from '@/contexts/AuthContext';
 import { generateMnemonic, importWalletFromMnemonic } from '@/lib/crypto/wallet';
 
-type Step = 'choice' | 'show-mnemonic' | 'import-mnemonic' | 'set-password' | 'generating';
+type Step = 'choice' | 'show-mnemonic' | 'verify-mnemonic' | 'import-mnemonic' | 'set-password' | 'generating';
 
 const EyeIcon = ({ open }: { open: boolean }) => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -34,6 +34,10 @@ export default function OnboardingWalletPage() {
   const [showPass, setShowPass] = useState(false);
   const [canContinue, setCanContinue] = useState(false);
   const [error, setError] = useState('');
+
+  // Verification step state
+  const [verifyIndices, setVerifyIndices]   = useState<number[]>([]);
+  const [verifyInputs,  setVerifyInputs]    = useState<string[]>(['', '', '']);
 
   // Guard: redirect if already has wallet or not authenticated
   useEffect(() => {
@@ -72,6 +76,30 @@ export default function OnboardingWalletPage() {
   };
 
   const handleMnemonicConfirm = () => {
+    // Pick 3 random distinct word indices for verification
+    const indices: number[] = [];
+    while (indices.length < 3) {
+      const r = Math.floor(Math.random() * 12);
+      if (!indices.includes(r)) indices.push(r);
+    }
+    indices.sort((a, b) => a - b);
+    setVerifyIndices(indices);
+    setVerifyInputs(['', '', '']);
+    setError('');
+    setStep('verify-mnemonic');
+  };
+
+  const handleVerify = () => {
+    const words = mnemonic.split(' ');
+    for (let i = 0; i < 3; i++) {
+      const expected = words[verifyIndices[i]].trim().toLowerCase();
+      const entered  = verifyInputs[i].trim().toLowerCase();
+      if (expected !== entered) {
+        setError(`Слово #${verifyIndices[i] + 1} введено неверно. Проверь запись и попробуй снова.`);
+        return;
+      }
+    }
+    setError('');
     setStep('set-password');
   };
 
@@ -91,6 +119,7 @@ export default function OnboardingWalletPage() {
         localStorage.setItem('wallet_btc_address', wallet.btc);
         localStorage.setItem('wallet_keystore',    wallet.keystore);
         localStorage.setItem('wallet_sol_xor',     wallet.solXor);
+        localStorage.setItem('wallet_btc_xor',     wallet.btcXor);
       }
       router.push('/wallet');
     } catch (e) {
@@ -203,6 +232,75 @@ export default function OnboardingWalletPage() {
             style={{ background: '#00FF7F', color: '#080C09', boxShadow: canContinue ? '0 0 24px rgba(0,255,127,0.35)' : 'none' }}
           >
             {canContinue ? 'Я записал — продолжить' : 'Читай внимательно...'}
+          </button>
+        </div>
+      )}
+
+      {/* ── STEP: Verify mnemonic ────────────────────────────── */}
+      {step === 'verify-mnemonic' && (
+        <div className="flex flex-col flex-1 pt-14 pb-10 gap-6">
+          <div>
+            <button onClick={() => setStep('show-mnemonic')} className="text-[#3A6045] text-sm mb-4 flex items-center gap-1">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+              Назад
+            </button>
+            <h1 className="text-white text-2xl font-bold">Проверка записи</h1>
+            <p className="text-[#3A6045] text-sm mt-1">Введи 3 слова из своей фразы</p>
+          </div>
+
+          <div
+            className="rounded-2xl p-4"
+            style={{ background: 'rgba(0,255,127,0.04)', border: '1px solid rgba(0,255,127,0.12)' }}
+          >
+            <p className="text-[#3A6045] text-xs leading-relaxed">
+              Если ты правильно записал фразу, введи слова ниже. Это гарантирует, что ты сможешь восстановить кошелёк.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-4">
+            {verifyIndices.map((wordIdx, i) => (
+              <div key={wordIdx} className="flex flex-col gap-1.5">
+                <label className="text-[#3A6045] text-xs font-medium uppercase tracking-wider px-1">
+                  Слово #{wordIdx + 1}
+                </label>
+                <input
+                  type="text"
+                  value={verifyInputs[i]}
+                  onChange={(e) => {
+                    const next = [...verifyInputs];
+                    next[i] = e.target.value;
+                    setVerifyInputs(next);
+                    setError('');
+                  }}
+                  placeholder={`Введи слово #${wordIdx + 1}`}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className="w-full px-4 py-3.5 rounded-xl text-white text-sm outline-none placeholder:text-[#3A6045]"
+                  style={{
+                    background: '#0D1A10',
+                    border: `1px solid ${error && error.includes(`#${wordIdx + 1}`) ? 'rgba(255,60,60,0.4)' : 'rgba(0,255,127,0.15)'}`,
+                    caretColor: '#00FF7F',
+                    fontFamily: 'monospace',
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+
+          {error && (
+            <div className="px-4 py-3 rounded-xl text-sm" style={{ background: 'rgba(255,60,60,0.08)', border: '1px solid rgba(255,60,60,0.2)', color: '#FF6B6B' }}>
+              {error}
+            </div>
+          )}
+
+          <button
+            onClick={handleVerify}
+            disabled={verifyInputs.some((v) => !v.trim())}
+            className="w-full py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95 disabled:opacity-40"
+            style={{ background: '#00FF7F', color: '#080C09', boxShadow: '0 0 24px rgba(0,255,127,0.35)' }}
+          >
+            Подтвердить
           </button>
         </div>
       )}

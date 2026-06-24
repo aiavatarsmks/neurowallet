@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { sendEth, sendSol, isValidEthAddress, isValidSolAddress } from '@/lib/crypto/transactions';
+import { sendEth, sendSol, sendBtc, isValidEthAddress, isValidSolAddress, isValidBtcAddress } from '@/lib/crypto/transactions';
 import { fetchRealBalances } from '@/lib/crypto/balances';
 
 type Coin = 'BTC' | 'ETH' | 'SOL' | 'USDT';
@@ -14,9 +14,9 @@ interface CoinMeta {
 }
 
 const COINS: Record<Coin, CoinMeta> = {
-  ETH:  { icon: 'Ξ', color: '#627EEA', bgColor: 'rgba(98,126,234,0.15)',  placeholder: '0x…',   implemented: true  },
-  SOL:  { icon: '◎', color: '#9945FF', bgColor: 'rgba(153,69,255,0.15)',  placeholder: 'So1…',  implemented: true  },
-  BTC:  { icon: '₿', color: '#F7931A', bgColor: 'rgba(247,147,26,0.15)',  placeholder: 'bc1q…', implemented: false },
+  ETH:  { icon: 'Ξ', color: '#627EEA', bgColor: 'rgba(98,126,234,0.15)',  placeholder: '0x…',  implemented: true  },
+  SOL:  { icon: '◎', color: '#9945FF', bgColor: 'rgba(153,69,255,0.15)',  placeholder: 'So1…', implemented: true  },
+  BTC:  { icon: '₿', color: '#F7931A', bgColor: 'rgba(247,147,26,0.15)',  placeholder: '1…',   implemented: true  },
   USDT: { icon: '₮', color: '#26A17B', bgColor: 'rgba(38,161,123,0.15)', placeholder: '0x…',   implemented: false },
 };
 
@@ -70,7 +70,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
     ? isValidEthAddress(address.trim())
     : coin === 'SOL'
     ? isValidSolAddress(address.trim())
-    : address.trim().length > 10; // BTC — basic check
+    : isValidBtcAddress(address.trim()); // BTC — full checksum validation
 
   const reset = () => {
     setStep('form');
@@ -108,6 +108,12 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         const solXor = localStorage.getItem('wallet_sol_xor');
         if (!solXor) throw new Error('NO_SOL_XOR');
         hash = await sendSol(keystore, solXor, password, address.trim(), amountNum);
+      } else if (coin === 'BTC') {
+        const btcXor    = localStorage.getItem('wallet_btc_xor');
+        const btcAddr   = localStorage.getItem('wallet_btc_address');
+        if (!btcXor)  throw new Error('NO_BTC_XOR');
+        if (!btcAddr) throw new Error('NO_KEYSTORE');
+        hash = await sendBtc(keystore, btcXor, password, address.trim(), amountNum, btcAddr);
       } else {
         // ETH / USDT (ERC-20 send not yet implemented — treats as ETH for now)
         hash = await sendEth(keystore, password, address.trim(), amountNum);
@@ -128,6 +134,14 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         setSendErr('Недостаточно средств для оплаты комиссии.');
       } else if (msg.includes('nonce') || msg.includes('replacement')) {
         setSendErr('Предыдущая транзакция ещё не завершилась. Подожди немного.');
+      } else if (msg.includes('no_btc_xor')) {
+        setSendErr('BTC-ключ не найден. Пересоздай кошелёк через онбординг.');
+      } else if (msg.includes('utxo') || msg.includes('подтверждённых')) {
+        setSendErr('Нет подтверждённых UTXO. Подожди подтверждения входящих транзакций (обычно ~10 мин).');
+      } else if (msg.includes('dust') || msg.includes('546')) {
+        setSendErr('Сумма слишком маленькая (меньше 546 sat). Увеличь сумму.');
+      } else if (msg.includes('segwit') || msg.includes('bc1')) {
+        setSendErr(e instanceof Error ? e.message : 'SegWit-адреса пока не поддерживаются.');
       } else if (msg.includes('blockhash not found') || msg.includes('blockhash')) {
         setSendErr('Ошибка сети Solana. Попробуй ещё раз.');
       } else {
@@ -170,6 +184,8 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
               href={
                 coin === 'SOL'
                   ? `https://solscan.io/tx/${txHash}`
+                  : coin === 'BTC'
+                  ? `https://blockstream.info/tx/${txHash}`
                   : `https://etherscan.io/tx/${txHash}`
               }
               target="_blank"
@@ -177,7 +193,9 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
               className="mt-2 inline-block text-xs font-semibold"
               style={{ color: '#00FF7F' }}
             >
-              {coin === 'SOL' ? 'Посмотреть на Solscan →' : 'Посмотреть на Etherscan →'}
+              {coin === 'SOL' ? 'Посмотреть на Solscan →'
+                : coin === 'BTC' ? 'Посмотреть на Blockstream →'
+                : 'Посмотреть на Etherscan →'}
             </a>
           </div>
         )}
