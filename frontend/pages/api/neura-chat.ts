@@ -8,7 +8,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
  */
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MODEL = 'google/gemini-flash-1.5';
+const MODEL = 'openai/gpt-4o-mini';
 
 const SYSTEM_PROMPT = `Ты — Нейра, AI-финансовый советник внутри крипто-кошелька NeuroWallet.
 Отвечай по-русски, дружелюбно и по делу, без лишней воды.
