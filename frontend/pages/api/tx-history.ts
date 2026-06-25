@@ -248,7 +248,7 @@ async function fetchBtcTxs(address: string): Promise<TxRow[]> {
   });
 }
 
-// ─── TON (TonCenter) ──────────────────────────────────────────────────────────
+// ─── TON native (TonCenter) ───────────────────────────────────────────────────
 
 async function fetchTonTxs(address: string): Promise<TxRow[]> {
   try {
@@ -268,6 +268,13 @@ async function fetchTonTxs(address: string): Promise<TxRow[]> {
         (s: number, m: Record<string, unknown>) => s + parseInt((m.value as string) || '0', 10),
         0,
       );
+
+      // Skip Jetton-related txs (they have tiny TON amounts just for gas)
+      // Jetton transfers identified by msg_data containing op 0x0f8a7ea5
+      const outBody = (outMsgs[0]?.msg_data as string) ?? '';
+      if (outBody.startsWith('0f8a7ea5') || outBody.startsWith('te6')) {
+        continue; // will appear in USDT TON history instead
+      }
 
       const isOut  = outMsgs.length > 0 && tonOut > 0;
       const amount = (isOut ? tonOut : tonIn) / 1e9;
@@ -296,6 +303,61 @@ async function fetchTonTxs(address: string): Promise<TxRow[]> {
   }
 }
 
+// ─── USDT TON Jetton (tonapi.io) ──────────────────────────────────────────────
+
+const USDT_TON_MASTER = 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs';
+const TONAPI = 'https://tonapi.io/v2';
+
+async function fetchUsdtTonTxs(address: string): Promise<TxRow[]> {
+  try {
+    // tonapi.io: jetton transfer history for specific jetton
+    const url = `${TONAPI}/accounts/${encodeURIComponent(address)}/jettons/history` +
+      `?jetton=${encodeURIComponent(USDT_TON_MASTER)}&limit=20`;
+    const res = await fetch(url, {
+      headers: { 'Accept': 'application/json' },
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (!Array.isArray(data.events)) return [];
+
+    const rows: TxRow[] = [];
+    for (const event of data.events) {
+      for (const action of (event.actions ?? [])) {
+        if (action.type !== 'JettonTransfer' || action.status !== 'ok') continue;
+        const jt = action.JettonTransfer;
+        if (!jt) continue;
+
+        // Only USDT (filter by jetton master address)
+        const jettonAddr = (jt.jetton?.address as string ?? '').toLowerCase();
+        const masterNorm = USDT_TON_MASTER.toLowerCase();
+        if (jettonAddr && jettonAddr !== masterNorm) continue;
+
+        const senderAddr    = (jt.sender?.address    as string) ?? '';
+        const recipientAddr = (jt.recipient?.address as string) ?? '';
+        const isOut = senderAddr.toLowerCase() === address.toLowerCase();
+        const amount = Number(jt.amount ?? 0) / 1e6; // 6 decimals
+        if (amount <= 0) continue;
+
+        const txHash = (event.event_id as string) ?? '';
+
+        rows.push({
+          id:      `usdt-ton-${txHash}`,
+          chain:   'USDT_TON',
+          type:    isOut ? 'out' : 'in',
+          amount,
+          address: isOut ? recipientAddr : senderAddr,
+          hash:    txHash,
+          date:    new Date((event.timestamp as number) * 1000).toISOString(),
+          fee:     0,
+        });
+      }
+    }
+    return rows;
+  } catch {
+    return [];
+  }
+}
+
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -307,22 +369,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const { eth, sol, btc, tron, ton } = req.query as Record<string, string>;
 
   try {
-    const [ethTxs, usdtTxs, trc20Txs, solTxs, btcTxs, tonTxs] = await Promise.allSettled([
-      eth  ? fetchEthTxs(eth)    : Promise.resolve([]),
-      eth  ? fetchUsdtTxs(eth)   : Promise.resolve([]),
-      tron ? fetchTrc20Txs(tron) : Promise.resolve([]),
-      sol  ? fetchSolTxs(sol)    : Promise.resolve([]),
-      btc  ? fetchBtcTxs(btc)    : Promise.resolve([]),
-      ton  ? fetchTonTxs(ton)    : Promise.resolve([]),
+    const [ethTxs, usdtTxs, trc20Txs, solTxs, btcTxs, tonTxs, usdtTonTxs] = await Promise.allSettled([
+      eth  ? fetchEthTxs(eth)        : Promise.resolve([]),
+      eth  ? fetchUsdtTxs(eth)       : Promise.resolve([]),
+      tron ? fetchTrc20Txs(tron)     : Promise.resolve([]),
+      sol  ? fetchSolTxs(sol)        : Promise.resolve([]),
+      btc  ? fetchBtcTxs(btc)        : Promise.resolve([]),
+      ton  ? fetchTonTxs(ton)        : Promise.resolve([]),
+      ton  ? fetchUsdtTonTxs(ton)    : Promise.resolve([]),
     ]);
 
     const all: TxRow[] = [
-      ...(ethTxs.status   === 'fulfilled' ? ethTxs.value   : []),
-      ...(usdtTxs.status  === 'fulfilled' ? usdtTxs.value  : []),
-      ...(trc20Txs.status === 'fulfilled' ? trc20Txs.value : []),
-      ...(solTxs.status   === 'fulfilled' ? solTxs.value   : []),
-      ...(btcTxs.status   === 'fulfilled' ? btcTxs.value   : []),
-      ...(tonTxs.status   === 'fulfilled' ? tonTxs.value   : []),
+      ...(ethTxs.status      === 'fulfilled' ? ethTxs.value      : []),
+      ...(usdtTxs.status     === 'fulfilled' ? usdtTxs.value     : []),
+      ...(trc20Txs.status    === 'fulfilled' ? trc20Txs.value    : []),
+      ...(solTxs.status      === 'fulfilled' ? solTxs.value      : []),
+      ...(btcTxs.status      === 'fulfilled' ? btcTxs.value      : []),
+      ...(tonTxs.status      === 'fulfilled' ? tonTxs.value      : []),
+      ...(usdtTonTxs.status  === 'fulfilled' ? usdtTonTxs.value  : []),
     ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     return res.status(200).json({ transactions: all });

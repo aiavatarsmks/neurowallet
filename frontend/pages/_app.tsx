@@ -44,6 +44,7 @@ export default function App(props: AppProps) {
               " https://api.coingecko.com" +
               " https://api.trongrid.io" +
               " https://toncenter.com" +
+              " https://tonapi.io" +
               " https://api.telegram.org",
             "font-src 'self'",
           ].join('; ')}
