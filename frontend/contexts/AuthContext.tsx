@@ -69,6 +69,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               access_token:  data.access_token,
               refresh_token: data.refresh_token,
             });
+            if (data.user?.telegram_id) {
+              localStorage.setItem('tg_user_id', String(data.user.telegram_id));
+            }
+            // Store TG username/name from SDK (available immediately)
+            const tgSdk = (window as Window & { Telegram?: { WebApp?: { initDataUnsafe?: { user?: { username?: string; first_name?: string; last_name?: string; photo_url?: string } } } } }).Telegram?.WebApp?.initDataUnsafe?.user;
+            if (tgSdk?.username)   localStorage.setItem('tg_username',   tgSdk.username);
+            if (tgSdk?.first_name) localStorage.setItem('tg_first_name', tgSdk.first_name);
+            if (tgSdk?.last_name)  localStorage.setItem('tg_last_name',  tgSdk.last_name);
+            if (tgSdk?.photo_url)  localStorage.setItem('tg_photo_url',  tgSdk.photo_url);
             setState({ user: data.user, isDemo: false, isLoading: false });
           } else {
             setState({ user: null, isDemo: false, isLoading: false });

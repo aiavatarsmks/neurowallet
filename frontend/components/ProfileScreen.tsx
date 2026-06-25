@@ -110,6 +110,13 @@ const AddressRow: React.FC<AddressRowProps> = ({ label, icon, color, address, ex
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
+const TelegramBadge = () => (
+  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={{ background: 'rgba(0,132,255,0.1)', border: '1px solid rgba(0,132,255,0.25)' }}>
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="#0084ff"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248l-2.01 9.475c-.148.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.216-3.053 5.56-5.023c.242-.215-.053-.334-.374-.12L7.16 14.78l-2.96-.924c-.644-.2-.657-.644.136-.954l11.56-4.457c.537-.194 1.006.131.666.803z"/></svg>
+    <span className="text-[#0084ff] text-[10px] font-semibold">Telegram</span>
+  </div>
+);
+
 export const ProfileScreen: React.FC = () => {
   const router = useRouter();
   const { user, isDemo, signOut } = useAuth();
@@ -119,6 +126,9 @@ export const ProfileScreen: React.FC = () => {
   const [btcAddr,  setBtcAddr]  = useState('');
   const [tronAddr, setTronAddr] = useState('');
   const [hasWallet, setHasWallet] = useState(false);
+  const [tgUsername,  setTgUsername]  = useState('');
+  const [tgFirstName, setTgFirstName] = useState('');
+  const [tgPhotoUrl,  setTgPhotoUrl]  = useState('');
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -131,11 +141,19 @@ export const ProfileScreen: React.FC = () => {
     setBtcAddr(btc);
     setTronAddr(tron);
     setHasWallet(!!eth);
+    setTgUsername(localStorage.getItem('tg_username')   || '');
+    setTgFirstName(localStorage.getItem('tg_first_name') || '');
+    setTgPhotoUrl(localStorage.getItem('tg_photo_url')  || '');
   }, []);
 
-  const displayName  = isDemo ? 'Demo Mode' : (user?.name ?? user?.email ?? 'Пользователь');
-  const displayEmail = isDemo ? 'demo@neurowallet.ai' : (user?.email ?? '');
-  const initials     = displayName.slice(0, 2).toUpperCase();
+  const isTgUser    = !!tgUsername || !!localStorage.getItem?.('tg_user_id');
+  const displayName = isDemo
+    ? 'Demo Mode'
+    : tgFirstName || (user?.name ?? user?.email ?? 'Пользователь');
+  const displaySub  = tgUsername
+    ? `@${tgUsername}`
+    : isDemo ? 'demo@neurowallet.ai' : (user?.email ?? '');
+  const initials    = displayName.slice(0, 2).toUpperCase();
 
   const handleSignOut = () => { signOut(); router.replace('/'); };
 
@@ -150,18 +168,28 @@ export const ProfileScreen: React.FC = () => {
           border: '1px solid rgba(0,255,127,0.12)',
         }}
       >
-        <div
-          className="w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold flex-shrink-0"
-          style={{ background: 'rgba(0,255,127,0.12)', border: '2px solid rgba(0,255,127,0.3)', color: '#00FF7F' }}
-        >
-          {initials}
-        </div>
+        {tgPhotoUrl ? (
+          <img src={tgPhotoUrl} alt="" className="w-16 h-16 rounded-full object-cover flex-shrink-0" style={{ border: '2px solid rgba(0,132,255,0.4)' }} />
+        ) : (
+          <div
+            className="w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold flex-shrink-0"
+            style={{ background: 'rgba(0,255,127,0.12)', border: '2px solid rgba(0,255,127,0.3)', color: '#00FF7F' }}
+          >
+            {initials}
+          </div>
+        )}
         <div className="flex-1 min-w-0">
           <p className="text-white font-bold text-base truncate">{displayName}</p>
-          <p className="text-[#3A6045] text-xs mt-0.5 truncate">{displayEmail}</p>
-          <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={{ background: 'rgba(0,255,127,0.1)', border: '1px solid rgba(0,255,127,0.2)' }}>
-            <div className="w-1.5 h-1.5 rounded-full bg-[#00FF7F]" />
-            <span className="text-[#00FF7F] text-[10px] font-semibold">NeuroWallet MVP</span>
+          <p className="text-[#3A6045] text-xs mt-0.5 truncate" style={tgUsername ? { color: '#0084ff' } : {}}>
+            {displaySub}
+          </p>
+          <div className="mt-2">
+            {tgUsername ? <TelegramBadge /> : (
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={{ background: 'rgba(0,255,127,0.1)', border: '1px solid rgba(0,255,127,0.2)' }}>
+                <div className="w-1.5 h-1.5 rounded-full bg-[#00FF7F]" />
+                <span className="text-[#00FF7F] text-[10px] font-semibold">NeuroWallet MVP</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
