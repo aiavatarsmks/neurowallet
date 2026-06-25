@@ -19,6 +19,11 @@ import {
   sendUsdtTrc20Raw,
   isValidTronAddress as _isValidTronAddress,
 } from './tron-tx';
+import {
+  sendTonRaw,
+  sendUsdtTonRaw,
+  isValidTonAddress as _isValidTonAddress,
+} from './ton-tx';
 
 const ETH_RPC   = 'https://cloudflare-eth.com';
 const SOL_RPC   = 'https://api.mainnet-beta.solana.com';
@@ -298,5 +303,44 @@ export function isValidSolAddress(addr: string): boolean {
   }
 }
 
+// ─── Send TON ─────────────────────────────────────────────────────────────────
+//
+// TON private key stored as XOR with ETH private key (wallet_ton_xor).
+
+export async function sendTon(
+  keystoreJson: string,
+  tonXorHex:   string,
+  password:    string,
+  toAddress:   string,
+  amountTon:   number,
+): Promise<string> {
+  const ethWallet    = await ethers.Wallet.fromEncryptedJson(keystoreJson, password);
+  const ethPrivBytes = ethers.getBytes(ethWallet.privateKey);
+  const xorBytes     = new Uint8Array(tonXorHex.match(/.{2}/g)!.map((h) => parseInt(h, 16)));
+  const tonPrivKey   = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) tonPrivKey[i] = xorBytes[i] ^ ethPrivBytes[i];
+
+  return sendTonRaw(tonPrivKey, toAddress, amountTon);
+}
+
+// ─── Send USDT TON Jetton ─────────────────────────────────────────────────────
+
+export async function sendUsdtTon(
+  keystoreJson: string,
+  tonXorHex:   string,
+  password:    string,
+  toAddress:   string,
+  amountUsdt:  number,
+): Promise<string> {
+  const ethWallet    = await ethers.Wallet.fromEncryptedJson(keystoreJson, password);
+  const ethPrivBytes = ethers.getBytes(ethWallet.privateKey);
+  const xorBytes     = new Uint8Array(tonXorHex.match(/.{2}/g)!.map((h) => parseInt(h, 16)));
+  const tonPrivKey   = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) tonPrivKey[i] = xorBytes[i] ^ ethPrivBytes[i];
+
+  return sendUsdtTonRaw(tonPrivKey, toAddress, amountUsdt);
+}
+
 export { _isValidBtcAddress as isValidBtcAddress };
 export { _isValidTronAddress as isValidTronAddress };
+export { _isValidTonAddress as isValidTonAddress };

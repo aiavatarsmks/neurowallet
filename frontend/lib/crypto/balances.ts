@@ -6,13 +6,14 @@
 
 import { ethers } from 'ethers';
 import { fetchUsdtTrc20Balance } from './tron-tx';
+import { fetchTonBalance, fetchUsdtTonBalance } from './ton-tx';
 
 const ETH_RPC    = 'https://cloudflare-eth.com';
 const SOL_RPC    = 'https://api.mainnet-beta.solana.com';
 const USDT_ADDR  = '0xdAC17F958D2ee523a2206206994597C13D831ec7'; // ERC-20 Mainnet
 const ERC20_ABI  = ['function balanceOf(address) view returns (uint256)'];
 const PRICES_URL =
-  'https://api.coingecko.com/api/v3/simple/price?ids=ethereum,solana,bitcoin,tron-network&vs_currencies=eur';
+  'https://api.coingecko.com/api/v3/simple/price?ids=ethereum,solana,bitcoin,tron-network,the-open-network&vs_currencies=eur';
 
 const PRICE_CACHE_KEY = 'nw_prices_cache';
 const PRICE_TTL_MS    = 60_000; // 60 s
@@ -21,12 +22,15 @@ export interface WalletBalances {
   eth:      number;
   usdt:     number;   // ERC-20
   usdtTrc:  number;   // TRC-20
+  usdtTon:  number;   // TON Jetton
   sol:      number;
   btc:      number;
+  ton:      number;
   ethEur:   number;
   solEur:   number;
   btcEur:   number;
   trxEur:   number;
+  tonEur:   number;
 }
 
 export interface PriceData {
@@ -34,6 +38,7 @@ export interface PriceData {
   solEur:   number;
   btcEur:   number;
   trxEur:   number;
+  tonEur:   number;
   fetchedAt: number;
 }
 
@@ -52,10 +57,11 @@ export async function fetchPrices(): Promise<PriceData> {
     const res  = await fetch(PRICES_URL);
     const data = await res.json();
     const prices: PriceData = {
-      ethEur:    data.ethereum?.eur       ?? 2800,
-      solEur:    data.solana?.eur         ?? 120,
-      btcEur:    data.bitcoin?.eur        ?? 55000,
-      trxEur:    data['tron-network']?.eur ?? 0.22,
+      ethEur:    data.ethereum?.eur            ?? 2800,
+      solEur:    data.solana?.eur              ?? 120,
+      btcEur:    data.bitcoin?.eur             ?? 55000,
+      trxEur:    data['tron-network']?.eur      ?? 0.22,
+      tonEur:    data['the-open-network']?.eur  ?? 3.5,
       fetchedAt: Date.now(),
     };
     if (typeof window !== 'undefined') {
@@ -63,7 +69,7 @@ export async function fetchPrices(): Promise<PriceData> {
     }
     return prices;
   } catch {
-    return { ethEur: 2800, solEur: 120, btcEur: 55000, trxEur: 0.22, fetchedAt: 0 };
+    return { ethEur: 2800, solEur: 120, btcEur: 55000, trxEur: 0.22, tonEur: 3.5, fetchedAt: 0 };
   }
 }
 
@@ -132,38 +138,55 @@ export async function fetchRealBalances(
   solAddress:  string,
   btcAddress   = '',
   tronAddress  = '',
+  tonAddress   = '',
 ): Promise<WalletBalances> {
-  const [ethResult, solResult, btcResult, trc20Result, prices] = await Promise.allSettled([
-    fetchEthBalance(ethAddress),
-    fetchSolBalance(solAddress),
-    fetchBtcBalance(btcAddress),
-    tronAddress ? fetchUsdtTrc20Balance(tronAddress) : Promise.resolve(0),
-    fetchPrices(),
-  ]);
+  const [ethResult, solResult, btcResult, trc20Result, tonResult, usdtTonResult, prices] =
+    await Promise.allSettled([
+      fetchEthBalance(ethAddress),
+      fetchSolBalance(solAddress),
+      fetchBtcBalance(btcAddress),
+      tronAddress ? fetchUsdtTrc20Balance(tronAddress) : Promise.resolve(0),
+      tonAddress  ? fetchTonBalance(tonAddress)         : Promise.resolve(0),
+      tonAddress  ? fetchUsdtTonBalance(tonAddress)     : Promise.resolve(0),
+      fetchPrices(),
+    ]);
 
   const { eth, usdt } =
     ethResult.status === 'fulfilled' ? ethResult.value : { eth: 0, usdt: 0 };
-  const sol      = solResult.status  === 'fulfilled' ? solResult.value  : 0;
-  const btc      = btcResult.status  === 'fulfilled' ? btcResult.value  : 0;
-  const usdtTrc  = trc20Result.status === 'fulfilled' ? trc20Result.value : 0;
+  const sol      = solResult.status      === 'fulfilled' ? solResult.value      : 0;
+  const btc      = btcResult.status      === 'fulfilled' ? btcResult.value      : 0;
+  const usdtTrc  = trc20Result.status    === 'fulfilled' ? trc20Result.value    : 0;
+  const ton      = tonResult.status      === 'fulfilled' ? tonResult.value      : 0;
+  const usdtTon  = usdtTonResult.status  === 'fulfilled' ? usdtTonResult.value  : 0;
   const priceData =
     prices.status === 'fulfilled'
       ? prices.value
-      : { ethEur: 2800, solEur: 120, btcEur: 55000, trxEur: 0.22 };
+      : { ethEur: 2800, solEur: 120, btcEur: 55000, trxEur: 0.22, tonEur: 3.5 };
 
   return {
     eth,
     usdt,
     usdtTrc,
+    usdtTon,
     sol,
     btc,
+    ton,
     ethEur:  priceData.ethEur,
     solEur:  priceData.solEur,
     btcEur:  priceData.btcEur,
     trxEur:  priceData.trxEur,
+    tonEur:  priceData.tonEur,
   };
 }
 
 export function totalPortfolioEur(b: WalletBalances): number {
-  return b.eth * b.ethEur + b.usdt + b.usdtTrc + b.sol * b.solEur + b.btc * b.btcEur;
+  return (
+    b.eth * b.ethEur +
+    b.usdt +
+    b.usdtTrc +
+    b.usdtTon +
+    b.sol * b.solEur +
+    b.btc * b.btcEur +
+    b.ton * b.tonEur
+  );
 }

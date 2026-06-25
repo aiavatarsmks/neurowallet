@@ -13,7 +13,7 @@ const BLOCKSTREAM    = 'https://blockstream.info/api';
 
 interface TxRow {
   id:       string;
-  chain:    'ETH' | 'SOL' | 'BTC' | 'USDT' | 'TRC20';
+  chain:    'ETH' | 'SOL' | 'BTC' | 'USDT' | 'TRC20' | 'TON';
   type:     'in' | 'out';
   amount:   number;   // in native units
   address:  string;   // counterparty
@@ -21,6 +21,8 @@ interface TxRow {
   date:     string;   // ISO date string
   fee:      number;   // in native units
 }
+
+const TONCENTER = 'https://toncenter.com/api/v2';
 
 const USDT_CONTRACT      = '0xdac17f958d2ee523a2206206994597c13d831ec7';
 const USDT_TRC20_CONTRACT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
@@ -246,6 +248,54 @@ async function fetchBtcTxs(address: string): Promise<TxRow[]> {
   });
 }
 
+// ─── TON (TonCenter) ──────────────────────────────────────────────────────────
+
+async function fetchTonTxs(address: string): Promise<TxRow[]> {
+  try {
+    const url = `${TONCENTER}/getTransactions?address=${encodeURIComponent(address)}&limit=20`;
+    const res  = await fetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (data.error || !Array.isArray(data.result)) return [];
+
+    const rows: TxRow[] = [];
+    for (const tx of data.result) {
+      const inMsg   = tx.in_msg   as Record<string, unknown> | undefined;
+      const outMsgs = (tx.out_msgs as Array<Record<string, unknown>>) ?? [];
+
+      const tonIn  = parseInt((inMsg?.value  as string) || '0', 10);
+      const tonOut = outMsgs.reduce(
+        (s: number, m: Record<string, unknown>) => s + parseInt((m.value as string) || '0', 10),
+        0,
+      );
+
+      const isOut  = outMsgs.length > 0 && tonOut > 0;
+      const amount = (isOut ? tonOut : tonIn) / 1e9;
+      if (amount <= 0) continue;
+
+      const counterpart = isOut
+        ? ((outMsgs[0]?.destination as string) || '')
+        : ((inMsg?.source as string) || '');
+
+      const txid = (tx.transaction_id as Record<string, string>)?.hash ?? '';
+
+      rows.push({
+        id:      `ton-${txid}`,
+        chain:   'TON',
+        type:    isOut ? 'out' : 'in',
+        amount,
+        address: counterpart,
+        hash:    txid,
+        date:    new Date((tx.utime as number) * 1000).toISOString(),
+        fee:     0,
+      });
+    }
+    return rows;
+  } catch {
+    return [];
+  }
+}
+
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -254,15 +304,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { eth, sol, btc, tron } = req.query as Record<string, string>;
+  const { eth, sol, btc, tron, ton } = req.query as Record<string, string>;
 
   try {
-    const [ethTxs, usdtTxs, trc20Txs, solTxs, btcTxs] = await Promise.allSettled([
+    const [ethTxs, usdtTxs, trc20Txs, solTxs, btcTxs, tonTxs] = await Promise.allSettled([
       eth  ? fetchEthTxs(eth)    : Promise.resolve([]),
       eth  ? fetchUsdtTxs(eth)   : Promise.resolve([]),
       tron ? fetchTrc20Txs(tron) : Promise.resolve([]),
       sol  ? fetchSolTxs(sol)    : Promise.resolve([]),
       btc  ? fetchBtcTxs(btc)    : Promise.resolve([]),
+      ton  ? fetchTonTxs(ton)    : Promise.resolve([]),
     ]);
 
     const all: TxRow[] = [
@@ -271,6 +322,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       ...(trc20Txs.status === 'fulfilled' ? trc20Txs.value : []),
       ...(solTxs.status   === 'fulfilled' ? solTxs.value   : []),
       ...(btcTxs.status   === 'fulfilled' ? btcTxs.value   : []),
+      ...(tonTxs.status   === 'fulfilled' ? tonTxs.value   : []),
     ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     return res.status(200).json({ transactions: all });

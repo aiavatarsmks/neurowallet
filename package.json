@@ -9,5 +9,10 @@
   "scripts": {
     "lint": "echo \"(placeholder) lint: run eslint or similar here\"",
     "test": "npm --prefix backend test && npm --prefix frontend test"
+  },
+  "dependencies": {
+    "@ton/core": "^0.63.1",
+    "@ton/crypto": "^3.3.0",
+    "@ton/ton": "^16.3.0"
   }
 }

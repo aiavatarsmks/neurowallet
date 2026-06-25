@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { sendEth, sendUsdt, sendUsdtTrc20, sendSol, sendBtc, isValidEthAddress, isValidSolAddress, isValidBtcAddress, isValidTronAddress } from '@/lib/crypto/transactions';
+import { sendEth, sendUsdt, sendUsdtTrc20, sendSol, sendBtc, sendTon, sendUsdtTon, isValidEthAddress, isValidSolAddress, isValidBtcAddress, isValidTronAddress, isValidTonAddress } from '@/lib/crypto/transactions';
 import { fetchRealBalances } from '@/lib/crypto/balances';
 
-type Coin = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TRC20';
+type Coin = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TRC20' | 'TON' | 'USDT_TON';
 type Step = 'form' | 'confirm' | 'password' | 'sending' | 'done';
 
 interface CoinMeta {
@@ -14,16 +14,19 @@ interface CoinMeta {
 }
 
 const COINS: Record<Coin, CoinMeta> = {
-  ETH:  { icon: 'Ξ', color: '#627EEA', bgColor: 'rgba(98,126,234,0.15)',  placeholder: '0x…',  implemented: true  },
-  SOL:  { icon: '◎', color: '#9945FF', bgColor: 'rgba(153,69,255,0.15)',  placeholder: 'So1…', implemented: true  },
-  BTC:  { icon: '₿', color: '#F7931A', bgColor: 'rgba(247,147,26,0.15)',  placeholder: '1…',   implemented: true  },
-  USDT:  { icon: '₮', color: '#26A17B', bgColor: 'rgba(38,161,123,0.15)', placeholder: '0x…', implemented: true },
-  TRC20: { icon: '₮', color: '#EF0027', bgColor: 'rgba(239,0,39,0.12)',   placeholder: 'T…',  implemented: true },
+  ETH:      { icon: 'Ξ', color: '#627EEA', bgColor: 'rgba(98,126,234,0.15)',  placeholder: '0x…',  implemented: true },
+  SOL:      { icon: '◎', color: '#9945FF', bgColor: 'rgba(153,69,255,0.15)',  placeholder: 'So1…', implemented: true },
+  BTC:      { icon: '₿', color: '#F7931A', bgColor: 'rgba(247,147,26,0.15)',  placeholder: '1…',   implemented: true },
+  USDT:     { icon: '₮', color: '#26A17B', bgColor: 'rgba(38,161,123,0.15)', placeholder: '0x…',  implemented: true },
+  TRC20:    { icon: '₮', color: '#EF0027', bgColor: 'rgba(239,0,39,0.12)',   placeholder: 'T…',   implemented: true },
+  TON:      { icon: '💎', color: '#0098EA', bgColor: 'rgba(0,152,234,0.15)', placeholder: 'EQ…',  implemented: true },
+  USDT_TON: { icon: '₮', color: '#0098EA', bgColor: 'rgba(0,152,234,0.12)', placeholder: 'EQ…',  implemented: true },
 };
 
 // Estimated fees shown in UI (ETH fee is fetched from chain later)
 const FEE_EUR: Record<Coin, string> = {
   ETH: '~€0.30–1.50', BTC: '~€0.50–2.00', SOL: '< €0.01', USDT: '~€0.30', TRC20: '< €0.50',
+  TON: '~€0.01', USDT_TON: '~€0.05',
 };
 
 interface CryptoSendScreenProps {
@@ -44,7 +47,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   const [sending,  setSending]  = useState(false);
   const [txHash,   setTxHash]   = useState('');
   const [sendErr,  setSendErr]  = useState('');
-  const [balances, setBalances] = useState<Record<Coin, number>>({ ETH: 0, BTC: 0, SOL: 0, USDT: 0, TRC20: 0 });
+  const [balances, setBalances] = useState<Record<Coin, number>>({ ETH: 0, BTC: 0, SOL: 0, USDT: 0, TRC20: 0, TON: 0, USDT_TON: 0 });
   const [balReady, setBalReady] = useState(false);
 
   // Load real balances once on mount
@@ -54,10 +57,11 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
     const sol  = localStorage.getItem('wallet_sol_address')  || '';
     const btc  = localStorage.getItem('wallet_btc_address')  || '';
     const tron = localStorage.getItem('wallet_tron_address') || '';
+    const ton  = localStorage.getItem('wallet_ton_address')  || '';
     if (!eth) { setBalReady(true); return; }
-    fetchRealBalances(eth, sol, btc, tron)
+    fetchRealBalances(eth, sol, btc, tron, ton)
       .then((b) => {
-        setBalances({ ETH: b.eth, BTC: b.btc, SOL: b.sol, USDT: b.usdt, TRC20: b.usdtTrc });
+        setBalances({ ETH: b.eth, BTC: b.btc, SOL: b.sol, USDT: b.usdt, TRC20: b.usdtTrc, TON: b.ton, USDT_TON: b.usdtTon });
         setBalReady(true);
       })
       .catch(() => setBalReady(true));
@@ -69,9 +73,10 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   const insufficient = amountNum > 0 && amountNum > available;
 
   const addressValid =
-    coin === 'ETH' || coin === 'USDT' ? isValidEthAddress(address.trim())
-    : coin === 'SOL'   ? isValidSolAddress(address.trim())
-    : coin === 'TRC20' ? isValidTronAddress(address.trim())
+    coin === 'ETH' || coin === 'USDT'           ? isValidEthAddress(address.trim())
+    : coin === 'SOL'                             ? isValidSolAddress(address.trim())
+    : coin === 'TRC20'                           ? isValidTronAddress(address.trim())
+    : coin === 'TON' || coin === 'USDT_TON'     ? isValidTonAddress(address.trim())
     : isValidBtcAddress(address.trim()); // BTC
 
   const reset = () => {
@@ -122,6 +127,14 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         const tronXor = localStorage.getItem('wallet_tron_xor');
         if (!tronXor) throw new Error('NO_TRON_XOR');
         hash = await sendUsdtTrc20(keystore, tronXor, password, address.trim(), amountNum);
+      } else if (coin === 'TON') {
+        const tonXor = localStorage.getItem('wallet_ton_xor');
+        if (!tonXor) throw new Error('NO_TON_XOR');
+        hash = await sendTon(keystore, tonXor, password, address.trim(), amountNum);
+      } else if (coin === 'USDT_TON') {
+        const tonXor = localStorage.getItem('wallet_ton_xor');
+        if (!tonXor) throw new Error('NO_TON_XOR');
+        hash = await sendUsdtTon(keystore, tonXor, password, address.trim(), amountNum);
       } else {
         // ETH
         hash = await sendEth(keystore, password, address.trim(), amountNum);
@@ -134,7 +147,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       // Push-уведомление в Telegram (если пользователь залогинен через TG)
       const tgId = typeof window !== 'undefined' ? localStorage.getItem('tg_user_id') : null;
       if (tgId) {
-        const coinLabel = coin === 'TRC20' ? 'USDT TRC-20' : coin === 'USDT' ? 'USDT ERC-20' : coin;
+        const coinLabel = coin === 'TRC20' ? 'USDT TRC-20' : coin === 'USDT' ? 'USDT ERC-20' : coin === 'USDT_TON' ? 'USDT TON' : coin;
         const shortAddr = address.trim().slice(0, 6) + '...' + address.trim().slice(-4);
         const msg = `✅ <b>Транзакция отправлена</b>\n\n💸 ${amountNum} ${coinLabel}\n📤 На адрес: <code>${shortAddr}</code>\n🔗 TX: <code>${hash.slice(0, 16)}...</code>`;
         fetch('/api/tg-notify', {
@@ -159,6 +172,8 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         setSendErr('BTC-ключ не найден. Пересоздай кошелёк через онбординг.');
       } else if (msg.includes('no_tron_xor')) {
         setSendErr('Tron-ключ не найден. Пересоздай кошелёк через онбординг.');
+      } else if (msg.includes('no_ton_xor')) {
+        setSendErr('TON-ключ не найден. Пересоздай кошелёк через онбординг.');
       } else if (msg.includes('trongrid') || msg.includes('tron') && msg.includes('недоступен')) {
         setSendErr('TronGrid недоступен. Проверь соединение и попробуй позже.');
       } else if (msg.includes('utxo') || msg.includes('подтверждённых')) {
@@ -213,6 +228,8 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
                   ? `https://blockstream.info/tx/${txHash}`
                   : coin === 'TRC20'
                   ? `https://tronscan.org/#/transaction/${txHash}`
+                  : coin === 'TON' || coin === 'USDT_TON'
+                  ? `https://tonscan.org/tx/${txHash}`
                   : `https://etherscan.io/tx/${txHash}`
               }
               target="_blank"
@@ -220,9 +237,10 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
               className="mt-2 inline-block text-xs font-semibold"
               style={{ color: '#00FF7F' }}
             >
-              {coin === 'SOL'   ? 'Посмотреть на Solscan →'
-               : coin === 'BTC'   ? 'Посмотреть на Blockstream →'
-               : coin === 'TRC20' ? 'Посмотреть на Tronscan →'
+              {coin === 'SOL'                        ? 'Посмотреть на Solscan →'
+               : coin === 'BTC'                      ? 'Посмотреть на Blockstream →'
+               : coin === 'TRC20'                    ? 'Посмотреть на Tronscan →'
+               : coin === 'TON' || coin === 'USDT_TON' ? 'Посмотреть на Tonscan →'
                : 'Посмотреть на Etherscan →'}
             </a>
           </div>
@@ -243,6 +261,10 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
                 ? 'BTC отправлен. Обычно подтверждается за 10–60 минут.'
                 : coin === 'SOL'
                 ? 'SOL отправлен. Подтверждается за несколько секунд.'
+                : coin === 'TON'
+                ? 'TON отправлен. TON подтверждает транзакции за 5–15 секунд.'
+                : coin === 'USDT_TON'
+                ? 'USDT TON отправлен. Jetton-транзакции подтверждаются за несколько секунд.'
                 : 'Транзакция отправлена. Обычно ETH подтверждается за 1–2 минуты.'
               : 'Транзакция отправлена в сеть. Ожидается подтверждение.'}
           </p>
@@ -439,7 +461,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       <div>
         <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider mb-2">Монета</p>
         <div className="flex gap-2">
-          {(['ETH', 'BTC', 'SOL', 'USDT', 'TRC20'] as Coin[]).map((c) => {
+          {(['ETH', 'BTC', 'SOL', 'USDT', 'TRC20', 'TON', 'USDT_TON'] as Coin[]).map((c) => {
             const d = COINS[c];
             return (
               <button
@@ -453,7 +475,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
               >
                 <span className="text-lg font-bold" style={{ color: d.color }}>{d.icon}</span>
                 <span className="text-[10px] font-semibold leading-tight text-center" style={{ color: coin === c ? d.color : '#3A6045' }}>
-                  {c === 'USDT' ? 'USDT\nERC' : c === 'TRC20' ? 'USDT\nTRC' : c}
+                  {c === 'USDT' ? 'USDT\nERC' : c === 'TRC20' ? 'USDT\nTRC' : c === 'USDT_TON' ? 'USDT\nTON' : c}
                 </span>
                 {!d.implemented && (
                   <span

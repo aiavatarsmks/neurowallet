@@ -125,6 +125,7 @@ export const ProfileScreen: React.FC = () => {
   const [solAddr,  setSolAddr]  = useState('');
   const [btcAddr,  setBtcAddr]  = useState('');
   const [tronAddr, setTronAddr] = useState('');
+  const [tonAddr,  setTonAddr]  = useState('');
   const [hasWallet, setHasWallet] = useState(false);
   const [tgUsername,  setTgUsername]  = useState('');
   const [tgFirstName, setTgFirstName] = useState('');
@@ -136,10 +137,12 @@ export const ProfileScreen: React.FC = () => {
     const sol  = localStorage.getItem('wallet_sol_address')  || '';
     const btc  = localStorage.getItem('wallet_btc_address')  || '';
     const tron = localStorage.getItem('wallet_tron_address') || '';
+    const ton  = localStorage.getItem('wallet_ton_address')  || '';
     setEthAddr(eth);
     setSolAddr(sol);
     setBtcAddr(btc);
     setTronAddr(tron);
+    setTonAddr(ton);
     setHasWallet(!!eth);
     setTgUsername(localStorage.getItem('tg_username')   || '');
     setTgFirstName(localStorage.getItem('tg_first_name') || '');
@@ -226,6 +229,13 @@ export const ProfileScreen: React.FC = () => {
               color="#EF0027"
               address={tronAddr}
               explorerUrl={`https://tronscan.org/#/address/${tronAddr}`}
+            />
+            <AddressRow
+              label="TON / USDT TON"
+              icon="💎"
+              color="#0098EA"
+              address={tonAddr}
+              explorerUrl={tonAddr ? `https://tonscan.org/address/${tonAddr}` : undefined}
             />
           </div>
         </div>

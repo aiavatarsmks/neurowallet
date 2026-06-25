@@ -10,17 +10,20 @@ import { ed25519 } from '@noble/curves/ed25519';
 import bs58 from 'bs58';
 import { derivePath } from 'ed25519-hd-key';
 import { tronAddressFromPrivKey } from './tron-tx';
+import { tonAddressFromPrivKey } from './ton-tx';
 
 export interface CryptoWallet {
   eth:  string;       // Ethereum address (BIP44 m/44'/60'/0'/0/0)
   sol:  string;       // Solana address (Ed25519 pubkey, Base58)
   btc:  string;       // Bitcoin P2PKH address (BIP44 m/44'/0'/0'/0/0)
   tron: string;       // Tron address (BIP44 m/44'/195'/0'/0/0, T...)
+  ton:  string;       // TON address (SLIP-0010 ed25519 m/44'/607'/0'/0/0)
   mnemonic: string;   // 12-word BIP39 phrase
   keystore: string;   // Encrypted ETH keystore JSON (AES-256 + scrypt)
   solXor:  string;    // SOL privkey XOR ETH privkey (hex)
   btcXor:  string;    // BTC privkey XOR ETH privkey (hex)
   tronXor: string;    // TRX privkey XOR ETH privkey (hex)
+  tonXor:  string;    // TON privkey XOR ETH privkey (hex)
 }
 
 // ─── Base58 (used for BTC P2PKH checksum address) ─────────────────────────
@@ -110,7 +113,17 @@ export async function importWalletFromMnemonic(
   }
   const tronXor = Array.from(tronXorArr).map((b) => b.toString(16).padStart(2, '0')).join('');
 
-  return { eth: ethWallet.address, sol, btc, tron, mnemonic: normalized, keystore, solXor, btcXor, tronXor };
+  // TON — SLIP-0010 ed25519 at m/44'/607'/0'/0/0
+  const { key: tonPrivKey } = derivePath("m/44'/607'/0'/0/0", seed.toString('hex'));
+  const tonPrivBytes = tonPrivKey as unknown as Uint8Array;
+  const ton = tonAddressFromPrivKey(tonPrivBytes);
+  const tonXorArr = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) {
+    tonXorArr[i] = tonPrivBytes[i] ^ ethPrivBytes[i];
+  }
+  const tonXor = Array.from(tonXorArr).map((b) => b.toString(16).padStart(2, '0')).join('');
+
+  return { eth: ethWallet.address, sol, btc, tron, ton, mnemonic: normalized, keystore, solXor, btcXor, tronXor, tonXor };
 }
 
 // ─── localStorage helpers ──────────────────────────────────────────────────
@@ -120,10 +133,12 @@ const LS = {
   SOL:      'wallet_sol_address',
   BTC:      'wallet_btc_address',
   TRON:     'wallet_tron_address',
+  TON:      'wallet_ton_address',
   KS:       'wallet_keystore',
   SOL_XOR:  'wallet_sol_xor',
   BTC_XOR:  'wallet_btc_xor',
   TRON_XOR: 'wallet_tron_xor',
+  TON_XOR:  'wallet_ton_xor',
 };
 
 export function saveWalletToStorage(w: CryptoWallet): void {
@@ -132,19 +147,22 @@ export function saveWalletToStorage(w: CryptoWallet): void {
   localStorage.setItem(LS.SOL,      w.sol);
   localStorage.setItem(LS.BTC,      w.btc);
   localStorage.setItem(LS.TRON,     w.tron);
+  localStorage.setItem(LS.TON,      w.ton);
   localStorage.setItem(LS.KS,       w.keystore);
   localStorage.setItem(LS.SOL_XOR,  w.solXor);
   localStorage.setItem(LS.BTC_XOR,  w.btcXor);
   localStorage.setItem(LS.TRON_XOR, w.tronXor);
+  localStorage.setItem(LS.TON_XOR,  w.tonXor);
 }
 
-export function loadAddressesFromStorage(): { eth: string; sol: string; btc: string; tron: string } | null {
+export function loadAddressesFromStorage(): { eth: string; sol: string; btc: string; tron: string; ton: string } | null {
   if (typeof window === 'undefined') return null;
   const eth  = localStorage.getItem(LS.ETH);
   const sol  = localStorage.getItem(LS.SOL);
   const btc  = localStorage.getItem(LS.BTC);
   const tron = localStorage.getItem(LS.TRON);
-  return eth ? { eth, sol: sol ?? '', btc: btc ?? '', tron: tron ?? '' } : null;
+  const ton  = localStorage.getItem(LS.TON);
+  return eth ? { eth, sol: sol ?? '', btc: btc ?? '', tron: tron ?? '', ton: ton ?? '' } : null;
 }
 
 export function hasWallet(): boolean {

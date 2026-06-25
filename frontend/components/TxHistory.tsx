@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 
 interface TxRow {
   id:      string;
-  chain:   'ETH' | 'SOL' | 'BTC' | 'USDT' | 'TRC20';
+  chain:   'ETH' | 'SOL' | 'BTC' | 'USDT' | 'TRC20' | 'TON' | 'USDT_TON';
   type:    'in' | 'out';
   amount:  number;
   address: string;
@@ -12,11 +12,13 @@ interface TxRow {
 }
 
 const CHAIN_META = {
-  ETH:   { icon: 'Ξ', color: '#627EEA', label: 'ETH',      explorer: (h: string) => `https://etherscan.io/tx/${h}` },
-  SOL:   { icon: '◎', color: '#9945FF', label: 'SOL',      explorer: (h: string) => `https://solscan.io/tx/${h}` },
-  BTC:   { icon: '₿', color: '#F7931A', label: 'BTC',      explorer: (h: string) => `https://blockstream.info/tx/${h}` },
-  USDT:  { icon: '₮', color: '#26A17B', label: 'ERC-20',   explorer: (h: string) => `https://etherscan.io/tx/${h}` },
-  TRC20: { icon: '₮', color: '#EF0027', label: 'TRC-20',   explorer: (h: string) => `https://tronscan.org/#/transaction/${h}` },
+  ETH:      { icon: 'Ξ',  color: '#627EEA', label: 'ETH',      explorer: (h: string) => `https://etherscan.io/tx/${h}` },
+  SOL:      { icon: '◎',  color: '#9945FF', label: 'SOL',      explorer: (h: string) => `https://solscan.io/tx/${h}` },
+  BTC:      { icon: '₿',  color: '#F7931A', label: 'BTC',      explorer: (h: string) => `https://blockstream.info/tx/${h}` },
+  USDT:     { icon: '₮',  color: '#26A17B', label: 'ERC-20',   explorer: (h: string) => `https://etherscan.io/tx/${h}` },
+  TRC20:    { icon: '₮',  color: '#EF0027', label: 'TRC-20',   explorer: (h: string) => `https://tronscan.org/#/transaction/${h}` },
+  TON:      { icon: '💎', color: '#0098EA', label: 'TON',      explorer: (h: string) => `https://tonscan.org/tx/${h}` },
+  USDT_TON: { icon: '₮',  color: '#0098EA', label: 'USDT TON', explorer: (h: string) => `https://tonscan.org/tx/${h}` },
 };
 
 function formatDate(iso: string): string {
@@ -75,6 +77,7 @@ export const TxHistory: React.FC<TxHistoryProps> = ({ limit = 15 }) => {
     const sol  = localStorage.getItem('wallet_sol_address');
     const btc  = localStorage.getItem('wallet_btc_address');
     const tron = localStorage.getItem('wallet_tron_address');
+    const ton  = localStorage.getItem('wallet_ton_address');
 
     if (!eth) {
       setNoWallet(true);
@@ -87,6 +90,7 @@ export const TxHistory: React.FC<TxHistoryProps> = ({ limit = 15 }) => {
     if (sol)  params.set('sol',  sol);
     if (btc)  params.set('btc',  btc);
     if (tron) params.set('tron', tron);
+    if (ton)  params.set('ton',  ton);
 
     fetch(`/api/tx-history?${params}`)
       .then((r) => r.json())
@@ -172,8 +176,8 @@ export const TxHistory: React.FC<TxHistoryProps> = ({ limit = 15 }) => {
                 style={{ color: positive ? '#00FF7F' : '#ffffff' }}
               >
                 {positive ? '+' : '–'}{tx.amount.toLocaleString('ru-RU', {
-                  maximumFractionDigits: tx.chain === 'USDT' || tx.chain === 'TRC20' ? 2 : 6,
-                })} {tx.chain === 'TRC20' ? 'USDT' : tx.chain}
+                  maximumFractionDigits: tx.chain === 'USDT' || tx.chain === 'TRC20' || tx.chain === 'USDT_TON' ? 2 : 6,
+                })} {tx.chain === 'TRC20' ? 'USDT' : tx.chain === 'USDT_TON' ? 'USDT' : tx.chain}
               </span>
             </li>
           );
