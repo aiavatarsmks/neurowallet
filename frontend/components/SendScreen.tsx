@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface Contact {
   id: string;
@@ -25,6 +25,14 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState }) => {
   const [selected, setSelected] = useState<Contact | null>(null);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
+  const [contacts, setContacts] = useState<Contact[]>(MOCK_CONTACTS);
+
+  useEffect(() => {
+    // In real wallet mode, hide demo contacts
+    if (typeof window !== 'undefined' && localStorage.getItem('wallet_eth_address')) {
+      setContacts([]);
+    }
+  }, []);
 
   const handleSelectContact = (c: Contact) => {
     setSelected(c);
@@ -81,8 +89,10 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState }) => {
       {/* Contacts */}
       {step === 'contacts' && (
         <div className="flex flex-col gap-3">
-          <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider">Последние контакты</p>
-          {MOCK_CONTACTS.map((c) => (
+          {contacts.length > 0 && (
+            <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider">Последние контакты</p>
+          )}
+          {contacts.map((c) => (
             <button
               key={c.id}
               onClick={() => handleSelectContact(c)}

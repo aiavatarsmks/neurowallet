@@ -219,11 +219,11 @@ export default function OnboardingWalletPage() {
               {words.map((word, i) => (
                 <div
                   key={i}
-                  className="flex items-center gap-2 rounded-xl px-3 py-2"
+                  className="flex items-center gap-1.5 rounded-xl px-2 py-1.5"
                   style={{ background: '#080C09', border: '1px solid rgba(0,255,127,0.1)' }}
                 >
-                  <span className="text-[#3A6045] text-[10px] w-4 flex-shrink-0">{i + 1}</span>
-                  <span className="text-white text-sm font-mono">{word}</span>
+                  <span className="text-[#3A6045] text-[9px] w-3 flex-shrink-0 leading-none">{i + 1}</span>
+                  <span className="text-white text-[11px] font-mono leading-tight break-all">{word}</span>
                 </div>
               ))}
             </div>

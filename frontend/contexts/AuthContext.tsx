@@ -116,7 +116,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw new Error(translateError(error.message));
+    if (error) {
+      // If email exists but wasn't confirmed (created before mailer_autoconfirm was enabled),
+      // try signUp — with mailer_autoconfirm:true it returns a session immediately.
+      if (error.message.includes('Email not confirmed')) {
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { name: email.split('@')[0] } },
+        });
+        if (!signUpError && signUpData.session && signUpData.user) {
+          setState(s => ({ ...s, user: toUser(signUpData.user!), isLoading: false }));
+          return;
+        }
+      }
+      throw new Error(translateError(error.message));
+    }
   };
 
   const signInWithTelegram = async (initData: string) => {
