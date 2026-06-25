@@ -139,13 +139,35 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     session = signUpData.session;
   }
 
+  // 5. Upsert Telegram profile into public.profiles (uses user JWT — no service role needed)
+  try {
+    const userClient = createClient(supabaseUrl, supabaseKey, {
+      global: { headers: { Authorization: `Bearer ${session.access_token}` } },
+    });
+    const tgFull = tgUser as Record<string, unknown>;
+    await userClient.from('profiles').upsert(
+      {
+        id:                  session.user.id,
+        telegram_id:         tgUser.id,
+        telegram_username:   tgUser.username   ?? null,
+        telegram_first_name: tgUser.first_name ?? null,
+        telegram_last_name:  (tgFull.last_name  as string) ?? null,
+        telegram_photo_url:  (tgFull.photo_url  as string) ?? null,
+      },
+      { onConflict: 'id' },
+    );
+  } catch (err) {
+    // Profile upsert is best-effort — don't fail the auth response
+    console.warn('[tg-auth] profile upsert skipped:', err);
+  }
+
   return res.status(200).json({
     access_token:  session.access_token,
     refresh_token: session.refresh_token,
     user: {
-      id:         session.user.id,
-      email:      session.user.email,
-      name:       displayName,
+      id:          session.user.id,
+      email:       session.user.email,
+      name:        displayName,
       telegram_id: tgUser.id,
     },
   });
