@@ -56,8 +56,8 @@ export default function WalletPage() {
   const [avatarState, setAvatarState] = useState<'idle' | 'talking' | 'thinking'>('idle');
   const [chatHasMessages, setChatHasMessages] = useState(false);
   const [insightDismissed, setInsightDismissed] = useState(false);
-  const [receiveCoin, setReceiveCoin] = useState<'BTC' | 'ETH' | 'SOL' | 'USDT'>('ETH');
-  const [cryptoSendCoin, setCryptoSendCoin] = useState<'BTC' | 'ETH' | 'SOL' | 'USDT'>('ETH');
+  const [receiveCoin, setReceiveCoin] = useState<'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TON' | 'TRX'>('ETH');
+  const [cryptoSendCoin, setCryptoSendCoin] = useState<'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TON' | 'TRC20' | 'USDT_TON'>('ETH');
 
   useEffect(() => {
     if (!isLoading && !user && !isDemo) {
@@ -90,12 +90,20 @@ export default function WalletPage() {
     : 'home';
 
   const handleSendCrypto = (symbol: string) => {
-    setCryptoSendCoin(symbol as 'BTC' | 'ETH' | 'SOL' | 'USDT');
+    const sendMap: Record<string, string> = { 'USDT_TRC': 'TRC20' };
+    const coin = (sendMap[symbol] ?? symbol) as 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TON' | 'TRC20' | 'USDT_TON';
+    setCryptoSendCoin(coin);
     setActiveTab('crypto-send');
   };
 
   const handleReceiveCrypto = (symbol: string) => {
-    setReceiveCoin(symbol as 'BTC' | 'ETH' | 'SOL' | 'USDT');
+    const map: Record<string, string> = {
+      'USDT_TRC': 'TRX',
+      'USDT_TON': 'TON',
+      'USDT': 'USDT',
+    };
+    const net = (map[symbol] ?? symbol) as 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TON' | 'TRX';
+    setReceiveCoin(net);
     setActiveTab('receive');
   };
 

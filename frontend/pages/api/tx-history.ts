@@ -13,7 +13,7 @@ const BLOCKSTREAM    = 'https://blockstream.info/api';
 
 interface TxRow {
   id:       string;
-  chain:    'ETH' | 'SOL' | 'BTC' | 'USDT' | 'TRC20' | 'TON';
+  chain:    'ETH' | 'SOL' | 'BTC' | 'USDT' | 'TRC20' | 'TON' | 'USDT_TON';
   type:     'in' | 'out';
   amount:   number;   // in native units
   address:  string;   // counterparty
