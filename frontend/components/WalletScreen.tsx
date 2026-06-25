@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { fetchRealBalances, fetchPrices, WalletBalances } from '@/lib/crypto/balances';
+import { fetchRealBalances, WalletBalances } from '@/lib/crypto/balances';
 
 // ─── Demo data (shown when no real wallet is set up) ──────────────────────
 
 const DEMO_ASSETS = [
-  { symbol: 'BTC',      name: 'Bitcoin',     amount: 0.042, valueEUR: 2310, change24h: +4.2, color: '#F7931A', bgColor: 'rgba(247,147,26,0.13)',  icon: '₿'  },
-  { symbol: 'ETH',      name: 'Ethereum',    amount: 1.24,  valueEUR: 2542, change24h: +1.8, color: '#627EEA', bgColor: 'rgba(98,126,234,0.13)',  icon: 'Ξ'  },
-  { symbol: 'SOL',      name: 'Solana',      amount: 12.5,  valueEUR: 1500, change24h: +3.4, color: '#9945FF', bgColor: 'rgba(153,69,255,0.13)',  icon: '◎'  },
-  { symbol: 'USDT',     name: 'Tether',      amount: 110,   valueEUR: 110,  change24h: 0,    color: '#26A17B', bgColor: 'rgba(38,161,123,0.13)',  icon: '₮'  },
-  { symbol: 'USDT_TRC', name: 'USDT TRC-20', amount: 0,     valueEUR: 0,    change24h: 0,    color: '#EF0027', bgColor: 'rgba(239,0,39,0.13)',   icon: '₮'  },
-  { symbol: 'TON',      name: 'TON',         amount: 0,     valueEUR: 0,    change24h: 0,    color: '#0098EA', bgColor: 'rgba(0,152,234,0.13)',   icon: '💎' },
-  { symbol: 'USDT_TON', name: 'USDT TON',    amount: 0,     valueEUR: 0,    change24h: 0,    color: '#0098EA', bgColor: 'rgba(0,152,234,0.10)',   icon: '₮'  },
+  { symbol: 'BTC',      name: 'Bitcoin',      amount: 0.042, valueEUR: 2310, change24h: +4.2, color: '#F7931A', bgColor: 'rgba(247,147,26,0.13)',  icon: '₿'  },
+  { symbol: 'ETH',      name: 'Ethereum',     amount: 1.24,  valueEUR: 2542, change24h: +1.8, color: '#627EEA', bgColor: 'rgba(98,126,234,0.13)',   icon: 'Ξ'  },
+  { symbol: 'SOL',      name: 'Solana',       amount: 12.5,  valueEUR: 1500, change24h: +3.4, color: '#9945FF', bgColor: 'rgba(153,69,255,0.13)',   icon: '◎' },
+  { symbol: 'USDT',     name: 'USDT ERC-20',  amount: 110,   valueEUR: 110,  change24h: 0,    color: '#26A17B', bgColor: 'rgba(38,161,123,0.13)',   icon: '₮'  },
+  { symbol: 'USDT_TRC', name: 'USDT TRC-20',  amount: 0,     valueEUR: 0,    change24h: 0,    color: '#EF0027', bgColor: 'rgba(239,0,39,0.13)',     icon: '₮'  },
+  { symbol: 'TON',      name: 'TON',           amount: 0,     valueEUR: 0,    change24h: 0,    color: '#0098EA', bgColor: 'rgba(0,152,234,0.13)',    icon: '💎' },
+  { symbol: 'USDT_TON', name: 'USDT TON',      amount: 0,     valueEUR: 0,    change24h: 0,    color: '#0098EA', bgColor: 'rgba(0,152,234,0.10)',    icon: '₮'  },
 ];
 
 const CHART_BARS = [35, 48, 40, 58, 44, 66, 60, 72, 55, 78, 68, 82, 88, 78, 92];
@@ -47,7 +47,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
     const btc  = localStorage.getItem('wallet_btc_address')  || '';
     const tron = localStorage.getItem('wallet_tron_address') || '';
     const ton  = localStorage.getItem('wallet_ton_address')  || '';
-    if (!eth) return; // demo mode
+    if (!eth) return; // demo mode — keep demo assets
 
     setIsReal(true);
     setLoading(true);
@@ -56,21 +56,23 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
       setAssets([
         { symbol: 'BTC',      name: 'Bitcoin',     amount: b.btc,     valueEUR: b.btc     * b.btcEur, change24h: 0, color: '#F7931A', bgColor: 'rgba(247,147,26,0.13)',  icon: '₿'  },
         { symbol: 'ETH',      name: 'Ethereum',    amount: b.eth,     valueEUR: b.eth     * b.ethEur, change24h: 0, color: '#627EEA', bgColor: 'rgba(98,126,234,0.13)',  icon: 'Ξ'  },
-        { symbol: 'SOL',      name: 'Solana',      amount: b.sol,     valueEUR: b.sol     * b.solEur, change24h: 0, color: '#9945FF', bgColor: 'rgba(153,69,255,0.13)',  icon: '◎'  },
+        { symbol: 'SOL',      name: 'Solana',      amount: b.sol,     valueEUR: b.sol     * b.solEur, change24h: 0, color: '#9945FF', bgColor: 'rgba(153,69,255,0.13)',  icon: '◎' },
         { symbol: 'USDT',     name: 'USDT ERC-20', amount: b.usdt,    valueEUR: b.usdt,              change24h: 0, color: '#26A17B', bgColor: 'rgba(38,161,123,0.13)',  icon: '₮'  },
-        { symbol: 'USDT_TRC', name: 'USDT TRC-20', amount: b.usdtTrc, valueEUR: b.usdtTrc,           change24h: 0, color: '#EF0027', bgColor: 'rgba(239,0,39,0.13)',   icon: '₮'  },
-        { symbol: 'TON',      name: 'TON',         amount: b.ton,     valueEUR: b.ton     * b.tonEur, change24h: 0, color: '#0098EA', bgColor: 'rgba(0,152,234,0.13)',  icon: '💎' },
-        { symbol: 'USDT_TON', name: 'USDT TON',    amount: b.usdtTon, valueEUR: b.usdtTon,           change24h: 0, color: '#0098EA', bgColor: 'rgba(0,152,234,0.10)',  icon: '₮'  },
+        { symbol: 'USDT_TRC', name: 'USDT TRC-20', amount: b.usdtTrc, valueEUR: b.usdtTrc,           change24h: 0, color: '#EF0027', bgColor: 'rgba(239,0,39,0.13)',    icon: '₮'  },
+        { symbol: 'TON',      name: 'TON',          amount: b.ton,     valueEUR: b.ton     * b.tonEur, change24h: 0, color: '#0098EA', bgColor: 'rgba(0,152,234,0.13)', icon: '💎' },
+        { symbol: 'USDT_TON', name: 'USDT TON',     amount: b.usdtTon, valueEUR: b.usdtTon,           change24h: 0, color: '#0098EA', bgColor: 'rgba(0,152,234,0.10)', icon: '₮'  },
       ]);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
 
+  // In real mode: always show the 4 base coins; show TON/USDT_TRC/USDT_TON only if balance > 0
+  const BASE_SYMBOLS = new Set(['BTC', 'ETH', 'SOL', 'USDT']);
   const visibleAssets = isReal
-    ? assets.filter((a) => a.amount > 0 || ['ETH', 'BTC', 'SOL', 'USDT'].includes(a.symbol))
+    ? assets.filter((a) => BASE_SYMBOLS.has(a.symbol) || a.amount > 0)
     : assets;
 
-  const cryptoTotal = assets.reduce((s, a) => s + a.valueEUR, 0);
+  const cryptoTotal = visibleAssets.reduce((s, a) => s + a.valueEUR, 0);
   const FIAT        = isReal ? 0 : 2847.50;
 
   return (
@@ -163,19 +165,21 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
                 <div className="flex-1 min-w-0">
                   <p className="text-white text-sm font-medium">{asset.name}</p>
                   <p className="text-[#3A6045] text-xs">
-                    {loading ? '...' : `${asset.amount.toLocaleString('ru-RU', { maximumFractionDigits: 6 })} ${asset.symbol}`}
+                    {loading ? '...' : `${asset.amount.toLocaleString('ru-RU', { maximumFractionDigits: 6 })} ${asset.symbol.replace('_TRC', '').replace('_TON', '')}`}
                   </p>
                 </div>
                 <div className="text-right flex-shrink-0">
                   <p className="text-white text-sm font-semibold">
                     {loading ? '—' : `€${asset.valueEUR.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}`}
                   </p>
-                  <p
-                    className="text-xs font-semibold"
-                    style={{ color: asset.change24h > 0 ? '#00FF7F' : asset.change24h < 0 ? '#FF5252' : '#3A6045' }}
-                  >
-                    {asset.change24h > 0 ? '+' : ''}{asset.change24h}% 24ч
-                  </p>
+                  {asset.change24h !== 0 && (
+                    <p
+                      className="text-xs font-semibold"
+                      style={{ color: asset.change24h > 0 ? '#00FF7F' : '#FF5252' }}
+                    >
+                      {asset.change24h > 0 ? '+' : ''}{asset.change24h}% 24ч
+                    </p>
+                  )}
                 </div>
               </div>
 

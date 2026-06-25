@@ -77,6 +77,11 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
   const [copied, setCopied] = useState(false);
   const [addresses, setAddresses] = useState(FALLBACK_ADDRESSES);
 
+  // Sync when parent changes initialNetwork (e.g. user taps "Получить" on different coin)
+  useEffect(() => {
+    if (initialNetwork) setNetwork(initialNetwork);
+  }, [initialNetwork]);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const eth  = localStorage.getItem('wallet_eth_address');
