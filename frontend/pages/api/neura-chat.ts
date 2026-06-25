@@ -21,6 +21,31 @@ interface ChatMessage {
   content: string;
 }
 
+interface WalletContext {
+  eth?: number; btc?: number; sol?: number; usdt?: number; usdtTrc?: number;
+  ethEur?: number; btcEur?: number; solEur?: number;
+  ethAddr?: string; btcAddr?: string; solAddr?: string; tronAddr?: string;
+}
+
+function buildSystemPrompt(ctx?: WalletContext): string {
+  let prompt = SYSTEM_PROMPT;
+  if (ctx && (ctx.eth !== undefined || ctx.btc !== undefined)) {
+    const lines: string[] = ['\n\nТекущие данные кошелька пользователя:'];
+    if (ctx.btc  !== undefined) lines.push(`• BTC: ${ctx.btc.toFixed(6)} BTC (~€${((ctx.btc || 0) * (ctx.btcEur || 0)).toFixed(2)})`);
+    if (ctx.eth  !== undefined) lines.push(`• ETH: ${ctx.eth.toFixed(4)} ETH (~€${((ctx.eth || 0) * (ctx.ethEur || 0)).toFixed(2)})`);
+    if (ctx.sol  !== undefined) lines.push(`• SOL: ${ctx.sol.toFixed(4)} SOL (~€${((ctx.sol || 0) * (ctx.solEur || 0)).toFixed(2)})`);
+    if (ctx.usdt    !== undefined) lines.push(`• USDT (ERC-20): ${ctx.usdt.toFixed(2)} USDT`);
+    if (ctx.usdtTrc !== undefined) lines.push(`• USDT (TRC-20): ${ctx.usdtTrc.toFixed(2)} USDT`);
+    if (ctx.ethAddr)  lines.push(`• ETH/USDT адрес: ${ctx.ethAddr}`);
+    if (ctx.btcAddr)  lines.push(`• BTC адрес: ${ctx.btcAddr}`);
+    if (ctx.solAddr)  lines.push(`• SOL адрес: ${ctx.solAddr}`);
+    if (ctx.tronAddr) lines.push(`• Tron адрес: ${ctx.tronAddr}`);
+    lines.push('Используй эти данные, чтобы давать конкретные советы по портфелю пользователя.');
+    prompt += lines.join('\n');
+  }
+  return prompt;
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -32,8 +57,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: 'AI временно не настроен на сервере (нет ключа).' });
   }
 
-  const body = req.body as { messages?: ChatMessage[] };
+  const body = req.body as { messages?: ChatMessage[]; walletContext?: WalletContext };
   const history = Array.isArray(body.messages) ? body.messages.slice(-12) : [];
+  const systemPrompt = buildSystemPrompt(body.walletContext);
 
   if (history.length === 0) {
     return res.status(400).json({ error: 'Нет сообщений.' });
@@ -50,7 +76,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       },
       body: JSON.stringify({
         model: MODEL,
-        messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...history],
+        messages: [{ role: 'system', content: systemPrompt }, ...history],
         max_tokens: 500,
         temperature: 0.7,
       }),

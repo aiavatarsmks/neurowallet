@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { fetchRealBalances, WalletBalances } from '@/lib/crypto/balances';
 
 interface Message {
   id: string;
@@ -23,6 +24,7 @@ const FALLBACK_RESPONSE =
 
 async function getResponse(
   history: { from: 'neura' | 'user'; text: string }[],
+  walletContext?: WalletBalances & { ethAddr?: string; btcAddr?: string; solAddr?: string; tronAddr?: string },
 ): Promise<string> {
   try {
     const res = await fetch('/api/neura-chat', {
@@ -33,6 +35,7 @@ async function getResponse(
           role: m.from === 'user' ? 'user' : 'assistant',
           content: m.text,
         })),
+        walletContext,
       }),
     });
     const data = await res.json();
@@ -62,6 +65,22 @@ export const NeuraChat: React.FC<NeuraChatProps> = ({ onAvatarState, avatarHeigh
   const [isTyping, setIsTyping] = useState(false);
   const [hasUserMessages, setHasUserMessages] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const walletCtxRef = useRef<(WalletBalances & { ethAddr?: string; btcAddr?: string; solAddr?: string; tronAddr?: string }) | undefined>(undefined);
+
+  // Load wallet balances once for Neira context
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const ethAddr  = localStorage.getItem('wallet_eth_address')  || '';
+    const solAddr  = localStorage.getItem('wallet_sol_address')  || '';
+    const btcAddr  = localStorage.getItem('wallet_btc_address')  || '';
+    const tronAddr = localStorage.getItem('wallet_tron_address') || '';
+    if (!ethAddr) return;
+    fetchRealBalances(ethAddr, solAddr, btcAddr, tronAddr)
+      .then((b) => {
+        walletCtxRef.current = { ...b, ethAddr, solAddr, btcAddr, tronAddr };
+      })
+      .catch(() => {/* silent */});
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -80,7 +99,7 @@ export const NeuraChat: React.FC<NeuraChatProps> = ({ onAvatarState, avatarHeigh
     setIsTyping(true);
     onAvatarState?.('thinking');
 
-    getResponse(historyForApi).then((response) => {
+    getResponse(historyForApi, walletCtxRef.current).then((response) => {
       const neuraMsg: Message = { id: (Date.now() + 1).toString(), from: 'neura', text: response, timestamp: now() };
       setMessages((m) => [...m, neuraMsg]);
       setIsTyping(false);

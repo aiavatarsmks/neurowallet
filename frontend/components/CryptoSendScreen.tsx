@@ -130,6 +130,19 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       setStep('done');
       onAvatarState?.('talking');
       setTimeout(() => onAvatarState?.('idle'), 4000);
+
+      // Push-уведомление в Telegram (если пользователь залогинен через TG)
+      const tgId = typeof window !== 'undefined' ? localStorage.getItem('tg_user_id') : null;
+      if (tgId) {
+        const coinLabel = coin === 'TRC20' ? 'USDT TRC-20' : coin === 'USDT' ? 'USDT ERC-20' : coin;
+        const shortAddr = address.trim().slice(0, 6) + '...' + address.trim().slice(-4);
+        const msg = `✅ <b>Транзакция отправлена</b>\n\n💸 ${amountNum} ${coinLabel}\n📤 На адрес: <code>${shortAddr}</code>\n🔗 TX: <code>${hash.slice(0, 16)}...</code>`;
+        fetch('/api/tg-notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ telegramId: parseInt(tgId, 10), message: msg }),
+        }).catch(() => {/* silent — уведомление не критично */});
+      }
     } catch (e: unknown) {
       const msg = (e instanceof Error ? e.message : String(e)).toLowerCase();
       if (msg.includes('no_keystore')) {
