@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Contact {
   id: string;
@@ -8,6 +9,11 @@ interface Contact {
   lastAmount?: string;
 }
 
+const DEMO_CONTACTS: Contact[] = [
+  { id: '1', name: 'John Doe',   initials: 'JD', trusted: true,  lastAmount: '€150' },
+  { id: '2', name: 'Alice Kim',  initials: 'AK', trusted: true,  lastAmount: '€320' },
+  { id: '3', name: 'Mike Ross',  initials: 'MR', trusted: false },
+];
 
 type SendStep = 'contacts' | 'amount' | 'confirm' | 'done';
 
@@ -16,11 +22,12 @@ interface SendScreenProps {
 }
 
 export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState }) => {
+  const { isDemo } = useAuth();
   const [step, setStep] = useState<SendStep>('contacts');
   const [selected, setSelected] = useState<Contact | null>(null);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
-  const [contacts] = useState<Contact[]>([]);
+  const contacts = isDemo ? DEMO_CONTACTS : [];
 
   const handleSelectContact = (c: Contact) => {
     setSelected(c);

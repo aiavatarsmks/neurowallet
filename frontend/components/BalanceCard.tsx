@@ -2,6 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { fetchRealBalances, WalletBalances } from '@/lib/crypto/balances';
 
+// ── Demo data (shown in demo mode only) ──────────────────────────────────────
+const DEMO_FIAT_TOTAL  = 5157.00;
+const DEMO_CRYPTO_TOTAL = 2652.50;
+const DEMO_TOTAL        = DEMO_FIAT_TOTAL + DEMO_CRYPTO_TOTAL;
+const DEMO_CRYPTO_ROWS  = [
+  { symbol: 'BTC',  valueEUR: 2310, change: +4.2 },
+  { symbol: 'ETH',  valueEUR: 2542, change: +1.8 },  // wait, these don't add to 2652 but keeping original demo values
+  { symbol: 'USDT', valueEUR: 110,  change: 0    },
+];
+const DEMO_FIAT_ROWS = [
+  { label: 'Основной счёт', valueEUR: 3847.50 },
+  { label: 'Накопительный', valueEUR: 1309.50 },
+];
 
 type View = 'total' | 'fiat' | 'crypto';
 
@@ -25,7 +38,7 @@ function calcCryptoTotal(b: WalletBalances): number {
 }
 
 export const BalanceCard: React.FC = () => {
-  const { user } = useAuth();
+  const { user, isDemo } = useAuth();
   const [view,         setView]         = useState<View>('total');
   const [isReal,       setIsReal]       = useState(false);
   const [loading,      setLoading]      = useState(false);
@@ -57,25 +70,33 @@ export const BalanceCard: React.FC = () => {
 
   // ── Derived values ────────────────────────────────────────────────────────────
   const cryptoTotal = balances ? calcCryptoTotal(balances) : 0;
-  const totalBalance = cryptoTotal;
+
+  // In demo mode we override all values with fake data
+  const activeTotal  = isDemo ? DEMO_TOTAL        : cryptoTotal;
+  const activeFiat   = isDemo ? DEMO_FIAT_TOTAL   : 0;
+  const activeCrypto = isDemo ? DEMO_CRYPTO_TOTAL : cryptoTotal;
 
   const balance =
-    view === 'total' ? totalBalance :
-    view === 'fiat'  ? 0 :
-    cryptoTotal;
+    view === 'total' ? activeTotal  :
+    view === 'fiat'  ? activeFiat   :
+    activeCrypto;
 
   const label =
-    view === 'total' ? 'Крипто-портфель' :
+    view === 'total' ? (isDemo ? 'Общий баланс'   : 'Крипто-портфель') :
     view === 'fiat'  ? 'Фиат' :
     'Крипто-портфель';
 
-  const cryptoRows = balances
-    ? [
-        { symbol: 'BTC',  valueEUR: balances.btc * balances.btcEur, change: 0 },
-        { symbol: 'ETH',  valueEUR: balances.eth * balances.ethEur, change: 0 },
-        { symbol: 'USDT', valueEUR: balances.usdt,                  change: 0 },
-      ]
-    : [];
+  const cryptoRows = isDemo
+    ? DEMO_CRYPTO_ROWS
+    : balances
+      ? [
+          { symbol: 'BTC',  valueEUR: balances.btc * balances.btcEur, change: 0 },
+          { symbol: 'ETH',  valueEUR: balances.eth * balances.ethEur, change: 0 },
+          { symbol: 'USDT', valueEUR: balances.usdt,                  change: 0 },
+        ]
+      : [];
+
+  const visibleViews: View[] = isDemo ? ['total', 'fiat', 'crypto'] : ['total', 'crypto'];
 
   return (
     <div className="px-6 pt-1 pb-4">
@@ -85,7 +106,7 @@ export const BalanceCard: React.FC = () => {
 
       {/* View switcher */}
       <div className="flex gap-1 mb-3">
-        {(['total', 'crypto'] as View[]).map((v) => (
+        {visibleViews.map((v) => (
           <button
             key={v}
             onClick={() => setView(v)}
@@ -118,8 +139,8 @@ export const BalanceCard: React.FC = () => {
         </p>
       )}
 
-      {/* Total view — crypto mini row */}
-      {view === 'total' && !loading && (
+      {/* Total / Crypto view — asset mini row */}
+      {(view === 'total' || view === 'crypto') && !loading && (
         <div className="flex gap-3 mt-3 flex-wrap">
           {cryptoRows.map((a) => (
             <div key={a.symbol} className="flex items-center gap-1.5">
@@ -138,13 +159,24 @@ export const BalanceCard: React.FC = () => {
         </div>
       )}
 
-      {/* Fiat — coming soon */}
+      {/* Fiat view */}
       {view === 'fiat' && (
-        <p className="text-[#3A6045] text-xs mt-1.5">Фиат-счёт — скоро</p>
+        isDemo ? (
+          <div className="flex gap-4 mt-3">
+            {DEMO_FIAT_ROWS.map((r) => (
+              <div key={r.label} className="flex flex-col gap-0.5">
+                <span className="text-[#3A6045] text-[10px]">{r.label}</span>
+                <span className="text-white text-xs font-semibold">€{fmt(r.valueEUR)}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[#3A6045] text-xs mt-1.5">Фиат-счёт — скоро</p>
+        )
       )}
 
-      {/* No wallet yet */}
-      {view !== 'fiat' && !isReal && !loading && (
+      {/* No wallet yet (real mode only) */}
+      {!isDemo && view !== 'fiat' && !isReal && !loading && (
         <p className="text-[#3A6045] text-xs mt-1.5">Создайте кошелёк, чтобы увидеть баланс</p>
       )}
     </div>

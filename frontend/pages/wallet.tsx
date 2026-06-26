@@ -191,6 +191,26 @@ const [receiveCoin, setReceiveCoin] = useState<'BTC' | 'ETH' | 'SOL' | 'USDT' | 
             onReceive={() => setActiveTab('receive')}
           />
 
+          {/* Нейра инсайт — только в демо-режиме */}
+          {isDemo && (
+            <div
+              className="mx-6 rounded-2xl p-4 flex gap-3 items-start"
+              style={{ background: 'rgba(0,255,127,0.06)', border: '1px solid rgba(0,255,127,0.15)' }}
+            >
+              <div
+                className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
+                style={{ background: 'rgba(0,255,127,0.12)' }}
+              >
+                <span className="text-xs">✨</span>
+              </div>
+              <div>
+                <p className="text-[#00FF7F] text-xs font-semibold mb-0.5">Нейра</p>
+                <p className="text-white text-sm leading-relaxed">
+                  BTC вырос на <span style={{ color: '#00FF7F' }}>+4.2%</span> сегодня. Ваш портфель в плюсе. Рекомендую зафиксировать часть прибыли.
+                </p>
+              </div>
+            </div>
+          )}
 
           <section className="px-6">
             <div className="flex items-center justify-between mb-2">
