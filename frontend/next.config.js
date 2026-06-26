@@ -38,12 +38,21 @@ const nextConfig = {
   async headers() {
     return [
       {
-        source: '/(.*)',
+        // HTML pages — never cache (Telegram Mini App WebView caches aggressively)
+        source: '/((?!_next/static|_next/image|favicon.ico).*)',
         headers: [
           { key: 'Content-Security-Policy', value: csp },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate' },
+        ],
+      },
+      {
+        // Static JS/CSS assets — long cache (they're content-hashed by Next.js)
+        source: '/_next/static/(.*)',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
         ],
       },
     ];
