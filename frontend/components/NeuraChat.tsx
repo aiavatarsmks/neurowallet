@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { fetchRealBalances, WalletBalances } from '@/lib/crypto/balances';
+import { supabase } from '@/lib/supabase';
 
 interface Message {
   id: string;
@@ -27,9 +28,16 @@ async function getResponse(
   walletContext?: WalletBalances & { ethAddr?: string; btcAddr?: string; solAddr?: string; tronAddr?: string },
 ): Promise<string> {
   try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) return 'Войди в аккаунт, чтобы Нейра могла безопасно отвечать по твоему кошельку.';
+
     const res = await fetch('/api/neura-chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify({
         messages: history.map((m) => ({
           role: m.from === 'user' ? 'user' : 'assistant',

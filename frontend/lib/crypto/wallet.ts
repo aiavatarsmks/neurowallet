@@ -11,6 +11,7 @@ import bs58 from 'bs58';
 import { derivePath } from 'ed25519-hd-key';
 import { tronAddressFromPrivKey } from './tron-tx';
 import { tonAddressFromPrivKey } from './ton-tx';
+import { encryptBytes } from './aes';
 
 export interface CryptoWallet {
   eth:  string;       // Ethereum address (BIP44 m/44'/60'/0'/0/0)
@@ -19,11 +20,11 @@ export interface CryptoWallet {
   tron: string;       // Tron address (BIP44 m/44'/195'/0'/0/0, T...)
   ton:  string;       // TON address (SLIP-0010 ed25519 m/44'/607'/0'/0/0)
   mnemonic: string;   // 12-word BIP39 phrase
-  keystore: string;   // Encrypted ETH keystore JSON (AES-256 + scrypt)
-  solXor:  string;    // SOL privkey XOR ETH privkey (hex)
-  btcXor:  string;    // BTC privkey XOR ETH privkey (hex)
-  tronXor: string;    // TRX privkey XOR ETH privkey (hex)
-  tonXor:  string;    // TON privkey XOR ETH privkey (hex)
+  keystore: string;   // Encrypted ETH keystore JSON (AES-256 + scrypt N=131072)
+  solEnc:  string;    // SOL privkey encrypted with AES-GCM + PBKDF2 (base64)
+  btcEnc:  string;    // BTC privkey encrypted with AES-GCM + PBKDF2 (base64)
+  tronEnc: string;    // TRX privkey encrypted with AES-GCM + PBKDF2 (base64)
+  tonEnc:  string;    // TON privkey encrypted with AES-GCM + PBKDF2 (base64)
 }
 
 // ─── Base58 (used for BTC P2PKH checksum address) ─────────────────────────
@@ -86,44 +87,33 @@ export async function importWalletFromMnemonic(
     { scrypt: { N: 131072 } },
   );
 
-  // Store SOL and BTC private keys as XOR with ETH private key.
-  // Neither key is recoverable from the XOR blob alone — password required to unlock ETH key first.
-  const ethPrivBytes = ethers.getBytes(ethWallet.privateKey); // Uint8Array(32)
+  // Encrypt each chain's private key independently with AES-GCM + PBKDF2.
+  // Each chain has its own ciphertext — compromising one key does NOT expose others.
+  const solPrivBytes  = solPrivKey as unknown as Uint8Array;
+  const btcPrivBytes  = ethers.getBytes(btcNode.privateKey);
 
-  const solXorArr = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) {
-    solXorArr[i] = (solPrivKey as unknown as Uint8Array)[i] ^ ethPrivBytes[i];
-  }
-  const solXor = Array.from(solXorArr).map((b) => b.toString(16).padStart(2, '0')).join('');
-
-  const btcPrivBytes = ethers.getBytes(btcNode.privateKey); // Uint8Array(32)
-  const btcXorArr = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) {
-    btcXorArr[i] = btcPrivBytes[i] ^ ethPrivBytes[i];
-  }
-  const btcXor = Array.from(btcXorArr).map((b) => b.toString(16).padStart(2, '0')).join('');
+  const solEnc  = await encryptBytes(solPrivBytes,  password);
+  const btcEnc  = await encryptBytes(btcPrivBytes,  password);
 
   // TRX — BIP44 m/44'/195'/0'/0/0 (secp256k1, same curve as ETH/BTC)
-  const tronNode     = ethers.HDNodeWallet.fromPhrase(normalized, '', "m/44'/195'/0'/0/0");
+  const tronNode      = ethers.HDNodeWallet.fromPhrase(normalized, '', "m/44'/195'/0'/0/0");
   const tronPrivBytes = ethers.getBytes(tronNode.privateKey);
-  const tron = tronAddressFromPrivKey(tronPrivBytes);
-  const tronXorArr = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) {
-    tronXorArr[i] = tronPrivBytes[i] ^ ethPrivBytes[i];
-  }
-  const tronXor = Array.from(tronXorArr).map((b) => b.toString(16).padStart(2, '0')).join('');
+  const tron          = tronAddressFromPrivKey(tronPrivBytes);
+  const tronEnc       = await encryptBytes(tronPrivBytes, password);
 
   // TON — SLIP-0010 ed25519 at m/44'/607'/0'/0/0
   const { key: tonPrivKey } = derivePath("m/44'/607'/0'/0/0", seed.toString('hex'));
-  const tonPrivBytes = tonPrivKey as unknown as Uint8Array;
-  const ton = tonAddressFromPrivKey(tonPrivBytes);
-  const tonXorArr = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) {
-    tonXorArr[i] = tonPrivBytes[i] ^ ethPrivBytes[i];
-  }
-  const tonXor = Array.from(tonXorArr).map((b) => b.toString(16).padStart(2, '0')).join('');
+  const tonPrivBytes        = tonPrivKey as unknown as Uint8Array;
+  const ton                 = tonAddressFromPrivKey(tonPrivBytes);
+  const tonEnc              = await encryptBytes(tonPrivBytes, password);
 
-  return { eth: ethWallet.address, sol, btc, tron, ton, mnemonic: normalized, keystore, solXor, btcXor, tronXor, tonXor };
+  // Zero out all in-memory private key buffers before returning
+  solPrivBytes.fill(0);
+  btcPrivBytes.fill(0);
+  tronPrivBytes.fill(0);
+  tonPrivBytes.fill(0);
+
+  return { eth: ethWallet.address, sol, btc, tron, ton, mnemonic: normalized, keystore, solEnc, btcEnc, tronEnc, tonEnc };
 }
 
 // ─── localStorage helpers ──────────────────────────────────────────────────
@@ -135,10 +125,10 @@ const LS = {
   TRON:     'wallet_tron_address',
   TON:      'wallet_ton_address',
   KS:       'wallet_keystore',
-  SOL_XOR:  'wallet_sol_xor',
-  BTC_XOR:  'wallet_btc_xor',
-  TRON_XOR: 'wallet_tron_xor',
-  TON_XOR:  'wallet_ton_xor',
+  SOL_ENC:  'wallet_sol_enc',
+  BTC_ENC:  'wallet_btc_enc',
+  TRON_ENC: 'wallet_tron_enc',
+  TON_ENC:  'wallet_ton_enc',
 };
 
 export function saveWalletToStorage(w: CryptoWallet): void {
@@ -149,10 +139,10 @@ export function saveWalletToStorage(w: CryptoWallet): void {
   localStorage.setItem(LS.TRON,     w.tron);
   localStorage.setItem(LS.TON,      w.ton);
   localStorage.setItem(LS.KS,       w.keystore);
-  localStorage.setItem(LS.SOL_XOR,  w.solXor);
-  localStorage.setItem(LS.BTC_XOR,  w.btcXor);
-  localStorage.setItem(LS.TRON_XOR, w.tronXor);
-  localStorage.setItem(LS.TON_XOR,  w.tonXor);
+  localStorage.setItem(LS.SOL_ENC,  w.solEnc);
+  localStorage.setItem(LS.BTC_ENC,  w.btcEnc);
+  localStorage.setItem(LS.TRON_ENC, w.tronEnc);
+  localStorage.setItem(LS.TON_ENC,  w.tonEnc);
 }
 
 export function loadAddressesFromStorage(): { eth: string; sol: string; btc: string; tron: string; ton: string } | null {

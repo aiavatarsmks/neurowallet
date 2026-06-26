@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { sendEth, sendUsdt, sendUsdtTrc20, sendSol, sendBtc, sendTon, sendUsdtTon, isValidEthAddress, isValidSolAddress, isValidBtcAddress, isValidTronAddress, isValidTonAddress } from '@/lib/crypto/transactions';
 import { fetchRealBalances } from '@/lib/crypto/balances';
+import { supabase } from '@/lib/supabase';
 
 type Coin = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TRC20' | 'TON' | 'USDT_TON';
 type Step = 'form' | 'confirm' | 'password' | 'sending' | 'done';
@@ -112,29 +113,29 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       let hash: string;
 
       if (coin === 'SOL') {
-        const solXor = localStorage.getItem('wallet_sol_xor');
-        if (!solXor) throw new Error('NO_SOL_XOR');
-        hash = await sendSol(keystore, solXor, password, address.trim(), amountNum);
+        const solEnc = localStorage.getItem('wallet_sol_enc');
+        if (!solEnc) throw new Error('NO_SOL_ENC');
+        hash = await sendSol(solEnc, password, address.trim(), amountNum);
       } else if (coin === 'BTC') {
-        const btcXor    = localStorage.getItem('wallet_btc_xor');
-        const btcAddr   = localStorage.getItem('wallet_btc_address');
-        if (!btcXor)  throw new Error('NO_BTC_XOR');
+        const btcEnc  = localStorage.getItem('wallet_btc_enc');
+        const btcAddr = localStorage.getItem('wallet_btc_address');
+        if (!btcEnc)  throw new Error('NO_BTC_ENC');
         if (!btcAddr) throw new Error('NO_KEYSTORE');
-        hash = await sendBtc(keystore, btcXor, password, address.trim(), amountNum, btcAddr);
+        hash = await sendBtc(btcEnc, password, address.trim(), amountNum, btcAddr);
       } else if (coin === 'USDT') {
         hash = await sendUsdt(keystore, password, address.trim(), amountNum);
       } else if (coin === 'TRC20') {
-        const tronXor = localStorage.getItem('wallet_tron_xor');
-        if (!tronXor) throw new Error('NO_TRON_XOR');
-        hash = await sendUsdtTrc20(keystore, tronXor, password, address.trim(), amountNum);
+        const tronEnc = localStorage.getItem('wallet_tron_enc');
+        if (!tronEnc) throw new Error('NO_TRON_ENC');
+        hash = await sendUsdtTrc20(tronEnc, password, address.trim(), amountNum);
       } else if (coin === 'TON') {
-        const tonXor = localStorage.getItem('wallet_ton_xor');
-        if (!tonXor) throw new Error('NO_TON_XOR');
-        hash = await sendTon(keystore, tonXor, password, address.trim(), amountNum);
+        const tonEnc = localStorage.getItem('wallet_ton_enc');
+        if (!tonEnc) throw new Error('NO_TON_ENC');
+        hash = await sendTon(tonEnc, password, address.trim(), amountNum);
       } else if (coin === 'USDT_TON') {
-        const tonXor = localStorage.getItem('wallet_ton_xor');
-        if (!tonXor) throw new Error('NO_TON_XOR');
-        hash = await sendUsdtTon(keystore, tonXor, password, address.trim(), amountNum);
+        const tonEnc = localStorage.getItem('wallet_ton_enc');
+        if (!tonEnc) throw new Error('NO_TON_ENC');
+        hash = await sendUsdtTon(tonEnc, password, address.trim(), amountNum);
       } else {
         // ETH
         hash = await sendEth(keystore, password, address.trim(), amountNum);
@@ -147,32 +148,39 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       // Push-уведомление в Telegram (если пользователь залогинен через TG)
       const tgId = typeof window !== 'undefined' ? localStorage.getItem('tg_user_id') : null;
       if (tgId) {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
         const coinLabel = coin === 'TRC20' ? 'USDT TRC-20' : coin === 'USDT' ? 'USDT ERC-20' : coin === 'USDT_TON' ? 'USDT TON' : coin;
         const shortAddr = address.trim().slice(0, 6) + '...' + address.trim().slice(-4);
         const msg = `✅ <b>Транзакция отправлена</b>\n\n💸 ${amountNum} ${coinLabel}\n📤 На адрес: <code>${shortAddr}</code>\n🔗 TX: <code>${hash.slice(0, 16)}...</code>`;
-        fetch('/api/tg-notify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ telegramId: parseInt(tgId, 10), message: msg }),
-        }).catch(() => {/* silent — уведомление не критично */});
+        if (token) {
+          fetch('/api/tg-notify', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ telegramId: parseInt(tgId, 10), message: msg }),
+          }).catch(() => {/* silent — уведомление не критично */});
+        }
       }
     } catch (e: unknown) {
       const msg = (e instanceof Error ? e.message : String(e)).toLowerCase();
       if (msg.includes('no_keystore')) {
         setSendErr('Кошелёк не найден. Пройди онбординг заново.');
-      } else if (msg.includes('no_sol_xor')) {
+      } else if (msg.includes('no_sol_enc')) {
         setSendErr('SOL-ключ не найден. Пересоздай кошелёк через онбординг.');
-      } else if (msg.includes('password') || msg.includes('invalid') || msg.includes('decrypt') || msg.includes('bad mac')) {
+      } else if (msg.includes('password') || msg.includes('invalid') || msg.includes('decrypt') || msg.includes('bad mac') || msg.includes('неверный пароль')) {
         setPwError('Неверный пароль. Попробуй ещё раз.');
       } else if (msg.includes('insufficient') || msg.includes('insufficient funds')) {
         setSendErr('Недостаточно средств для оплаты комиссии.');
       } else if (msg.includes('nonce') || msg.includes('replacement')) {
         setSendErr('Предыдущая транзакция ещё не завершилась. Подожди немного.');
-      } else if (msg.includes('no_btc_xor')) {
+      } else if (msg.includes('no_btc_enc')) {
         setSendErr('BTC-ключ не найден. Пересоздай кошелёк через онбординг.');
-      } else if (msg.includes('no_tron_xor')) {
+      } else if (msg.includes('no_tron_enc')) {
         setSendErr('Tron-ключ не найден. Пересоздай кошелёк через онбординг.');
-      } else if (msg.includes('no_ton_xor')) {
+      } else if (msg.includes('no_ton_enc')) {
         setSendErr('TON-ключ не найден. Пересоздай кошелёк через онбординг.');
       } else if (msg.includes('trongrid') || msg.includes('tron') && msg.includes('недоступен')) {
         setSendErr('TronGrid недоступен. Проверь соединение и попробуй позже.');

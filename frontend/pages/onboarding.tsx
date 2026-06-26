@@ -120,10 +120,10 @@ export default function OnboardingWalletPage() {
         localStorage.setItem('wallet_tron_address', wallet.tron);
         localStorage.setItem('wallet_ton_address',  wallet.ton);
         localStorage.setItem('wallet_keystore',     wallet.keystore);
-        localStorage.setItem('wallet_sol_xor',      wallet.solXor);
-        localStorage.setItem('wallet_btc_xor',      wallet.btcXor);
-        localStorage.setItem('wallet_tron_xor',     wallet.tronXor);
-        localStorage.setItem('wallet_ton_xor',      wallet.tonXor);
+        localStorage.setItem('wallet_sol_enc',       wallet.solEnc);
+        localStorage.setItem('wallet_btc_enc',       wallet.btcEnc);
+        localStorage.setItem('wallet_tron_enc',      wallet.tronEnc);
+        localStorage.setItem('wallet_ton_enc',       wallet.tonEnc);
       }
       router.push('/wallet');
     } catch (e) {

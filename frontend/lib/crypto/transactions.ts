@@ -24,6 +24,7 @@ import {
   sendUsdtTonRaw,
   isValidTonAddress as _isValidTonAddress,
 } from './ton-tx';
+import { decryptBytes } from './aes';
 
 const ETH_RPC   = 'https://cloudflare-eth.com';
 const SOL_RPC   = 'https://api.mainnet-beta.solana.com';
@@ -108,9 +109,8 @@ export async function sendUsdt(
 
 // ─── Send SOL ─────────────────────────────────────────────────────────────────
 //
-// SOL private key is stored as XOR with ETH private key (wallet_sol_xor).
-// To send: decrypt ETH keystore → get ETH privkey → XOR with solXorHex → SOL privkey.
-// This means one password unlocks both chains.
+// SOL private key is stored encrypted independently (wallet_sol_enc, AES-GCM + PBKDF2).
+// To send: decrypt solEnc blob with password → SOL privkey in memory → zero after use.
 
 async function getSolanaBlockhash(): Promise<string> {
   const res = await fetch(SOL_RPC, {
@@ -171,24 +171,15 @@ function buildSolMessage(
 }
 
 export async function sendSol(
-  keystoreJson: string,
-  solXorHex:   string,
+  solEncBlob:  string,
   password:    string,
   toAddress:   string,
   amountSol:   number,
 ): Promise<string> {
-  // 1. Decrypt ETH keystore → ETH private key
-  const ethWallet    = await ethers.Wallet.fromEncryptedJson(keystoreJson, password);
-  const ethPrivBytes = ethers.getBytes(ethWallet.privateKey); // Uint8Array(32)
+  // 1. Decrypt SOL private key independently (no ETH keystore involved)
+  const solPrivKey = await decryptBytes(solEncBlob, password);
 
-  // 2. Recover SOL private key via XOR
-  const xorBytes  = new Uint8Array(solXorHex.match(/.{2}/g)!.map((h) => parseInt(h, 16)));
-  const solPrivKey = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) {
-    solPrivKey[i] = xorBytes[i] ^ ethPrivBytes[i];
-  }
-
-  // 3. Derive SOL public key and decode recipient
+  // 2. Derive SOL public key and decode recipient
   const fromPubkey = ed25519.getPublicKey(solPrivKey);
   const toPubkey   = bs58.decode(toAddress);
   if (toPubkey.length !== 32) throw new Error('Неверный SOL-адрес получателя.');
@@ -223,6 +214,8 @@ export async function sendSol(
   });
 
   const data = await res.json();
+  // Zero out private key before checking for errors
+  solPrivKey.fill(0);
   if (data.error) throw new Error(data.error.message || 'Solana RPC error');
 
   // Return tx signature as base58 string (Solana explorer format)
@@ -231,44 +224,35 @@ export async function sendSol(
 
 // ─── Send USDT TRC-20 (Tron) ─────────────────────────────────────────────────
 //
-// Tron private key stored as XOR with ETH private key (wallet_tron_xor).
-// Same single-password unlock pattern as SOL and BTC.
+// Tron private key stored encrypted independently (wallet_tron_enc, AES-GCM + PBKDF2).
 
 export async function sendUsdtTrc20(
-  keystoreJson: string,
-  tronXorHex:  string,
+  tronEncBlob: string,
   password:    string,
   toAddress:   string,
   amountUsdt:  number,
 ): Promise<string> {
-  const ethWallet     = await ethers.Wallet.fromEncryptedJson(keystoreJson, password);
-  const ethPrivBytes  = ethers.getBytes(ethWallet.privateKey);
-  const xorBytes      = new Uint8Array(tronXorHex.match(/.{2}/g)!.map((h) => parseInt(h, 16)));
-  const tronPrivKey   = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) tronPrivKey[i] = xorBytes[i] ^ ethPrivBytes[i];
-
-  return sendUsdtTrc20Raw(tronPrivKey, toAddress, amountUsdt);
+  const tronPrivKey = await decryptBytes(tronEncBlob, password);
+  try {
+    return await sendUsdtTrc20Raw(tronPrivKey, toAddress, amountUsdt);
+  } finally {
+    tronPrivKey.fill(0);
+  }
 }
 
 // ─── Send BTC ─────────────────────────────────────────────────────────────────
 //
-// BTC private key stored as XOR with ETH private key (wallet_btc_xor).
-// Same single-password unlock pattern as SOL.
+// BTC private key stored encrypted independently (wallet_btc_enc, AES-GCM + PBKDF2).
 
 export async function sendBtc(
-  keystoreJson: string,
-  btcXorHex:   string,
+  btcEncBlob:  string,
   password:    string,
   toAddress:   string,
   amountBtc:   number,
   fromAddress: string, // our BTC address (for change output)
 ): Promise<string> {
-  // 1. Recover BTC private key
-  const ethWallet    = await ethers.Wallet.fromEncryptedJson(keystoreJson, password);
-  const ethPrivBytes = ethers.getBytes(ethWallet.privateKey);
-  const xorBytes     = new Uint8Array(btcXorHex.match(/.{2}/g)!.map((h) => parseInt(h, 16)));
-  const btcPrivKey   = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) btcPrivKey[i] = xorBytes[i] ^ ethPrivBytes[i];
+  // 1. Decrypt BTC private key independently
+  const btcPrivKey = await decryptBytes(btcEncBlob, password);
 
   const amountSat = BigInt(Math.round(amountBtc * 1e8));
   if (amountSat <= 546n) throw new Error('Сумма ниже минимума (546 sat / dust limit).');
@@ -282,6 +266,7 @@ export async function sendBtc(
 
   // 4. Build and sign raw transaction
   const rawHex = buildSignedTx(btcPrivKey, selected, toAddress, fromAddress, amountSat, change);
+  btcPrivKey.fill(0);
 
   // 5. Broadcast
   const txid = await broadcastBtcTx(rawHex);
@@ -305,40 +290,36 @@ export function isValidSolAddress(addr: string): boolean {
 
 // ─── Send TON ─────────────────────────────────────────────────────────────────
 //
-// TON private key stored as XOR with ETH private key (wallet_ton_xor).
+// TON private key stored encrypted independently (wallet_ton_enc, AES-GCM + PBKDF2).
 
 export async function sendTon(
-  keystoreJson: string,
-  tonXorHex:   string,
+  tonEncBlob:  string,
   password:    string,
   toAddress:   string,
   amountTon:   number,
 ): Promise<string> {
-  const ethWallet    = await ethers.Wallet.fromEncryptedJson(keystoreJson, password);
-  const ethPrivBytes = ethers.getBytes(ethWallet.privateKey);
-  const xorBytes     = new Uint8Array(tonXorHex.match(/.{2}/g)!.map((h) => parseInt(h, 16)));
-  const tonPrivKey   = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) tonPrivKey[i] = xorBytes[i] ^ ethPrivBytes[i];
-
-  return sendTonRaw(tonPrivKey, toAddress, amountTon);
+  const tonPrivKey = await decryptBytes(tonEncBlob, password);
+  try {
+    return await sendTonRaw(tonPrivKey, toAddress, amountTon);
+  } finally {
+    tonPrivKey.fill(0);
+  }
 }
 
 // ─── Send USDT TON Jetton ─────────────────────────────────────────────────────
 
 export async function sendUsdtTon(
-  keystoreJson: string,
-  tonXorHex:   string,
+  tonEncBlob:  string,
   password:    string,
   toAddress:   string,
   amountUsdt:  number,
 ): Promise<string> {
-  const ethWallet    = await ethers.Wallet.fromEncryptedJson(keystoreJson, password);
-  const ethPrivBytes = ethers.getBytes(ethWallet.privateKey);
-  const xorBytes     = new Uint8Array(tonXorHex.match(/.{2}/g)!.map((h) => parseInt(h, 16)));
-  const tonPrivKey   = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) tonPrivKey[i] = xorBytes[i] ^ ethPrivBytes[i];
-
-  return sendUsdtTonRaw(tonPrivKey, toAddress, amountUsdt);
+  const tonPrivKey = await decryptBytes(tonEncBlob, password);
+  try {
+    return await sendUsdtTonRaw(tonPrivKey, toAddress, amountUsdt);
+  } finally {
+    tonPrivKey.fill(0);
+  }
 }
 
 export { _isValidBtcAddress as isValidBtcAddress };

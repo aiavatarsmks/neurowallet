@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import supertest from 'supertest';
 import { buildServer } from '../src/server';
 
 let app: Awaited<ReturnType<typeof buildServer>>;
@@ -14,10 +13,13 @@ afterAll(async () => {
 
 describe('GET /api/tx/mock', () => {
   it('returns an array of mock transactions', async () => {
-    const res = await supertest(app.server).get('/api/tx/mock').expect(200);
-    expect(Array.isArray(res.body)).toBe(true);
-    expect(res.body.length).toBeGreaterThan(0);
-    const tx = res.body[0];
+    const res = await app.inject({ method: 'GET', url: '/api/tx/mock' });
+    expect(res.statusCode).toBe(200);
+
+    const body = JSON.parse(res.body);
+    expect(Array.isArray(body)).toBe(true);
+    expect(body.length).toBeGreaterThan(0);
+    const tx = body[0];
     expect(tx).toHaveProperty('id');
     expect(tx).toHaveProperty('from');
     expect(tx).toHaveProperty('to');

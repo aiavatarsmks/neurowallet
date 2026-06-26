@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { checkRateLimit, requireSupabaseUser, writeAuditLog } from '@/lib/server/api-security';
 
 /**
  * pages/api/neura-chat.ts
@@ -52,6 +53,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  let auth;
+  try {
+    auth = await requireSupabaseUser(req);
+  } catch {
+    return res.status(401).json({ error: 'Требуется вход в аккаунт.' });
+  }
+
+  if (!checkRateLimit(`neura-chat:${auth.user.id}`, 20)) {
+    return res.status(429).json({ error: 'Слишком много запросов к AI. Попробуй через минуту.' });
+  }
+
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     return res.status(500).json({ error: 'AI временно не настроен на сервере (нет ключа).' });
@@ -66,6 +78,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
+    await writeAuditLog(
+      auth.user.id,
+      'ai_chat_requested',
+      { message_count: history.length, has_wallet_context: Boolean(body.walletContext) },
+      req,
+    );
+
     const upstream = await fetch(OPENROUTER_URL, {
       method: 'POST',
       headers: {
@@ -94,9 +113,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const data = await upstream.json();
     const reply: string = data?.choices?.[0]?.message?.content ?? 'Не удалось получить ответ.';
+    await writeAuditLog(auth.user.id, 'ai_chat_completed', { reply_chars: reply.length }, req);
     return res.status(200).json({ reply });
   } catch (err) {
     console.error('neura-chat handler error', err);
+    await writeAuditLog(auth.user.id, 'ai_chat_failed', { error: err instanceof Error ? err.message : String(err) }, req);
     return res.status(200).json({ error: 'AI временно недоступен, попробуй чуть позже.' });
   }
 }

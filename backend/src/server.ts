@@ -1,11 +1,4 @@
 import Fastify, { FastifyInstance } from 'fastify';
-import { PrismaClient } from '@prisma/client';
-
-// Instantiate a single Prisma client. In a larger application you might
-// configure this in a separate module and handle connection errors. For
-// this skeleton the Prisma client is unused but provided for future
-// expansion.
-const prisma = new PrismaClient();
 
 /**
  * Build a Fastify server instance with all routes registered. Exported

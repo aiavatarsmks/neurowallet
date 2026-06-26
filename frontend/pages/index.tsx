@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
+import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 
 const SLIDES = [
@@ -149,6 +150,12 @@ export default function OnboardingPage() {
 
         <p className="text-center text-[#3A6045] text-xs mt-1">
           В демо-режиме используются только тестовые данные. Реальный кошелёк не требуется.
+        </p>
+
+        <p className="text-center text-[#3A6045] text-xs mt-3">
+          <Link href="/privacy" style={{ color: '#3A6045', textDecoration: 'underline' }}>
+            Политика конфиденциальности
+          </Link>
         </p>
       </div>
     </main>
