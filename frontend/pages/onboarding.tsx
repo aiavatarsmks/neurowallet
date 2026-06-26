@@ -2,8 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '@/contexts/AuthContext';
 import { generateMnemonic, importWalletFromMnemonic } from '@/lib/crypto/wallet';
+import { PinSetup } from '@/components/PinSetup';
 
-type Step = 'choice' | 'show-mnemonic' | 'verify-mnemonic' | 'import-mnemonic' | 'set-password' | 'generating';
+type Step = 'choice' | 'show-mnemonic' | 'verify-mnemonic' | 'import-mnemonic' | 'set-password' | 'generating' | 'pin-setup';
 
 const EyeIcon = ({ open }: { open: boolean }) => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -125,7 +126,7 @@ export default function OnboardingWalletPage() {
         localStorage.setItem('wallet_tron_enc',      wallet.tronEnc);
         localStorage.setItem('wallet_ton_enc',       wallet.tonEnc);
       }
-      router.push('/wallet');
+      setStep('pin-setup');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка генерации');
       setStep('set-password');
@@ -138,6 +139,17 @@ export default function OnboardingWalletPage() {
         <div className="w-2 h-2 rounded-full bg-[#00FF7F]" style={{ animation: 'pulse 1s ease-in-out infinite' }} />
         <style>{`@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}`}</style>
       </div>
+    );
+  }
+
+  // PIN setup step — rendered outside main layout
+  if (step === 'pin-setup') {
+    return (
+      <PinSetup
+        walletPassword={password}
+        onComplete={() => router.push('/wallet')}
+        onSkip={() => router.push('/wallet')}
+      />
     );
   }
 

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/router';
 import { useAuth } from '@/contexts/AuthContext';
+import { PinEntry } from '@/components/PinEntry';
+import { hasPinSetup } from '@/lib/pin';
 import { BalanceCard } from '@/components/BalanceCard';
 import { TxHistory } from '@/components/TxHistory';
 import { TransferButton } from '@/components/TransferButton';
@@ -55,8 +57,9 @@ export default function WalletPage() {
   const [activeTab, setActiveTab] = useState<Tab>('home');
   const [avatarState, setAvatarState] = useState<'idle' | 'talking' | 'thinking'>('idle');
   const [chatHasMessages, setChatHasMessages] = useState(false);
-  const [insightDismissed, setInsightDismissed] = useState(false);
-  const [receiveCoin, setReceiveCoin] = useState<'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TON' | 'TRX'>('ETH');
+  const [pinRequired, setPinRequired] = useState(false);
+  const [walletPassword, setWalletPassword] = useState<string | null>(null);
+const [receiveCoin, setReceiveCoin] = useState<'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TON' | 'TRX'>('ETH');
   const [cryptoSendCoin, setCryptoSendCoin] = useState<'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TON' | 'TRC20' | 'USDT_TON'>('ETH');
 
   useEffect(() => {
@@ -64,6 +67,15 @@ export default function WalletPage() {
       router.replace('/');
     }
   }, [isLoading, user, isDemo, router]);
+
+  // Check if PIN gate is needed (wallet exists + PIN set up + not yet unlocked)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const hasWallet = !!localStorage.getItem('wallet_eth_address');
+    if (hasWallet && hasPinSetup() && walletPassword === null) {
+      setPinRequired(true);
+    }
+  }, [walletPassword]);
 
   if (isLoading || (!user && !isDemo)) {
     return (
@@ -74,6 +86,18 @@ export default function WalletPage() {
         <div className="w-2 h-2 rounded-full bg-[#00FF7F]" style={{ animation: 'pulse 1s ease-in-out infinite' }} />
         <style>{`@keyframes pulse { 0%,100%{opacity:0.3} 50%{opacity:1} }`}</style>
       </div>
+    );
+  }
+
+  // PIN gate — shown when wallet is locked
+  if (pinRequired && walletPassword === null) {
+    return (
+      <PinEntry
+        onSuccess={(pwd) => {
+          setWalletPassword(pwd);
+          setPinRequired(false);
+        }}
+      />
     );
   }
 
@@ -167,46 +191,6 @@ export default function WalletPage() {
             onReceive={() => setActiveTab('receive')}
           />
 
-          {!insightDismissed && (
-            <div className="mx-6 mb-4">
-              <div
-                className="rounded-2xl p-4"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(0,255,127,0.08) 0%, rgba(0,255,127,0.03) 100%)',
-                  border: '1px solid rgba(0,255,127,0.2)',
-                }}
-              >
-                <div className="flex items-start gap-3">
-                  <div
-                    className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
-                    style={{ background: 'rgba(0,255,127,0.15)', border: '1px solid rgba(0,255,127,0.3)' }}
-                  >
-                    <span className="text-[#00FF7F] text-xs font-bold">N</span>
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-[#00FF7F] text-[10px] font-semibold mb-1 uppercase tracking-wider">Нейра · Инсайт</p>
-                    <p className="text-white text-sm leading-relaxed">
-                      BTC +4.2% сегодня — твои €2 310 прибавили €93. И есть аномалия: двойное списание Netflix €15.99.
-                    </p>
-                    <div className="flex items-center gap-3 mt-2">
-                      <button
-                        onClick={() => setActiveTab('add')}
-                        className="text-[#00FF7F] text-xs font-semibold"
-                      >
-                        Спросить Нейру →
-                      </button>
-                      <button
-                        onClick={() => setInsightDismissed(true)}
-                        className="text-[#3A6045] text-xs"
-                      >
-                        Закрыть
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
 
           <section className="px-6">
             <div className="flex items-center justify-between mb-2">

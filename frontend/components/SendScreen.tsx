@@ -8,11 +8,6 @@ interface Contact {
   lastAmount?: string;
 }
 
-const MOCK_CONTACTS: Contact[] = [
-  { id: '1', name: 'John Doe',     initials: 'JD', trusted: true,  lastAmount: '$1,200' },
-  { id: '2', name: 'Alice Kim',    initials: 'AK', trusted: true,  lastAmount: '$340'   },
-  { id: '3', name: 'Mike Ross',    initials: 'MR', trusted: false, lastAmount: undefined },
-];
 
 type SendStep = 'contacts' | 'amount' | 'confirm' | 'done';
 
@@ -25,14 +20,7 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState }) => {
   const [selected, setSelected] = useState<Contact | null>(null);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
-  const [contacts, setContacts] = useState<Contact[]>(MOCK_CONTACTS);
-
-  useEffect(() => {
-    // In real wallet mode, hide demo contacts
-    if (typeof window !== 'undefined' && localStorage.getItem('wallet_eth_address')) {
-      setContacts([]);
-    }
-  }, []);
+  const [contacts] = useState<Contact[]>([]);
 
   const handleSelectContact = (c: Contact) => {
     setSelected(c);

@@ -2,15 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { fetchRealBalances, WalletBalances } from '@/lib/crypto/balances';
 
-// ─── Demo constants (shown only when no real wallet) ──────────────────────────
-const DEMO_FIAT = 2847.50;
-const DEMO_CRYPTO = [
-  { symbol: 'BTC',  valueEUR: 2310, change: +4.2 },
-  { symbol: 'ETH',  valueEUR: 2542, change: +1.8 },
-  { symbol: 'USDT', valueEUR: 110,  change:  0   },
-];
-const DEMO_CRYPTO_TOTAL = DEMO_CRYPTO.reduce((s, a) => s + a.valueEUR, 0);
-const DEMO_TOTAL        = DEMO_FIAT + DEMO_CRYPTO_TOTAL;
 
 type View = 'total' | 'fiat' | 'crypto';
 
@@ -65,17 +56,17 @@ export const BalanceCard: React.FC = () => {
   }, [user]);
 
   // ── Derived values ────────────────────────────────────────────────────────────
-  const cryptoTotal = balances ? calcCryptoTotal(balances) : (isReal ? 0 : DEMO_CRYPTO_TOTAL);
-  const totalBalance = isReal ? cryptoTotal : DEMO_TOTAL;
+  const cryptoTotal = balances ? calcCryptoTotal(balances) : 0;
+  const totalBalance = cryptoTotal;
 
   const balance =
     view === 'total' ? totalBalance :
-    view === 'fiat'  ? (isReal ? 0 : DEMO_FIAT) :
+    view === 'fiat'  ? 0 :
     cryptoTotal;
 
   const label =
-    view === 'total' ? (isReal ? 'Крипто-портфель'  : 'Общий капитал') :
-    view === 'fiat'  ? (isReal ? 'Фиат'             : 'Фиат EUR')       :
+    view === 'total' ? 'Крипто-портфель' :
+    view === 'fiat'  ? 'Фиат' :
     'Крипто-портфель';
 
   const cryptoRows = balances
@@ -84,7 +75,7 @@ export const BalanceCard: React.FC = () => {
         { symbol: 'ETH',  valueEUR: balances.eth * balances.ethEur, change: 0 },
         { symbol: 'USDT', valueEUR: balances.usdt,                  change: 0 },
       ]
-    : DEMO_CRYPTO;
+    : [];
 
   return (
     <div className="px-6 pt-1 pb-4">
@@ -92,9 +83,9 @@ export const BalanceCard: React.FC = () => {
         {getGreeting()}{displayName ? `, ${displayName}` : ''}
       </p>
 
-      {/* View switcher — hide Fiat tab in real mode */}
+      {/* View switcher */}
       <div className="flex gap-1 mb-3">
-        {(['total', ...(isReal ? [] : ['fiat']), 'crypto'] as View[]).map((v) => (
+        {(['total', 'crypto'] as View[]).map((v) => (
           <button
             key={v}
             onClick={() => setView(v)}
@@ -147,30 +138,14 @@ export const BalanceCard: React.FC = () => {
         </div>
       )}
 
-      {/* Fiat breakdown — demo only */}
-      {view === 'fiat' && !isReal && (
-        <div className="flex gap-6 mt-3">
-          <div>
-            <p className="text-[#3A6045] text-[10px]">Текущий счёт</p>
-            <p className="text-white text-sm font-medium">€2 100,00</p>
-          </div>
-          <div>
-            <p className="text-[#3A6045] text-[10px]">Накопления</p>
-            <p className="text-white text-sm font-medium">€747,50</p>
-          </div>
-        </div>
-      )}
-
-      {/* Fiat in real mode — coming soon */}
-      {view === 'fiat' && isReal && (
+      {/* Fiat — coming soon */}
+      {view === 'fiat' && (
         <p className="text-[#3A6045] text-xs mt-1.5">Фиат-счёт — скоро</p>
       )}
 
-      {/* Crypto summary */}
-      {view === 'crypto' && !isReal && (
-        <p className="text-[#00FF7F] text-xs font-medium mt-1.5">
-          +€521,30 за месяц (+11.7%)
-        </p>
+      {/* No wallet yet */}
+      {view !== 'fiat' && !isReal && !loading && (
+        <p className="text-[#3A6045] text-xs mt-1.5">Создайте кошелёк, чтобы увидеть баланс</p>
       )}
     </div>
   );
