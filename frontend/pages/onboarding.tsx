@@ -23,9 +23,21 @@ const EyeIcon = ({ open }: { open: boolean }) => (
   </svg>
 );
 
+function useTgSafeTop(): number {
+  const [top, setTop] = useState(80);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const tg = (window as Window & { Telegram?: { WebApp?: { safeAreaInset?: { top?: number }; contentSafeAreaInset?: { top?: number } } } }).Telegram?.WebApp;
+    const safe = (tg?.safeAreaInset?.top ?? 0) + (tg?.contentSafeAreaInset?.top ?? 0);
+    setTop(Math.max(80, safe + 20));
+  }, []);
+  return top;
+}
+
 export default function OnboardingWalletPage() {
   const router = useRouter();
   const { user, isDemo, isLoading } = useAuth();
+  const safeTop = useTgSafeTop();
 
   const [step, setStep] = useState<Step>('choice');
   const [mnemonic, setMnemonic] = useState('');
@@ -35,6 +47,15 @@ export default function OnboardingWalletPage() {
   const [showPass, setShowPass] = useState(false);
   const [canContinue, setCanContinue] = useState(false);
   const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyMnemonic = () => {
+    if (!mnemonic) return;
+    navigator.clipboard.writeText(mnemonic).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
 
   // Verification step state
   const [verifyIndices, setVerifyIndices]   = useState<number[]>([]);
@@ -160,7 +181,7 @@ export default function OnboardingWalletPage() {
 
       {/* ── STEP: Choice ─────────────────────────────────────── */}
       {step === 'choice' && (
-        <div className="flex flex-col flex-1 pt-16 pb-10">
+        <div className="flex flex-col flex-1 pb-10" style={{ paddingTop: safeTop }}>
           <div className="flex flex-col items-center gap-4 mb-12">
             <div
               className="w-16 h-16 rounded-2xl flex items-center justify-center"
@@ -208,14 +229,14 @@ export default function OnboardingWalletPage() {
 
       {/* ── STEP: Show mnemonic ──────────────────────────────── */}
       {step === 'show-mnemonic' && (
-        <div className="flex flex-col flex-1 pt-14 pb-10 gap-6">
+        <div className="flex flex-col flex-1 pb-10 gap-5" style={{ paddingTop: safeTop }}>
           <div>
             <h1 className="text-white text-2xl font-bold">Запиши фразу</h1>
             <p className="text-[#3A6045] text-sm mt-1">12 слов — единственный способ восстановить кошелёк</p>
           </div>
 
           <div
-            className="rounded-2xl p-4"
+            className="rounded-2xl p-3"
             style={{ background: 'rgba(255,196,0,0.06)', border: '1px solid rgba(255,196,0,0.22)' }}
           >
             <p className="text-[#FFC400] text-xs leading-relaxed">
@@ -239,6 +260,29 @@ export default function OnboardingWalletPage() {
                 </div>
               ))}
             </div>
+
+            {/* Copy all words */}
+            <button
+              onClick={handleCopyMnemonic}
+              className="w-full mt-3 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all active:scale-95"
+              style={{
+                background: copied ? 'rgba(0,255,127,0.15)' : 'rgba(0,255,127,0.07)',
+                border: '1px solid rgba(0,255,127,0.2)',
+                color: copied ? '#00FF7F' : '#3A6045',
+              }}
+            >
+              {copied ? (
+                <>✓ Скопировано</>
+              ) : (
+                <>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                  </svg>
+                  Копировать все 12 слов
+                </>
+              )}
+            </button>
           </div>
 
           <button
@@ -254,7 +298,7 @@ export default function OnboardingWalletPage() {
 
       {/* ── STEP: Verify mnemonic ────────────────────────────── */}
       {step === 'verify-mnemonic' && (
-        <div className="flex flex-col flex-1 pt-14 pb-10 gap-6">
+        <div className="flex flex-col flex-1 pb-10 gap-6" style={{ paddingTop: safeTop }}>
           <div>
             <button onClick={() => setStep('show-mnemonic')} className="text-[#3A6045] text-sm mb-4 flex items-center gap-1">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -323,7 +367,7 @@ export default function OnboardingWalletPage() {
 
       {/* ── STEP: Import mnemonic ────────────────────────────── */}
       {step === 'import-mnemonic' && (
-        <div className="flex flex-col flex-1 pt-14 pb-10 gap-6">
+        <div className="flex flex-col flex-1 pb-10 gap-6" style={{ paddingTop: safeTop }}>
           <div>
             <button onClick={() => setStep('choice')} className="text-[#3A6045] text-sm mb-4 flex items-center gap-1">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -366,7 +410,7 @@ export default function OnboardingWalletPage() {
 
       {/* ── STEP: Set password ───────────────────────────────── */}
       {step === 'set-password' && (
-        <div className="flex flex-col flex-1 pt-14 pb-10 gap-6">
+        <div className="flex flex-col flex-1 pb-10 gap-6" style={{ paddingTop: safeTop }}>
           <div>
             <h1 className="text-white text-2xl font-bold">Защити кошелёк</h1>
             <p className="text-[#3A6045] text-sm mt-1">Пароль шифрует ключи на устройстве</p>
