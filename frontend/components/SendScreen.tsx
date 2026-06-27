@@ -3,8 +3,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { isNeuroId, normalizeNeuroId } from '@/lib/neuro-id';
 
-type TransferCurrency = 'EUR' | 'USD' | 'USDT' | 'ETH' | 'BTC' | 'SOL' | 'TON' | 'TRC20' | 'USDT_TON';
-type CryptoCoin = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TRC20' | 'TON' | 'USDT_TON';
+type TransferCurrency = 'EUR' | 'USD' | 'USDT' | 'ETH' | 'BTC' | 'SOL' | 'TON' | 'TRX' | 'TRC20' | 'USDT_TON';
+type CryptoCoin = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TRX' | 'TRC20' | 'TON' | 'USDT_TON';
 
 interface Contact {
   id: string;
@@ -17,7 +17,12 @@ interface Contact {
 }
 
 const STORAGE_KEY = 'nw_recipients_v1';
-const INVITE_URL = 'https://neurovalet.tech';
+const INVITE_BOT_URL = process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL || 'https://t.me/NeuroWallet_bot';
+const INVITE_TEXT = [
+  'Привет! Приглашаю тебя в NeuroWallet — криптокошелёк нового поколения с AI-агентом внутри.',
+  '',
+  `Открыть в Telegram: ${INVITE_BOT_URL}`,
+].join('\n');
 
 const DEMO_CONTACTS: Contact[] = [
   { id: '1', name: 'John Doe',   initials: 'JD', trusted: true,  lastAmount: '€150', currency: 'EUR' },
@@ -33,12 +38,13 @@ const CURRENCIES: Record<TransferCurrency, { label: string; short: string; icon:
   BTC:      { label: 'Bitcoin',       short: 'BTC',      icon: '₿', placeholder: 'bc1… или 1…' },
   SOL:      { label: 'Solana',        short: 'SOL',      icon: '◎', placeholder: 'Solana address' },
   TON:      { label: 'TON',           short: 'TON',      icon: '◆', placeholder: 'EQ… или UQ…' },
+  TRX:      { label: 'TRON',          short: 'TRX',      icon: '◆', placeholder: 'T…' },
   TRC20:    { label: 'USDT TRC-20',   short: 'TRC20',    icon: '₮', placeholder: 'T…' },
   USDT_TON: { label: 'USDT TON',      short: 'USDT TON', icon: '₮', placeholder: 'EQ… или UQ…' },
 };
 
-const CURRENCY_ORDER: TransferCurrency[] = ['EUR', 'USD', 'USDT', 'ETH', 'BTC', 'SOL', 'TON', 'TRC20', 'USDT_TON'];
-const CRYPTO_CURRENCIES = new Set<TransferCurrency>(['USDT', 'ETH', 'BTC', 'SOL', 'TON', 'TRC20', 'USDT_TON']);
+const CURRENCY_ORDER: TransferCurrency[] = ['EUR', 'USD', 'USDT', 'ETH', 'BTC', 'SOL', 'TON', 'TRX', 'TRC20', 'USDT_TON'];
+const CRYPTO_CURRENCIES = new Set<TransferCurrency>(['USDT', 'ETH', 'BTC', 'SOL', 'TON', 'TRX', 'TRC20', 'USDT_TON']);
 
 type SendStep = 'contacts' | 'recipient' | 'amount' | 'confirm' | 'done';
 
@@ -191,12 +197,15 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
   };
 
   const handleInvite = async () => {
-    const text = `Присоединяйся к NeuroWallet: ${INVITE_URL}`;
     try {
       if (navigator.share) {
-        await navigator.share({ title: 'NeuroWallet', text, url: INVITE_URL });
+        await navigator.share({
+          title: 'NeuroWallet',
+          text: INVITE_TEXT,
+          url: INVITE_BOT_URL,
+        });
       } else {
-        await navigator.clipboard.writeText(text);
+        await navigator.clipboard.writeText(INVITE_TEXT);
       }
       setCopiedInvite(true);
       setTimeout(() => setCopiedInvite(false), 2000);

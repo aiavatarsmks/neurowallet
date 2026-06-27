@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { sendEth, sendUsdt, sendUsdtTrc20, sendSol, sendBtc, sendTon, sendUsdtTon, isValidEthAddress, isValidSolAddress, isValidBtcAddress, isValidTronAddress, isValidTonAddress } from '@/lib/crypto/transactions';
+import { sendEth, sendUsdt, sendUsdtTrc20, sendTrx, sendSol, sendBtc, sendTon, sendUsdtTon, isValidEthAddress, isValidSolAddress, isValidBtcAddress, isValidTronAddress, isValidTonAddress } from '@/lib/crypto/transactions';
 import { fetchRealBalances } from '@/lib/crypto/balances';
 import { supabase } from '@/lib/supabase';
 
-type Coin = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TRC20' | 'TON' | 'USDT_TON';
+type Coin = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TRX' | 'TRC20' | 'TON' | 'USDT_TON';
 type Step = 'form' | 'confirm' | 'password' | 'sending' | 'done';
 
 interface CoinMeta {
@@ -17,8 +17,9 @@ interface CoinMeta {
 const COINS: Record<Coin, CoinMeta> = {
   ETH:      { icon: 'Ξ', color: '#627EEA', bgColor: 'rgba(98,126,234,0.15)',  placeholder: '0x…',  implemented: true },
   SOL:      { icon: '◎', color: '#9945FF', bgColor: 'rgba(153,69,255,0.15)',  placeholder: 'So1…', implemented: true },
-  BTC:      { icon: '₿', color: '#F7931A', bgColor: 'rgba(247,147,26,0.15)',  placeholder: '1…',   implemented: true },
+  BTC:      { icon: '₿', color: '#F7931A', bgColor: 'rgba(247,147,26,0.15)',  placeholder: 'bc1…', implemented: true },
   USDT:     { icon: '₮', color: '#26A17B', bgColor: 'rgba(38,161,123,0.15)', placeholder: '0x…',  implemented: true },
+  TRX:      { icon: '◆', color: '#EF0027', bgColor: 'rgba(239,0,39,0.12)',   placeholder: 'T…',   implemented: true },
   TRC20:    { icon: '₮', color: '#EF0027', bgColor: 'rgba(239,0,39,0.12)',   placeholder: 'T…',   implemented: true },
   TON:      { icon: '💎', color: '#0098EA', bgColor: 'rgba(0,152,234,0.15)', placeholder: 'EQ…',  implemented: true },
   USDT_TON: { icon: '₮', color: '#0098EA', bgColor: 'rgba(0,152,234,0.12)', placeholder: 'EQ…',  implemented: true },
@@ -26,7 +27,7 @@ const COINS: Record<Coin, CoinMeta> = {
 
 // Estimated fees shown in UI (ETH fee is fetched from chain later)
 const FEE_EUR: Record<Coin, string> = {
-  ETH: '~€0.30–1.50', BTC: '~€0.50–2.00', SOL: '< €0.01', USDT: '~€0.30', TRC20: '< €0.50',
+  ETH: '~€0.30–1.50', BTC: '~€0.50–2.00', SOL: '< €0.01', USDT: '~€0.30', TRX: '< €0.01', TRC20: '< €0.50',
   TON: '~€0.01', USDT_TON: '~€0.05',
 };
 
@@ -56,7 +57,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   const [sending,  setSending]  = useState(false);
   const [txHash,   setTxHash]   = useState('');
   const [sendErr,  setSendErr]  = useState('');
-  const [balances, setBalances] = useState<Record<Coin, number>>({ ETH: 0, BTC: 0, SOL: 0, USDT: 0, TRC20: 0, TON: 0, USDT_TON: 0 });
+  const [balances, setBalances] = useState<Record<Coin, number>>({ ETH: 0, BTC: 0, SOL: 0, USDT: 0, TRX: 0, TRC20: 0, TON: 0, USDT_TON: 0 });
   const [balReady, setBalReady] = useState(false);
 
   useEffect(() => {
@@ -81,7 +82,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
     if (!eth) { setBalReady(true); return; }
     fetchRealBalances(eth, sol, btc, tron, ton)
       .then((b) => {
-        setBalances({ ETH: b.eth, BTC: b.btc, SOL: b.sol, USDT: b.usdt, TRC20: b.usdtTrc, TON: b.ton, USDT_TON: b.usdtTon });
+        setBalances({ ETH: b.eth, BTC: b.btc, SOL: b.sol, USDT: b.usdt, TRX: b.trx, TRC20: b.usdtTrc, TON: b.ton, USDT_TON: b.usdtTon });
         setBalReady(true);
       })
       .catch(() => setBalReady(true));
@@ -95,7 +96,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   const addressValid =
     coin === 'ETH' || coin === 'USDT'           ? isValidEthAddress(address.trim())
     : coin === 'SOL'                             ? isValidSolAddress(address.trim())
-    : coin === 'TRC20'                           ? isValidTronAddress(address.trim())
+    : coin === 'TRX' || coin === 'TRC20'         ? isValidTronAddress(address.trim())
     : coin === 'TON' || coin === 'USDT_TON'     ? isValidTonAddress(address.trim())
     : isValidBtcAddress(address.trim()); // BTC
 
@@ -147,6 +148,10 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         const tronEnc = localStorage.getItem('wallet_tron_enc');
         if (!tronEnc) throw new Error('NO_TRON_ENC');
         hash = await sendUsdtTrc20(tronEnc, password, address.trim(), amountNum);
+      } else if (coin === 'TRX') {
+        const tronEnc = localStorage.getItem('wallet_tron_enc');
+        if (!tronEnc) throw new Error('NO_TRON_ENC');
+        hash = await sendTrx(tronEnc, password, address.trim(), amountNum);
       } else if (coin === 'TON') {
         const tonEnc = localStorage.getItem('wallet_ton_enc');
         if (!tonEnc) throw new Error('NO_TON_ENC');
@@ -255,7 +260,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
                   ? `https://solscan.io/tx/${txHash}`
                   : coin === 'BTC'
                   ? `https://blockstream.info/tx/${txHash}`
-                  : coin === 'TRC20'
+                  : coin === 'TRX' || coin === 'TRC20'
                   ? `https://tronscan.org/#/transaction/${txHash}`
                   : coin === 'TON' || coin === 'USDT_TON'
                   ? `https://tonscan.org/tx/${txHash}`
@@ -268,7 +273,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
             >
               {coin === 'SOL'                        ? 'Посмотреть на Solscan →'
                : coin === 'BTC'                      ? 'Посмотреть на Blockstream →'
-               : coin === 'TRC20'                    ? 'Посмотреть на Tronscan →'
+               : coin === 'TRX' || coin === 'TRC20'    ? 'Посмотреть на Tronscan →'
                : coin === 'TON' || coin === 'USDT_TON' ? 'Посмотреть на Tonscan →'
                : 'Посмотреть на Etherscan →'}
             </a>
@@ -282,7 +287,9 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           <p className="text-[#00FF7F] text-xs font-semibold mb-1">Нейра</p>
           <p className="text-white text-xs leading-relaxed">
             {txHash
-              ? coin === 'TRC20'
+              ? coin === 'TRX'
+                ? 'TRX отправлен. Tron подтверждает транзакции за несколько секунд.'
+                : coin === 'TRC20'
                 ? 'USDT TRC-20 отправлен. Tron подтверждает транзакции за 3–5 секунд и берёт минимальную комиссию.'
                 : coin === 'USDT'
                 ? 'USDT переведён. Транзакция подтвердится за 1–2 минуты, после чего баланс обновится.'
@@ -504,7 +511,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       <div>
         <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider mb-2">Монета</p>
         <div className="flex gap-2">
-          {(['ETH', 'BTC', 'SOL', 'USDT', 'TRC20', 'TON', 'USDT_TON'] as Coin[]).map((c) => {
+          {(['ETH', 'BTC', 'SOL', 'USDT', 'TRX', 'TRC20', 'TON', 'USDT_TON'] as Coin[]).map((c) => {
             const d = COINS[c];
             return (
               <button

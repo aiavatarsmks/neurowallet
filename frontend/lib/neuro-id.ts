@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 
-export type NeuroCoin = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TRC20' | 'TON' | 'USDT_TON';
+export type NeuroCoin = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TRX' | 'TRC20' | 'TON' | 'USDT_TON';
 
 export interface NeuroDirectoryRow {
   user_id: string;
@@ -29,7 +29,7 @@ export function isNeuroId(value: string): boolean {
 export function getAddressForCoin(row: Partial<NeuroDirectoryRow>, coin: NeuroCoin): string {
   if (coin === 'BTC') return row.btc_address ?? '';
   if (coin === 'SOL') return row.sol_address ?? '';
-  if (coin === 'TRC20') return row.tron_address ?? '';
+  if (coin === 'TRX' || coin === 'TRC20') return row.tron_address ?? '';
   if (coin === 'TON' || coin === 'USDT_TON') return row.ton_address ?? '';
   return row.eth_address ?? '';
 }

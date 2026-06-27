@@ -1,4 +1,5 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import QRCode from 'qrcode';
 
 type Network = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TON' | 'TRX';
 
@@ -17,7 +18,7 @@ const NET_LABELS: Record<Network, string> = {
   SOL:  'Solana Network',
   USDT: 'Ethereum (ERC-20)',
   TON:  'TON Network',
-  TRX:  'Tron Network (TRC-20)',
+  TRX:  'Tron Network',
 };
 
 const COLORS: Record<Network, string> = {
@@ -31,43 +32,6 @@ const COLORS: Record<Network, string> = {
 
 const ICONS: Record<Network, string> = { BTC: '₿', ETH: 'Ξ', SOL: '◎', USDT: '₮', TON: '💎', TRX: '₮' };
 
-const SIZE = 25;
-
-function buildQR(seed: string): boolean[][] {
-  const g: boolean[][] = Array.from({ length: SIZE }, () => Array(SIZE).fill(false));
-
-  const finder = (r: number, c: number) => {
-    for (let i = 0; i < 7; i++) {
-      for (let j = 0; j < 7; j++) {
-        g[r + i][c + j] =
-          i === 0 || i === 6 || j === 0 || j === 6 || (i >= 2 && i <= 4 && j >= 2 && j <= 4);
-      }
-    }
-  };
-  finder(0, 0);
-  finder(0, 18);
-  finder(18, 0);
-
-  for (let i = 8; i < 17; i++) {
-    g[6][i] = i % 2 === 0;
-    g[i][6] = i % 2 === 0;
-  }
-  g[8][8] = true;
-
-  let h = 0;
-  for (const ch of seed) h = ((h * 31 + ch.charCodeAt(0)) | 0);
-
-  for (let r = 0; r < SIZE; r++) {
-    for (let c = 0; c < SIZE; c++) {
-      if ((r < 8 && c < 8) || (r < 8 && c >= 17) || (r >= 17 && c < 8)) continue;
-      if (r === 6 || c === 6) continue;
-      h = ((h * 1664525 + 1013904223) >>> 0);
-      g[r][c] = (h >>> 16) % 3 !== 0;
-    }
-  }
-  return g;
-}
-
 interface ReceiveScreenProps {
   initialNetwork?: Network;
 }
@@ -76,6 +40,7 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
   const [network, setNetwork] = useState<Network>(initialNetwork);
   const [copied, setCopied] = useState(false);
   const [addresses, setAddresses] = useState(FALLBACK_ADDRESSES);
+  const [qrDataUrl, setQrDataUrl] = useState('');
 
   // Sync when parent changes initialNetwork (e.g. user taps "Получить" on different coin)
   useEffect(() => {
@@ -101,7 +66,30 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
 
   const address = addresses[network];
   const color   = COLORS[network];
-  const qr      = useMemo(() => buildQR(address), [address]);
+
+  useEffect(() => {
+    let alive = true;
+
+    QRCode.toDataURL(address, {
+      errorCorrectionLevel: 'M',
+      margin: 2,
+      width: 190,
+      color: {
+        dark: '#000000',
+        light: '#FFFFFF',
+      },
+    })
+      .then((url) => {
+        if (alive) setQrDataUrl(url);
+      })
+      .catch(() => {
+        if (alive) setQrDataUrl('');
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [address]);
 
   const copyAddress = () => {
     navigator.clipboard.writeText(address).catch(() => {});
@@ -138,22 +126,22 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
         className="rounded-3xl p-5 flex flex-col items-center gap-3"
         style={{ background: 'white' }}
       >
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: `repeat(${SIZE}, 1fr)`,
-            gap: '1px',
-            width: 190,
-            height: 190,
-          }}
-        >
-          {qr.flat().map((cell, i) => (
-            <div
-              key={i}
-              style={{ background: cell ? '#000000' : 'transparent', aspectRatio: '1' }}
-            />
-          ))}
-        </div>
+        {qrDataUrl ? (
+          <img
+            src={qrDataUrl}
+            alt={`${NET_LABELS[network]} receive QR`}
+            width={190}
+            height={190}
+            className="block"
+          />
+        ) : (
+          <div
+            className="flex items-center justify-center text-xs font-semibold"
+            style={{ width: 190, height: 190, color: '#111827' }}
+          >
+            Генерируем QR...
+          </div>
+        )}
         <div
           className="flex items-center gap-1.5 px-3 py-1 rounded-full"
           style={{ background: `${color}18`, border: `1px solid ${color}55` }}

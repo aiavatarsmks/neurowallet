@@ -13,7 +13,7 @@ const MODEL = 'openai/gpt-4o-mini';
 
 const SYSTEM_PROMPT = `Ты — Нейра, AI-финансовый советник внутри крипто-кошелька NeuroWallet.
 Отвечай по-русски, дружелюбно и по делу, без лишней воды.
-Ты помогаешь пользователю разбираться в его крипто-портфеле (BTC, ETH, SOL, USDT), тратах и финансовых решениях.
+Ты помогаешь пользователю разбираться в его крипто-портфеле (BTC, ETH, SOL, TRX, USDT), тратах и финансовых решениях.
 Если не знаешь точных актуальных цифр пользователя (баланс, цены) — не выдумывай конкретные суммы, а отвечай по существу вопроса и предложи, где это посмотреть в приложении (экран «Активы»).
 Будь краткой: 2-4 предложения, если не просят подробный разбор.`;
 
@@ -23,8 +23,8 @@ interface ChatMessage {
 }
 
 interface WalletContext {
-  eth?: number; btc?: number; sol?: number; usdt?: number; usdtTrc?: number;
-  ethEur?: number; btcEur?: number; solEur?: number;
+  eth?: number; btc?: number; sol?: number; trx?: number; usdt?: number; usdtTrc?: number;
+  ethEur?: number; btcEur?: number; solEur?: number; trxEur?: number;
   ethAddr?: string; btcAddr?: string; solAddr?: string; tronAddr?: string;
 }
 
@@ -35,6 +35,7 @@ function buildSystemPrompt(ctx?: WalletContext): string {
     if (ctx.btc  !== undefined) lines.push(`• BTC: ${ctx.btc.toFixed(6)} BTC (~€${((ctx.btc || 0) * (ctx.btcEur || 0)).toFixed(2)})`);
     if (ctx.eth  !== undefined) lines.push(`• ETH: ${ctx.eth.toFixed(4)} ETH (~€${((ctx.eth || 0) * (ctx.ethEur || 0)).toFixed(2)})`);
     if (ctx.sol  !== undefined) lines.push(`• SOL: ${ctx.sol.toFixed(4)} SOL (~€${((ctx.sol || 0) * (ctx.solEur || 0)).toFixed(2)})`);
+    if (ctx.trx  !== undefined) lines.push(`• TRX: ${ctx.trx.toFixed(4)} TRX (~€${((ctx.trx || 0) * (ctx.trxEur || 0)).toFixed(2)})`);
     if (ctx.usdt    !== undefined) lines.push(`• USDT (ERC-20): ${ctx.usdt.toFixed(2)} USDT`);
     if (ctx.usdtTrc !== undefined) lines.push(`• USDT (TRC-20): ${ctx.usdtTrc.toFixed(2)} USDT`);
     if (ctx.ethAddr)  lines.push(`• ETH/USDT адрес: ${ctx.ethAddr}`);

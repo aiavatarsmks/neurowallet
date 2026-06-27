@@ -1,4 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
+import bs58 from 'bs58';
+import { createHash } from 'crypto';
 
 /**
  * pages/api/tx-history.ts
@@ -13,7 +15,7 @@ const BLOCKSTREAM    = 'https://blockstream.info/api';
 
 interface TxRow {
   id:       string;
-  chain:    'ETH' | 'SOL' | 'BTC' | 'USDT' | 'TRC20' | 'TON' | 'USDT_TON';
+  chain:    'ETH' | 'SOL' | 'BTC' | 'USDT' | 'TRX' | 'TRC20' | 'TON' | 'USDT_TON';
   type:     'in' | 'out';
   amount:   number;   // in native units
   address:  string;   // counterparty
@@ -27,6 +29,17 @@ const TONCENTER = 'https://toncenter.com/api/v2';
 const USDT_CONTRACT      = '0xdac17f958d2ee523a2206206994597c13d831ec7';
 const USDT_TRC20_CONTRACT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
 const TRONGRID           = 'https://api.trongrid.io';
+
+function sha256(buf: Buffer): Buffer {
+  return createHash('sha256').update(buf).digest();
+}
+
+function tronHexToAddr(hex: string): string {
+  const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
+  const payload = Buffer.from(clean, 'hex');
+  const checksum = sha256(sha256(payload)).subarray(0, 4);
+  return bs58.encode(Buffer.concat([payload, checksum]));
+}
 
 // ─── ETH (Etherscan) ──────────────────────────────────────────────────────────
 
@@ -109,6 +122,53 @@ async function fetchTrc20Txs(address: string): Promise<TxRow[]> {
         fee:     0, // TRC-20 fees are in TRX, not tracked here
       };
     });
+  } catch {
+    return [];
+  }
+}
+
+// ─── TRX native (TronGrid) ───────────────────────────────────────────────────
+
+async function fetchTrxTxs(address: string): Promise<TxRow[]> {
+  try {
+    const url =
+      `${TRONGRID}/v1/accounts/${address}/transactions` +
+      '?only_confirmed=true&limit=20&order_by=block_timestamp,desc';
+    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (!Array.isArray(data.data)) return [];
+
+    const addr = address.toLowerCase();
+    const rows: TxRow[] = [];
+    for (const tx of data.data as Array<Record<string, unknown>>) {
+      const contracts = ((tx.raw_data as Record<string, unknown> | undefined)?.contract ?? []) as Array<Record<string, unknown>>;
+      for (const contract of contracts) {
+        if (contract.type !== 'TransferContract') continue;
+        const value = (contract.parameter as Record<string, unknown> | undefined)?.value as Record<string, unknown> | undefined;
+        const ownerHex = value?.owner_address as string | undefined;
+        const toHex = value?.to_address as string | undefined;
+        const amountSun = Number(value?.amount ?? 0);
+        if (!ownerHex || !toHex || amountSun <= 0) continue;
+
+        const from = tronHexToAddr(ownerHex);
+        const to = tronHexToAddr(toHex);
+        const isOut = from.toLowerCase() === addr;
+        if (!isOut && to.toLowerCase() !== addr) continue;
+
+        rows.push({
+          id:      `trx-${tx.txID as string}`,
+          chain:   'TRX',
+          type:    isOut ? 'out' : 'in',
+          amount:  amountSun / 1e6,
+          address: isOut ? to : from,
+          hash:    tx.txID as string,
+          date:    new Date((tx.block_timestamp as number) ?? Date.now()).toISOString(),
+          fee:     0,
+        });
+      }
+    }
+    return rows;
   } catch {
     return [];
   }
@@ -369,9 +429,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const { eth, sol, btc, tron, ton } = req.query as Record<string, string>;
 
   try {
-    const [ethTxs, usdtTxs, trc20Txs, solTxs, btcTxs, tonTxs, usdtTonTxs] = await Promise.allSettled([
+    const [ethTxs, usdtTxs, trxTxs, trc20Txs, solTxs, btcTxs, tonTxs, usdtTonTxs] = await Promise.allSettled([
       eth  ? fetchEthTxs(eth)        : Promise.resolve([]),
       eth  ? fetchUsdtTxs(eth)       : Promise.resolve([]),
+      tron ? fetchTrxTxs(tron)       : Promise.resolve([]),
       tron ? fetchTrc20Txs(tron)     : Promise.resolve([]),
       sol  ? fetchSolTxs(sol)        : Promise.resolve([]),
       btc  ? fetchBtcTxs(btc)        : Promise.resolve([]),
@@ -382,6 +443,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const all: TxRow[] = [
       ...(ethTxs.status      === 'fulfilled' ? ethTxs.value      : []),
       ...(usdtTxs.status     === 'fulfilled' ? usdtTxs.value     : []),
+      ...(trxTxs.status      === 'fulfilled' ? trxTxs.value      : []),
       ...(trc20Txs.status    === 'fulfilled' ? trc20Txs.value    : []),
       ...(solTxs.status      === 'fulfilled' ? solTxs.value      : []),
       ...(btcTxs.status      === 'fulfilled' ? btcTxs.value      : []),

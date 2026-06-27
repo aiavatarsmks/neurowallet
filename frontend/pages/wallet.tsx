@@ -24,7 +24,7 @@ const NeuraAvatar = dynamic(
 
 type NavTab = 'home' | 'send' | 'add' | 'cards' | 'wallet';
 type Tab = NavTab | 'profile' | 'receive' | 'crypto-send';
-type CryptoSendCoin = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TON' | 'TRC20' | 'USDT_TON';
+type CryptoSendCoin = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TON' | 'TRX' | 'TRC20' | 'USDT_TON';
 
 interface CryptoSendDraft {
   coin: CryptoSendCoin;

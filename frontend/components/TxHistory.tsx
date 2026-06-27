@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 
 interface TxRow {
   id:      string;
-  chain:   'ETH' | 'SOL' | 'BTC' | 'USDT' | 'TRC20' | 'TON' | 'USDT_TON';
+  chain:   'ETH' | 'SOL' | 'BTC' | 'USDT' | 'TRX' | 'TRC20' | 'TON' | 'USDT_TON';
   type:    'in' | 'out';
   amount:  number;
   address: string;
@@ -16,6 +16,7 @@ const CHAIN_META = {
   SOL:      { icon: '◎',  color: '#9945FF', label: 'SOL',      explorer: (h: string) => `https://solscan.io/tx/${h}` },
   BTC:      { icon: '₿',  color: '#F7931A', label: 'BTC',      explorer: (h: string) => `https://blockstream.info/tx/${h}` },
   USDT:     { icon: '₮',  color: '#26A17B', label: 'ERC-20',   explorer: (h: string) => `https://etherscan.io/tx/${h}` },
+  TRX:      { icon: '◆',  color: '#EF0027', label: 'TRX',      explorer: (h: string) => `https://tronscan.org/#/transaction/${h}` },
   TRC20:    { icon: '₮',  color: '#EF0027', label: 'TRC-20',   explorer: (h: string) => `https://tronscan.org/#/transaction/${h}` },
   TON:      { icon: '💎', color: '#0098EA', label: 'TON',      explorer: (h: string) => `https://tonscan.org/tx/${h}` },
   USDT_TON: { icon: '₮',  color: '#0098EA', label: 'USDT TON', explorer: (h: string) => `https://tonscan.org/tx/${h}` },

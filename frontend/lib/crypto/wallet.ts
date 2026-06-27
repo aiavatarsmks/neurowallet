@@ -11,12 +11,13 @@ import bs58 from 'bs58';
 import { derivePath } from 'ed25519-hd-key';
 import { tronAddressFromPrivKey } from './tron-tx';
 import { tonAddressFromPrivKey } from './ton-tx';
+import { btcSegwitAddressFromPrivKey } from './btc-tx';
 import { encryptBytes } from './aes';
 
 export interface CryptoWallet {
   eth:  string;       // Ethereum address (BIP44 m/44'/60'/0'/0/0)
   sol:  string;       // Solana address (Ed25519 pubkey, Base58)
-  btc:  string;       // Bitcoin P2PKH address (BIP44 m/44'/0'/0'/0/0)
+  btc:  string;       // Bitcoin native SegWit address (BIP84-compatible bc1q...)
   tron: string;       // Tron address (BIP44 m/44'/195'/0'/0/0, T...)
   ton:  string;       // TON address (SLIP-0010 ed25519 m/44'/607'/0'/0')
   mnemonic: string;   // 12-word BIP39 phrase
@@ -25,27 +26,6 @@ export interface CryptoWallet {
   btcEnc:  string;    // BTC privkey encrypted with AES-GCM + PBKDF2 (base64)
   tronEnc: string;    // TRX privkey encrypted with AES-GCM + PBKDF2 (base64)
   tonEnc:  string;    // TON privkey encrypted with AES-GCM + PBKDF2 (base64)
-}
-
-// ─── Base58 (used for BTC P2PKH checksum address) ─────────────────────────
-
-const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-
-function base58CheckEncode(bytes: Uint8Array): string {
-  let n = 0n;
-  for (const b of bytes) n = (n << 8n) | BigInt(b);
-  let out = '';
-  while (n > 0n) { out = B58[Number(n % 58n)] + out; n = n / 58n; }
-  for (const b of bytes) { if (b !== 0) break; out = '1' + out; }
-  return out;
-}
-
-function pubKeyToBTCAddress(compressedPubKey: string): string {
-  const sha256d = ethers.sha256(compressedPubKey);
-  const hash160 = ethers.ripemd160(sha256d);
-  const withVersion = '0x00' + hash160.slice(2);
-  const chk = ethers.sha256(ethers.sha256(withVersion));
-  return base58CheckEncode(ethers.getBytes(withVersion + chk.slice(2, 10)));
 }
 
 // ─── Core wallet generation ────────────────────────────────────────────────
@@ -70,9 +50,9 @@ export async function importWalletFromMnemonic(
   // ETH — BIP44 m/44'/60'/0'/0/0
   const ethWallet = ethers.HDNodeWallet.fromPhrase(normalized, '', "m/44'/60'/0'/0/0");
 
-  // BTC — BIP44 m/44'/0'/0'/0/0 → P2PKH
-  const btcNode = ethers.HDNodeWallet.fromPhrase(normalized, '', "m/44'/0'/0'/0/0");
-  const btc = pubKeyToBTCAddress(btcNode.publicKey);
+  // BTC — m/84'/0'/0'/0/0 private key → native SegWit P2WPKH (bc1q...)
+  // ethers derives the key material; bitcoinjs-lib builds the actual address.
+  const btcNode = ethers.HDNodeWallet.fromPhrase(normalized, '', "m/84'/0'/0'/0/0");
 
   // SOL — SLIP-0010 ed25519 at m/44'/501'/0'/0' (Phantom/Solflare standard)
   const seed = await bip39.mnemonicToSeed(normalized);
@@ -91,6 +71,7 @@ export async function importWalletFromMnemonic(
   // Each chain has its own ciphertext — compromising one key does NOT expose others.
   const solPrivBytes  = solPrivKey as unknown as Uint8Array;
   const btcPrivBytes  = ethers.getBytes(btcNode.privateKey);
+  const btc           = btcSegwitAddressFromPrivKey(btcPrivBytes);
 
   const solEnc  = await encryptBytes(solPrivBytes,  password);
   const btcEnc  = await encryptBytes(btcPrivBytes,  password);

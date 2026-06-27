@@ -5,7 +5,7 @@
  */
 
 import { ethers } from 'ethers';
-import { fetchUsdtTrc20Balance } from './tron-tx';
+import { fetchUsdtTrc20Balance, fetchTrxBalance } from './tron-tx';
 import { fetchTonBalance, fetchUsdtTonBalance } from './ton-tx';
 
 const ETH_RPC    = 'https://cloudflare-eth.com';
@@ -22,6 +22,7 @@ export interface WalletBalances {
   eth:      number;
   usdt:     number;   // ERC-20
   usdtTrc:  number;   // TRC-20
+  trx:      number;
   usdtTon:  number;   // TON Jetton
   sol:      number;
   btc:      number;
@@ -140,12 +141,13 @@ export async function fetchRealBalances(
   tronAddress  = '',
   tonAddress   = '',
 ): Promise<WalletBalances> {
-  const [ethResult, solResult, btcResult, trc20Result, tonResult, usdtTonResult, prices] =
+  const [ethResult, solResult, btcResult, trc20Result, trxResult, tonResult, usdtTonResult, prices] =
     await Promise.allSettled([
       fetchEthBalance(ethAddress),
       fetchSolBalance(solAddress),
       fetchBtcBalance(btcAddress),
       tronAddress ? fetchUsdtTrc20Balance(tronAddress) : Promise.resolve(0),
+      tronAddress ? fetchTrxBalance(tronAddress)        : Promise.resolve(0),
       tonAddress  ? fetchTonBalance(tonAddress)         : Promise.resolve(0),
       tonAddress  ? fetchUsdtTonBalance(tonAddress)     : Promise.resolve(0),
       fetchPrices(),
@@ -156,6 +158,7 @@ export async function fetchRealBalances(
   const sol      = solResult.status      === 'fulfilled' ? solResult.value      : 0;
   const btc      = btcResult.status      === 'fulfilled' ? btcResult.value      : 0;
   const usdtTrc  = trc20Result.status    === 'fulfilled' ? trc20Result.value    : 0;
+  const trx      = trxResult.status      === 'fulfilled' ? trxResult.value      : 0;
   const ton      = tonResult.status      === 'fulfilled' ? tonResult.value      : 0;
   const usdtTon  = usdtTonResult.status  === 'fulfilled' ? usdtTonResult.value  : 0;
   const priceData =
@@ -167,6 +170,7 @@ export async function fetchRealBalances(
     eth,
     usdt,
     usdtTrc,
+    trx,
     usdtTon,
     sol,
     btc,
@@ -184,6 +188,7 @@ export function totalPortfolioEur(b: WalletBalances): number {
     b.eth * b.ethEur +
     b.usdt +
     b.usdtTrc +
+    b.trx * b.trxEur +
     b.usdtTon +
     b.sol * b.solEur +
     b.btc * b.btcEur +

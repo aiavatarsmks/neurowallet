@@ -8,6 +8,7 @@ const DEMO_ASSETS = [
   { symbol: 'ETH',      name: 'Ethereum',     amount: 1.24,  valueEUR: 2542, change24h: +1.8, color: '#627EEA', bgColor: 'rgba(98,126,234,0.13)',   icon: 'Ξ'  },
   { symbol: 'SOL',      name: 'Solana',       amount: 12.5,  valueEUR: 1500, change24h: +3.4, color: '#9945FF', bgColor: 'rgba(153,69,255,0.13)',   icon: '◎' },
   { symbol: 'USDT',     name: 'USDT ERC-20',  amount: 110,   valueEUR: 110,  change24h: 0,    color: '#26A17B', bgColor: 'rgba(38,161,123,0.13)',   icon: '₮'  },
+  { symbol: 'TRX',      name: 'TRON',         amount: 0,     valueEUR: 0,    change24h: 0,    color: '#EF0027', bgColor: 'rgba(239,0,39,0.13)',     icon: '◆'  },
   { symbol: 'USDT_TRC', name: 'USDT TRC-20',  amount: 0,     valueEUR: 0,    change24h: 0,    color: '#EF0027', bgColor: 'rgba(239,0,39,0.13)',     icon: '₮'  },
   { symbol: 'TON',      name: 'TON',           amount: 0,     valueEUR: 0,    change24h: 0,    color: '#0098EA', bgColor: 'rgba(0,152,234,0.13)',    icon: '💎' },
   { symbol: 'USDT_TON', name: 'USDT TON',      amount: 0,     valueEUR: 0,    change24h: 0,    color: '#0098EA', bgColor: 'rgba(0,152,234,0.10)',    icon: '₮'  },
@@ -58,6 +59,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
         { symbol: 'ETH',      name: 'Ethereum',    amount: b.eth,     valueEUR: b.eth     * b.ethEur, change24h: 0, color: '#627EEA', bgColor: 'rgba(98,126,234,0.13)',  icon: 'Ξ'  },
         { symbol: 'SOL',      name: 'Solana',      amount: b.sol,     valueEUR: b.sol     * b.solEur, change24h: 0, color: '#9945FF', bgColor: 'rgba(153,69,255,0.13)',  icon: '◎' },
         { symbol: 'USDT',     name: 'USDT ERC-20', amount: b.usdt,    valueEUR: b.usdt,              change24h: 0, color: '#26A17B', bgColor: 'rgba(38,161,123,0.13)',  icon: '₮'  },
+        { symbol: 'TRX',      name: 'TRON',        amount: b.trx,     valueEUR: b.trx     * b.trxEur, change24h: 0, color: '#EF0027', bgColor: 'rgba(239,0,39,0.13)',    icon: '◆'  },
         { symbol: 'USDT_TRC', name: 'USDT TRC-20', amount: b.usdtTrc, valueEUR: b.usdtTrc,           change24h: 0, color: '#EF0027', bgColor: 'rgba(239,0,39,0.13)',    icon: '₮'  },
         { symbol: 'TON',      name: 'TON',          amount: b.ton,     valueEUR: b.ton     * b.tonEur, change24h: 0, color: '#0098EA', bgColor: 'rgba(0,152,234,0.13)', icon: '💎' },
         { symbol: 'USDT_TON', name: 'USDT TON',     amount: b.usdtTon, valueEUR: b.usdtTon,           change24h: 0, color: '#0098EA', bgColor: 'rgba(0,152,234,0.10)', icon: '₮'  },
@@ -66,8 +68,8 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
     }).catch(() => setLoading(false));
   }, []);
 
-  // In real mode: always show the 4 base coins; show TON/USDT_TRC/USDT_TON only if balance > 0
-  const BASE_SYMBOLS = new Set(['BTC', 'ETH', 'SOL', 'USDT']);
+  // In real mode: always show base coins and TRX (needed for Tron fees).
+  const BASE_SYMBOLS = new Set(['BTC', 'ETH', 'SOL', 'USDT', 'TRX']);
   const visibleAssets = isReal
     ? assets.filter((a) => BASE_SYMBOLS.has(a.symbol) || a.amount > 0)
     : assets;

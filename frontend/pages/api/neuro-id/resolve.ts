@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { checkRateLimit, requireSupabaseUser } from '@/lib/server/api-security';
 import { getAddressForCoin, normalizeNeuroId, type NeuroCoin, type NeuroDirectoryRow } from '@/lib/neuro-id';
 
-const VALID_COINS = new Set<NeuroCoin>(['BTC', 'ETH', 'SOL', 'USDT', 'TRC20', 'TON', 'USDT_TON']);
+const VALID_COINS = new Set<NeuroCoin>(['BTC', 'ETH', 'SOL', 'USDT', 'TRX', 'TRC20', 'TON', 'USDT_TON']);
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') {

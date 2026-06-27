@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
+
+const WELCOME_SEEN_KEY = 'nw_welcome_seen_v1';
 
 const SLIDES = [
   {
@@ -49,11 +51,49 @@ const SLIDES = [
 
 export default function OnboardingPage() {
   const [slide, setSlide] = useState(0);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const router = useRouter();
-  const { enterDemo } = useAuth();
+  const { enterDemo, isDemo, isLoading, user } = useAuth();
 
-  const goToAuth = () => router.push('/auth');
-  const goToDemo = () => { enterDemo(); router.push('/wallet'); };
+  useEffect(() => {
+    if (isLoading || typeof window === 'undefined') return;
+    if (localStorage.getItem(WELCOME_SEEN_KEY) !== '1') return;
+
+    const hasWallet = !!localStorage.getItem('wallet_eth_address');
+    if (isDemo || hasWallet) {
+      router.replace('/wallet');
+    } else if (user) {
+      router.replace('/onboarding');
+    } else {
+      router.replace('/auth');
+    }
+  }, [isDemo, isLoading, router, user]);
+
+  const markWelcomeSeen = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(WELCOME_SEEN_KEY, '1');
+    }
+  };
+
+  const goToAuth = () => {
+    markWelcomeSeen();
+    router.push('/auth');
+  };
+
+  const goToDemo = () => {
+    enterDemo();
+    router.push('/wallet');
+  };
+
+  const handleSwipeEnd = (x: number) => {
+    if (touchStartX === null) return;
+    const delta = x - touchStartX;
+    setTouchStartX(null);
+    if (Math.abs(delta) < 44) return;
+    if (delta < 0 && slide < SLIDES.length - 1) setSlide(slide + 1);
+    if (delta > 0 && slide > 0) setSlide(slide - 1);
+  };
+
   // "Пропустить" тоже ведёт на auth, а не в wallet
   const goToApp = goToAuth;
 
@@ -73,7 +113,11 @@ export default function OnboardingPage() {
       </div>
 
       {/* Slide content */}
-      <div className="flex-1 flex flex-col items-center justify-center text-center gap-8">
+      <div
+        className="flex-1 flex flex-col items-center justify-center text-center gap-8"
+        onTouchStart={(event) => setTouchStartX(event.touches[0]?.clientX ?? null)}
+        onTouchEnd={(event) => handleSwipeEnd(event.changedTouches[0]?.clientX ?? 0)}
+      >
         {/* Icon */}
         <div
           className="w-32 h-32 rounded-full flex items-center justify-center"

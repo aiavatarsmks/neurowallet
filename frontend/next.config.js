@@ -60,6 +60,15 @@ const nextConfig = {
 
   // Three.js uses browser APIs — exclude from SSR transpilation
   webpack(config, { isServer }) {
+    config.experiments = {
+      ...(config.experiments || {}),
+      asyncWebAssembly: true,
+    };
+    config.output.environment = {
+      ...(config.output.environment || {}),
+      asyncFunction: true,
+    };
+
     if (isServer) {
       config.externals = [
         ...(config.externals || []),

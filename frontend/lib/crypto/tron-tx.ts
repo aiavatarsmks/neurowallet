@@ -119,6 +119,21 @@ export async function fetchUsdtTrc20Balance(address: string): Promise<number> {
   }
 }
 
+export async function fetchTrxBalance(address: string): Promise<number> {
+  if (!address || !isValidTronAddress(address)) return 0;
+  try {
+    const res = await fetch(`${TRONGRID}/v1/accounts/${address}`, {
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) return 0;
+    const data = await res.json();
+    const account = (data.data ?? [])[0];
+    return ((account?.balance as number) ?? 0) / 1e6;
+  } catch {
+    return 0;
+  }
+}
+
 // ─── Send USDT TRC-20 ─────────────────────────────────────────────────────────
 
 /**
@@ -190,6 +205,63 @@ export async function sendUsdtTrc20Raw(
 
   const broadcastJson = await broadcastRes.json();
 
+  if (!broadcastJson.result) {
+    const msg = broadcastJson.message ?? broadcastJson.code ?? 'Ошибка отправки в сеть Tron.';
+    throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+  }
+
+  return broadcastJson.txid as string;
+}
+
+export async function sendTrxRaw(
+  privKey: Uint8Array,
+  toAddr:  string,
+  amount:  number,
+): Promise<string> {
+  if (!isValidTronAddress(toAddr)) throw new Error('Неверный TRX-адрес получателя.');
+
+  const fromAddr = tronAddressFromPrivKey(privKey);
+  const amountSun = Math.round(amount * 1e6);
+  if (amountSun <= 0) throw new Error('Сумма должна быть больше нуля.');
+
+  const buildRes = await fetch(`${TRONGRID}/wallet/createtransaction`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      owner_address: tronAddrToHex(fromAddr),
+      to_address:    tronAddrToHex(toAddr),
+      amount:        amountSun,
+      visible:       false,
+    }),
+  });
+
+  if (!buildRes.ok) {
+    throw new Error('TronGrid недоступен. Проверь соединение и попробуй позже.');
+  }
+
+  const tx = await buildRes.json();
+  if (!tx.raw_data_hex) {
+    throw new Error(tx?.Error ?? 'Ошибка построения TRX-транзакции.');
+  }
+
+  const rawBytes = new Uint8Array(
+    (tx.raw_data_hex as string).match(/.{2}/g)!.map((h) => parseInt(h, 16)),
+  );
+  const msgHash = sha256b(rawBytes);
+  const sig = secp256k1.sign(msgHash, privKey, { lowS: true });
+  const sigHex =
+    Array.from(sig.toCompactRawBytes())
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('') +
+    sig.recovery.toString(16).padStart(2, '0');
+
+  const broadcastRes = await fetch(`${TRONGRID}/wallet/broadcasttransaction`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ ...tx, signature: [sigHex] }),
+  });
+
+  const broadcastJson = await broadcastRes.json();
   if (!broadcastJson.result) {
     const msg = broadcastJson.message ?? broadcastJson.code ?? 'Ошибка отправки в сеть Tron.';
     throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));

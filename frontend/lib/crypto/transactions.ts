@@ -10,13 +10,13 @@ import bs58 from 'bs58';
 import {
   fetchUTXOs,
   getBtcFeeRate,
-  selectUTXOs,
   buildSignedTx,
   broadcastBtcTx,
   isValidBtcAddress as _isValidBtcAddress,
 } from './btc-tx';
 import {
   sendUsdtTrc20Raw,
+  sendTrxRaw,
   isValidTronAddress as _isValidTronAddress,
 } from './tron-tx';
 import {
@@ -240,6 +240,20 @@ export async function sendUsdtTrc20(
   }
 }
 
+export async function sendTrx(
+  tronEncBlob: string,
+  password:    string,
+  toAddress:   string,
+  amountTrx:   number,
+): Promise<string> {
+  const tronPrivKey = await decryptBytes(tronEncBlob, password);
+  try {
+    return await sendTrxRaw(tronPrivKey, toAddress, amountTrx);
+  } finally {
+    tronPrivKey.fill(0);
+  }
+}
+
 // ─── Send BTC ─────────────────────────────────────────────────────────────────
 //
 // BTC private key stored encrypted independently (wallet_btc_enc, AES-GCM + PBKDF2).
@@ -262,13 +276,12 @@ export async function sendBtc(
   if (utxos.length === 0) throw new Error('Нет подтверждённых UTXO. Подожди подтверждения входящих транзакций.');
 
   // 3. Select UTXOs and calculate change
-  const { utxos: selected, change } = selectUTXOs(utxos, amountSat, feeRate);
-
-  // 4. Build and sign raw transaction
-  const rawHex = buildSignedTx(btcPrivKey, selected, toAddress, fromAddress, amountSat, change);
+  // 3. Build and sign raw transaction. The PSBT helper supports old legacy
+  // NeuroWallet BTC addresses and new native SegWit addresses.
+  const rawHex = await buildSignedTx(btcPrivKey, utxos, toAddress, fromAddress, amountSat, feeRate);
   btcPrivKey.fill(0);
 
-  // 5. Broadcast
+  // 4. Broadcast
   const txid = await broadcastBtcTx(rawHex);
   return txid;
 }
