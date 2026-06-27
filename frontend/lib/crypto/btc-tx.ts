@@ -8,16 +8,12 @@
  */
 
 import * as bitcoin from 'bitcoinjs-lib';
-import { ECPairFactory, type ECPairInterface } from 'ecpair';
-import * as ecc from 'tiny-secp256k1';
+import { secp256k1 } from '@noble/curves/secp256k1';
 import { Buffer } from 'buffer';
 
 const BLOCKSTREAM = 'https://blockstream.info/api';
 const MEMPOOL     = 'https://mempool.space/api';
 const NETWORK     = bitcoin.networks.bitcoin;
-const ECPair      = ECPairFactory(ecc);
-
-bitcoin.initEccLib(ecc);
 
 export interface UTXO {
   txid:   string;
@@ -28,6 +24,11 @@ export interface UTXO {
 
 type BtcSourceType = 'p2wpkh' | 'p2pkh';
 
+interface BtcSigner {
+  publicKey: Uint8Array;
+  sign(hash: Uint8Array): Uint8Array;
+}
+
 interface SelectedUTXOs {
   utxos:    UTXO[];
   totalIn:  bigint;
@@ -35,8 +36,13 @@ interface SelectedUTXOs {
   change:   bigint;
 }
 
-function keyPairFromPrivKey(privKey: Uint8Array): ECPairInterface {
-  return ECPair.fromPrivateKey(Buffer.from(privKey), { compressed: true, network: NETWORK });
+function signerFromPrivKey(privKey: Uint8Array): BtcSigner {
+  return {
+    publicKey: secp256k1.getPublicKey(privKey, true),
+    sign(hash: Uint8Array): Uint8Array {
+      return secp256k1.sign(hash, privKey, { lowS: true }).toCompactRawBytes();
+    },
+  };
 }
 
 function getSourceType(address: string): BtcSourceType {
@@ -45,8 +51,8 @@ function getSourceType(address: string): BtcSourceType {
   throw new Error('Этот тип BTC-адреса отправителя пока не поддерживается. Создай или импортируй обычный NeuroWallet BTC-кошелёк.');
 }
 
-function getOwnPayment(keyPair: ECPairInterface, sourceType: BtcSourceType): bitcoin.Payment {
-  const pubkey = Buffer.from(keyPair.publicKey);
+function getOwnPayment(signer: BtcSigner, sourceType: BtcSourceType): bitcoin.Payment {
+  const pubkey = Buffer.from(signer.publicKey);
   if (sourceType === 'p2wpkh') {
     return bitcoin.payments.p2wpkh({ pubkey, network: NETWORK });
   }
@@ -54,9 +60,9 @@ function getOwnPayment(keyPair: ECPairInterface, sourceType: BtcSourceType): bit
 }
 
 export function btcSegwitAddressFromPrivKey(privKey: Uint8Array): string {
-  const keyPair = keyPairFromPrivKey(privKey);
+  const signer = signerFromPrivKey(privKey);
   const payment = bitcoin.payments.p2wpkh({
-    pubkey: Buffer.from(keyPair.publicKey),
+    pubkey: Buffer.from(signer.publicKey),
     network: NETWORK,
   });
   if (!payment.address) throw new Error('Не удалось создать BTC SegWit-адрес.');
@@ -158,8 +164,8 @@ export async function buildSignedTx(
   feeRateSat:    number,
 ): Promise<string> {
   const sourceType = getSourceType(changeAddress);
-  const keyPair    = keyPairFromPrivKey(privKey);
-  const payment    = getOwnPayment(keyPair, sourceType);
+  const signer      = signerFromPrivKey(privKey);
+  const payment     = getOwnPayment(signer, sourceType);
   if (!payment.output) throw new Error('Не удалось создать BTC input script.');
 
   const selected = selectUTXOs(utxos, amountSat, feeRateSat, sourceType, toAddress, changeAddress);
@@ -189,7 +195,7 @@ export async function buildSignedTx(
     psbt.addOutput({ address: changeAddress, value: selected.change });
   }
 
-  psbt.signAllInputs(keyPair);
+  psbt.signAllInputs(signer);
   psbt.finalizeAllInputs();
   return psbt.extractTransaction().toHex();
 }
