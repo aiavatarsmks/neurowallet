@@ -18,7 +18,7 @@ export interface CryptoWallet {
   sol:  string;       // Solana address (Ed25519 pubkey, Base58)
   btc:  string;       // Bitcoin P2PKH address (BIP44 m/44'/0'/0'/0/0)
   tron: string;       // Tron address (BIP44 m/44'/195'/0'/0/0, T...)
-  ton:  string;       // TON address (SLIP-0010 ed25519 m/44'/607'/0'/0/0)
+  ton:  string;       // TON address (SLIP-0010 ed25519 m/44'/607'/0'/0')
   mnemonic: string;   // 12-word BIP39 phrase
   keystore: string;   // Encrypted ETH keystore JSON (AES-256 + scrypt N=131072)
   solEnc:  string;    // SOL privkey encrypted with AES-GCM + PBKDF2 (base64)
@@ -101,8 +101,8 @@ export async function importWalletFromMnemonic(
   const tron          = tronAddressFromPrivKey(tronPrivBytes);
   const tronEnc       = await encryptBytes(tronPrivBytes, password);
 
-  // TON — SLIP-0010 ed25519 at m/44'/607'/0'/0/0
-  const { key: tonPrivKey } = derivePath("m/44'/607'/0'/0/0", seed.toString('hex'));
+  // TON — SLIP-0010 ed25519 at m/44'/607'/0'/0' (all components hardened — required by ed25519-hd-key)
+  const { key: tonPrivKey } = derivePath("m/44'/607'/0'/0'", seed.toString('hex'));
   const tonPrivBytes        = tonPrivKey as unknown as Uint8Array;
   const ton                 = tonAddressFromPrivKey(tonPrivBytes);
   const tonEnc              = await encryptBytes(tonPrivBytes, password);
