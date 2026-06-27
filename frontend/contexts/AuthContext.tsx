@@ -48,14 +48,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isTelegramUser, setIsTgUser] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && localStorage.getItem(DEMO_KEY) === 'true') {
-      setState({ user: null, isDemo: true, isLoading: false });
-      return;
-    }
-
-    // Auto-login via Telegram initData if running inside Telegram Mini App
+    // Telegram initData takes priority over everything — always try real auth first
     const initData = getTelegramInitData();
     if (initData) {
+      // Clear stale demo flag so a real TG user never gets stuck in demo mode
+      if (typeof window !== 'undefined') localStorage.removeItem(DEMO_KEY);
       setIsTgUser(true);
       fetch('/api/tg-auth', {
         method:  'POST',
@@ -84,6 +81,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         })
         .catch(() => setState({ user: null, isDemo: false, isLoading: false }));
+      return;
+    }
+
+    // No Telegram context — check for saved demo session
+    if (typeof window !== 'undefined' && localStorage.getItem(DEMO_KEY) === 'true') {
+      setState({ user: null, isDemo: true, isLoading: false });
       return;
     }
 
