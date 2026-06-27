@@ -32,11 +32,19 @@ const FEE_EUR: Record<Coin, string> = {
 
 interface CryptoSendScreenProps {
   initialCoin?:  Coin;
+  initialAddress?: string;
+  initialAmount?: string;
+  recipientName?: string;
+  neuroId?: string;
   onAvatarState?: (s: 'idle' | 'talking' | 'thinking') => void;
 }
 
 export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   initialCoin = 'ETH',
+  initialAddress = '',
+  initialAmount = '',
+  recipientName = '',
+  neuroId = '',
   onAvatarState,
 }) => {
   const [coin,     setCoin]     = useState<Coin>(initialCoin);
@@ -50,6 +58,17 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   const [sendErr,  setSendErr]  = useState('');
   const [balances, setBalances] = useState<Record<Coin, number>>({ ETH: 0, BTC: 0, SOL: 0, USDT: 0, TRC20: 0, TON: 0, USDT_TON: 0 });
   const [balReady, setBalReady] = useState(false);
+
+  useEffect(() => {
+    setCoin(initialCoin);
+    setAddress(initialAddress);
+    setAmount(initialAmount);
+    setStep('form');
+    setPassword('');
+    setPwError('');
+    setSendErr('');
+    setTxHash('');
+  }, [initialCoin, initialAddress, initialAmount]);
 
   // Load real balances once on mount
   useEffect(() => {
@@ -218,7 +237,9 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
 
         <div>
           <p className="text-white text-xl font-bold">{amountNum} {coin} отправлено</p>
-          <p className="text-[#3A6045] text-sm mt-1">Транзакция отправлена в сеть</p>
+          <p className="text-[#3A6045] text-sm mt-1">
+            {recipientName ? `${recipientName} • ` : ''}Транзакция отправлена в сеть
+          </p>
         </div>
 
         {txHash && (
@@ -311,6 +332,18 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
             <span className="text-[#3A6045]">На адрес</span>
             <span className="text-white font-mono">{shortAddr}</span>
           </div>
+          {recipientName && (
+            <div className="flex justify-between text-xs">
+              <span className="text-[#3A6045]">Получатель</span>
+              <span className="text-white font-medium">{recipientName}</span>
+            </div>
+          )}
+          {neuroId && (
+            <div className="flex justify-between text-xs">
+              <span className="text-[#3A6045]">NeuroID</span>
+              <span className="text-[#00FF7F] font-mono">{neuroId}</span>
+            </div>
+          )}
         </div>
 
         <div>
@@ -406,6 +439,8 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
             ['Монета',   <span key="c" className="flex items-center gap-1.5"><span className="font-bold" style={{ color: data.color }}>{data.icon}</span><span className="text-white">{coin}</span></span>],
             ['Сумма',    <span key="a" className="text-white font-bold">{amountNum} {coin}</span>],
             ['Комиссия', <span key="f" className="text-[#3A6045]">{FEE_EUR[coin]}</span>],
+            ...(recipientName ? [['Получатель', <span key="r" className="text-white font-medium">{recipientName}</span>]] as [string, React.ReactNode][] : []),
+            ...(neuroId ? [['NeuroID', <span key="n" className="text-[#00FF7F] font-mono">{neuroId}</span>]] as [string, React.ReactNode][] : []),
           ] as [string, React.ReactNode][]).map(([label, val]) => (
             <div key={label} className="flex justify-between items-center">
               <span className="text-[#3A6045] text-sm">{label}</span>

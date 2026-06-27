@@ -24,6 +24,15 @@ const NeuraAvatar = dynamic(
 
 type NavTab = 'home' | 'send' | 'add' | 'cards' | 'wallet';
 type Tab = NavTab | 'profile' | 'receive' | 'crypto-send';
+type CryptoSendCoin = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TON' | 'TRC20' | 'USDT_TON';
+
+interface CryptoSendDraft {
+  coin: CryptoSendCoin;
+  address: string;
+  amount: string;
+  recipientName: string;
+  neuroId?: string;
+}
 
 const HEADER_TITLES: Record<Tab, string> = {
   home:          'NeuroWallet',
@@ -59,8 +68,9 @@ export default function WalletPage() {
   const [chatHasMessages, setChatHasMessages] = useState(false);
   const [pinRequired, setPinRequired] = useState(false);
   const [walletPassword, setWalletPassword] = useState<string | null>(null);
-const [receiveCoin, setReceiveCoin] = useState<'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TON' | 'TRX'>('ETH');
-  const [cryptoSendCoin, setCryptoSendCoin] = useState<'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TON' | 'TRC20' | 'USDT_TON'>('ETH');
+  const [receiveCoin, setReceiveCoin] = useState<'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TON' | 'TRX'>('ETH');
+  const [cryptoSendCoin, setCryptoSendCoin] = useState<CryptoSendCoin>('ETH');
+  const [cryptoSendDraft, setCryptoSendDraft] = useState<CryptoSendDraft | null>(null);
 
   useEffect(() => {
     if (!isLoading && !user && !isDemo) {
@@ -115,8 +125,15 @@ const [receiveCoin, setReceiveCoin] = useState<'BTC' | 'ETH' | 'SOL' | 'USDT' | 
 
   const handleSendCrypto = (symbol: string) => {
     const sendMap: Record<string, string> = { 'USDT_TRC': 'TRC20' };
-    const coin = (sendMap[symbol] ?? symbol) as 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TON' | 'TRC20' | 'USDT_TON';
+    const coin = (sendMap[symbol] ?? symbol) as CryptoSendCoin;
+    setCryptoSendDraft(null);
     setCryptoSendCoin(coin);
+    setActiveTab('crypto-send');
+  };
+
+  const handleSendCryptoTransfer = (draft: CryptoSendDraft) => {
+    setCryptoSendCoin(draft.coin);
+    setCryptoSendDraft(draft);
     setActiveTab('crypto-send');
   };
 
@@ -224,7 +241,10 @@ const [receiveCoin, setReceiveCoin] = useState<'BTC' | 'ETH' | 'SOL' | 'USDT' | 
 
       {/* ── Send (fiat) ─────────────────────────────────────── */}
       {activeTab === 'send' && (
-        <SendScreen onAvatarState={setAvatarState} />
+        <SendScreen
+          onAvatarState={setAvatarState}
+          onSendCryptoTransfer={handleSendCryptoTransfer}
+        />
       )}
 
       {/* ── Нейра Chat ─────────────────────────────────────── */}
@@ -257,7 +277,14 @@ const [receiveCoin, setReceiveCoin] = useState<'BTC' | 'ETH' | 'SOL' | 'USDT' | 
 
       {/* ── Send Crypto ────────────────────────────────────── */}
       {activeTab === 'crypto-send' && (
-        <CryptoSendScreen initialCoin={cryptoSendCoin} onAvatarState={setAvatarState} />
+        <CryptoSendScreen
+          initialCoin={cryptoSendCoin}
+          initialAddress={cryptoSendDraft?.address ?? ''}
+          initialAmount={cryptoSendDraft?.amount ?? ''}
+          recipientName={cryptoSendDraft?.recipientName ?? ''}
+          neuroId={cryptoSendDraft?.neuroId ?? ''}
+          onAvatarState={setAvatarState}
+        />
       )}
 
       {/* ── Bottom Nav ─────────────────────────────────────── */}

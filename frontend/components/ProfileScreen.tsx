@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '@/contexts/AuthContext';
+import { neuroIdFromUserId, syncMyNeuroDirectory } from '@/lib/neuro-id';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -130,6 +131,8 @@ export const ProfileScreen: React.FC = () => {
   const [tgUsername,  setTgUsername]  = useState('');
   const [tgFirstName, setTgFirstName] = useState('');
   const [tgPhotoUrl,  setTgPhotoUrl]  = useState('');
+  const [neuroId, setNeuroId] = useState('');
+  const [neuroIdSyncState, setNeuroIdSyncState] = useState<'idle' | 'synced' | 'pending'>('idle');
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -147,7 +150,25 @@ export const ProfileScreen: React.FC = () => {
     setTgUsername(localStorage.getItem('tg_username')   || '');
     setTgFirstName(localStorage.getItem('tg_first_name') || '');
     setTgPhotoUrl(localStorage.getItem('tg_photo_url')  || '');
-  }, []);
+
+    if (user?.id) {
+      const localNeuroId = neuroIdFromUserId(user.id);
+      setNeuroId(localNeuroId);
+
+      const nameForDirectory =
+        localStorage.getItem('tg_first_name') ||
+        user.name ||
+        user.email ||
+        'NeuroWallet user';
+
+      syncMyNeuroDirectory(nameForDirectory)
+        .then((row) => {
+          setNeuroId(row?.neuro_id ?? localNeuroId);
+          setNeuroIdSyncState(row ? 'synced' : 'pending');
+        })
+        .catch(() => setNeuroIdSyncState('pending'));
+    }
+  }, [user]);
 
   const isTgUser    = !!tgUsername || !!localStorage.getItem?.('tg_user_id');
   const displayName = isDemo
@@ -196,6 +217,36 @@ export const ProfileScreen: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {neuroId && (
+        <div
+          className="rounded-2xl p-4"
+          style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.1)' }}
+        >
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <div>
+              <p className="text-white text-sm font-semibold">NeuroID</p>
+              <p className="text-[#3A6045] text-xs mt-0.5">
+                Для переводов внутри NeuroWallet
+              </p>
+            </div>
+            <span
+              className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+              style={{
+                background: neuroIdSyncState === 'synced' ? 'rgba(0,255,127,0.1)' : 'rgba(245,158,11,0.08)',
+                color: neuroIdSyncState === 'synced' ? '#00FF7F' : '#f59e0b',
+              }}
+            >
+              {neuroIdSyncState === 'synced' ? 'Активен' : 'Локально'}
+            </span>
+          </div>
+          <p className="text-white text-sm font-mono mb-3">{neuroId}</p>
+          <CopyButton text={neuroId} />
+          <p className="text-[#3A6045] text-xs mt-3 leading-relaxed">
+            По NeuroID другой пользователь сможет найти твой адрес нужной сети и отправить крипту on-chain.
+          </p>
+        </div>
+      )}
 
       {/* Wallet addresses */}
       {hasWallet ? (

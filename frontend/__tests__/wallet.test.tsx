@@ -11,7 +11,7 @@ vi.mock('@/contexts/AuthContext', () => ({
 describe('BalanceCard component', () => {
   it('renders a balance label', () => {
     render(<BalanceCard />);
-    const heading = screen.getByText(/Общий капитал/i);
+    const heading = screen.getByText(/Крипто-портфель/i);
     expect(heading).toBeInTheDocument();
   });
 });
