@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { sendEth, sendUsdt, sendUsdtTrc20, sendTrx, sendSol, sendBtc, sendTon, sendUsdtTon, isValidEthAddress, isValidSolAddress, isValidBtcAddress, isValidTronAddress, isValidTonAddress } from '@/lib/crypto/transactions';
-import { fetchRealBalances } from '@/lib/crypto/balances';
+import { fetchRealBalances, MARKET_REFRESH_MS } from '@/lib/crypto/balances';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 
 type Coin = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TRX' | 'TRC20' | 'TON' | 'USDT_TON';
 type Step = 'form' | 'confirm' | 'password' | 'sending' | 'done';
@@ -48,6 +49,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   neuroId = '',
   onAvatarState,
 }) => {
+  const { isDemo } = useAuth();
   const [coin,     setCoin]     = useState<Coin>(initialCoin);
   const [address,  setAddress]  = useState('');
   const [amount,   setAmount]   = useState('');
@@ -74,19 +76,30 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   // Load real balances once on mount
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (isDemo) {
+      setBalances({ ETH: 1.24, BTC: 0.042, SOL: 12.5, USDT: 110, TRX: 250, TRC20: 85, TON: 32, USDT_TON: 45 });
+      setBalReady(true);
+      return;
+    }
     const eth  = localStorage.getItem('wallet_eth_address')  || '';
     const sol  = localStorage.getItem('wallet_sol_address')  || '';
     const btc  = localStorage.getItem('wallet_btc_address')  || '';
     const tron = localStorage.getItem('wallet_tron_address') || '';
     const ton  = localStorage.getItem('wallet_ton_address')  || '';
     if (!eth) { setBalReady(true); return; }
-    fetchRealBalances(eth, sol, btc, tron, ton)
-      .then((b) => {
-        setBalances({ ETH: b.eth, BTC: b.btc, SOL: b.sol, USDT: b.usdt, TRX: b.trx, TRC20: b.usdtTrc, TON: b.ton, USDT_TON: b.usdtTon });
-        setBalReady(true);
-      })
-      .catch(() => setBalReady(true));
-  }, []);
+    const loadBalances = () => {
+      fetchRealBalances(eth, sol, btc, tron, ton)
+        .then((b) => {
+          setBalances({ ETH: b.eth, BTC: b.btc, SOL: b.sol, USDT: b.usdt, TRX: b.trx, TRC20: b.usdtTrc, TON: b.ton, USDT_TON: b.usdtTon });
+          setBalReady(true);
+        })
+        .catch(() => setBalReady(true));
+    };
+
+    loadBalances();
+    const timer = window.setInterval(loadBalances, MARKET_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [isDemo]);
 
   const data       = COINS[coin];
   const amountNum  = parseFloat(amount) || 0;
@@ -112,8 +125,9 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
 
   // ─── Real ETH send ────────────────────────────────────────────────────────
   const handleConfirmSend = async () => {
-    if (!data.implemented) {
+    if (isDemo || !data.implemented) {
       // Placeholder for BTC/SOL/USDT — show success screen (no real tx)
+      setTxHash(`demo-${coin.toLowerCase()}-${Date.now().toString(36)}`);
       onAvatarState?.('talking');
       setStep('done');
       setTimeout(() => onAvatarState?.('idle'), 3000);
@@ -491,11 +505,11 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
             Назад
           </button>
           <button
-            onClick={() => data.implemented ? setStep('password') : handleConfirmSend()}
+            onClick={() => data.implemented && !isDemo ? setStep('password') : handleConfirmSend()}
             className="flex-1 py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95"
             style={{ background: '#00FF7F', color: '#080C09', boxShadow: '0 0 20px rgba(0,255,127,0.3)' }}
           >
-            {data.implemented ? 'Ввести пароль' : 'Отправить (демо)'}
+            {data.implemented && !isDemo ? 'Ввести пароль' : 'Отправить (демо)'}
           </button>
         </div>
       </div>

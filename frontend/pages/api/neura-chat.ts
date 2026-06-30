@@ -23,9 +23,9 @@ interface ChatMessage {
 }
 
 interface WalletContext {
-  eth?: number; btc?: number; sol?: number; trx?: number; usdt?: number; usdtTrc?: number;
-  ethEur?: number; btcEur?: number; solEur?: number; trxEur?: number;
-  ethAddr?: string; btcAddr?: string; solAddr?: string; tronAddr?: string;
+  eth?: number; btc?: number; sol?: number; trx?: number; ton?: number; usdt?: number; usdtTrc?: number; usdtTon?: number;
+  ethEur?: number; btcEur?: number; solEur?: number; trxEur?: number; tonEur?: number;
+  ethAddr?: string; btcAddr?: string; solAddr?: string; tronAddr?: string; tonAddr?: string;
 }
 
 function buildSystemPrompt(ctx?: WalletContext): string {
@@ -38,10 +38,13 @@ function buildSystemPrompt(ctx?: WalletContext): string {
     if (ctx.trx  !== undefined) lines.push(`• TRX: ${ctx.trx.toFixed(4)} TRX (~€${((ctx.trx || 0) * (ctx.trxEur || 0)).toFixed(2)})`);
     if (ctx.usdt    !== undefined) lines.push(`• USDT (ERC-20): ${ctx.usdt.toFixed(2)} USDT`);
     if (ctx.usdtTrc !== undefined) lines.push(`• USDT (TRC-20): ${ctx.usdtTrc.toFixed(2)} USDT`);
+    if (ctx.ton !== undefined) lines.push(`• TON: ${ctx.ton.toFixed(4)} TON (~€${((ctx.ton || 0) * (ctx.tonEur || 0)).toFixed(2)})`);
+    if (ctx.usdtTon !== undefined) lines.push(`• USDT TON: ${ctx.usdtTon.toFixed(2)} USDT`);
     if (ctx.ethAddr)  lines.push(`• ETH/USDT адрес: ${ctx.ethAddr}`);
     if (ctx.btcAddr)  lines.push(`• BTC адрес: ${ctx.btcAddr}`);
     if (ctx.solAddr)  lines.push(`• SOL адрес: ${ctx.solAddr}`);
     if (ctx.tronAddr) lines.push(`• Tron адрес: ${ctx.tronAddr}`);
+    if (ctx.tonAddr)  lines.push(`• TON адрес: ${ctx.tonAddr}`);
     lines.push('Используй эти данные, чтобы давать конкретные советы по портфелю пользователя.');
     prompt += lines.join('\n');
   }

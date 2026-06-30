@@ -1,17 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { fetchRealBalances, WalletBalances } from '@/lib/crypto/balances';
+import { fetchRealBalances, MARKET_REFRESH_MS, WalletBalances } from '@/lib/crypto/balances';
+import { SUPPORTED_ASSETS, type AssetSymbol } from '@/lib/crypto/assets';
+import { useAuth } from '@/contexts/AuthContext';
 
 // ─── Demo data (shown when no real wallet is set up) ──────────────────────
 
 const DEMO_ASSETS = [
-  { symbol: 'BTC',      name: 'Bitcoin',      amount: 0.042, valueEUR: 2310, change24h: +4.2, color: '#F7931A', bgColor: 'rgba(247,147,26,0.13)',  icon: '₿'  },
-  { symbol: 'ETH',      name: 'Ethereum',     amount: 1.24,  valueEUR: 2542, change24h: +1.8, color: '#627EEA', bgColor: 'rgba(98,126,234,0.13)',   icon: 'Ξ'  },
-  { symbol: 'SOL',      name: 'Solana',       amount: 12.5,  valueEUR: 1500, change24h: +3.4, color: '#9945FF', bgColor: 'rgba(153,69,255,0.13)',   icon: '◎' },
-  { symbol: 'USDT',     name: 'USDT ERC-20',  amount: 110,   valueEUR: 110,  change24h: 0,    color: '#26A17B', bgColor: 'rgba(38,161,123,0.13)',   icon: '₮'  },
-  { symbol: 'TRX',      name: 'TRON',         amount: 0,     valueEUR: 0,    change24h: 0,    color: '#EF0027', bgColor: 'rgba(239,0,39,0.13)',     icon: '◆'  },
-  { symbol: 'USDT_TRC', name: 'USDT TRC-20',  amount: 0,     valueEUR: 0,    change24h: 0,    color: '#EF0027', bgColor: 'rgba(239,0,39,0.13)',     icon: '₮'  },
-  { symbol: 'TON',      name: 'TON',           amount: 0,     valueEUR: 0,    change24h: 0,    color: '#0098EA', bgColor: 'rgba(0,152,234,0.13)',    icon: '💎' },
-  { symbol: 'USDT_TON', name: 'USDT TON',      amount: 0,     valueEUR: 0,    change24h: 0,    color: '#0098EA', bgColor: 'rgba(0,152,234,0.10)',    icon: '₮'  },
+  { ...SUPPORTED_ASSETS[0], amount: 0.042, valueEUR: 2310, change24h: +4.2, priceEUR: 55000 },
+  { ...SUPPORTED_ASSETS[1], amount: 1.24,  valueEUR: 2542, change24h: +1.8, priceEUR: 2050 },
+  { ...SUPPORTED_ASSETS[2], amount: 12.5,  valueEUR: 1500, change24h: +3.4, priceEUR: 120 },
+  { ...SUPPORTED_ASSETS[3], amount: 110,   valueEUR: 110,  change24h: 0,    priceEUR: 1 },
+  { ...SUPPORTED_ASSETS[4], amount: 0,     valueEUR: 0,    change24h: 0,    priceEUR: 0.22 },
+  { ...SUPPORTED_ASSETS[5], amount: 0,     valueEUR: 0,    change24h: 0,    priceEUR: 1 },
+  { ...SUPPORTED_ASSETS[6], amount: 0,     valueEUR: 0,    change24h: 0,    priceEUR: 3.5 },
+  { ...SUPPORTED_ASSETS[7], amount: 0,     valueEUR: 0,    change24h: 0,    priceEUR: 1 },
 ];
 
 const CHART_BARS = [35, 48, 40, 58, 44, 66, 60, 72, 55, 78, 68, 82, 88, 78, 92];
@@ -19,10 +21,12 @@ const CHART_BARS = [35, 48, 40, 58, 44, 66, 60, 72, 55, 78, 68, 82, 88, 78, 92];
 // ─── Types ─────────────────────────────────────────────────────────────────
 
 interface AssetRow {
-  symbol:    string;
+  symbol:    AssetSymbol;
   name:      string;
+  unit:      string;
   amount:    number;
   valueEUR:  number;
+  priceEUR:  number;
   change24h: number;
   color:     string;
   bgColor:   string;
@@ -37,12 +41,19 @@ interface WalletScreenProps {
 // ─── Component ─────────────────────────────────────────────────────────────
 
 export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onReceiveCrypto }) => {
+  const { isDemo } = useAuth();
   const [assets,  setAssets]  = useState<AssetRow[]>(DEMO_ASSETS);
   const [loading, setLoading] = useState(false);
   const [isReal,  setIsReal]  = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (isDemo) {
+      setAssets(DEMO_ASSETS);
+      setIsReal(false);
+      setLoading(false);
+      return;
+    }
     const eth  = localStorage.getItem('wallet_eth_address')  || '';
     const sol  = localStorage.getItem('wallet_sol_address')  || '';
     const btc  = localStorage.getItem('wallet_btc_address')  || '';
@@ -53,26 +64,55 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
     setIsReal(true);
     setLoading(true);
 
-    fetchRealBalances(eth, sol, btc, tron, ton).then((b: WalletBalances) => {
-      setAssets([
-        { symbol: 'BTC',      name: 'Bitcoin',     amount: b.btc,     valueEUR: b.btc     * b.btcEur, change24h: 0, color: '#F7931A', bgColor: 'rgba(247,147,26,0.13)',  icon: '₿'  },
-        { symbol: 'ETH',      name: 'Ethereum',    amount: b.eth,     valueEUR: b.eth     * b.ethEur, change24h: 0, color: '#627EEA', bgColor: 'rgba(98,126,234,0.13)',  icon: 'Ξ'  },
-        { symbol: 'SOL',      name: 'Solana',      amount: b.sol,     valueEUR: b.sol     * b.solEur, change24h: 0, color: '#9945FF', bgColor: 'rgba(153,69,255,0.13)',  icon: '◎' },
-        { symbol: 'USDT',     name: 'USDT ERC-20', amount: b.usdt,    valueEUR: b.usdt,              change24h: 0, color: '#26A17B', bgColor: 'rgba(38,161,123,0.13)',  icon: '₮'  },
-        { symbol: 'TRX',      name: 'TRON',        amount: b.trx,     valueEUR: b.trx     * b.trxEur, change24h: 0, color: '#EF0027', bgColor: 'rgba(239,0,39,0.13)',    icon: '◆'  },
-        { symbol: 'USDT_TRC', name: 'USDT TRC-20', amount: b.usdtTrc, valueEUR: b.usdtTrc,           change24h: 0, color: '#EF0027', bgColor: 'rgba(239,0,39,0.13)',    icon: '₮'  },
-        { symbol: 'TON',      name: 'TON',          amount: b.ton,     valueEUR: b.ton     * b.tonEur, change24h: 0, color: '#0098EA', bgColor: 'rgba(0,152,234,0.13)', icon: '💎' },
-        { symbol: 'USDT_TON', name: 'USDT TON',     amount: b.usdtTon, valueEUR: b.usdtTon,           change24h: 0, color: '#0098EA', bgColor: 'rgba(0,152,234,0.10)', icon: '₮'  },
-      ]);
-      setLoading(false);
-    }).catch(() => setLoading(false));
-  }, []);
+    const loadBalances = () => {
+      fetchRealBalances(eth, sol, btc, tron, ton).then((b: WalletBalances) => {
+        const amounts: Record<AssetSymbol, number> = {
+          BTC: b.btc,
+          ETH: b.eth,
+          SOL: b.sol,
+          USDT: b.usdt,
+          TRX: b.trx,
+          USDT_TRC: b.usdtTrc,
+          TON: b.ton,
+          USDT_TON: b.usdtTon,
+        };
+        const prices: Record<AssetSymbol, number> = {
+          BTC: b.btcEur,
+          ETH: b.ethEur,
+          SOL: b.solEur,
+          USDT: 1,
+          TRX: b.trxEur,
+          USDT_TRC: 1,
+          TON: b.tonEur,
+          USDT_TON: 1,
+        };
+        const changes: Record<AssetSymbol, number> = {
+          BTC: b.btcChange24h,
+          ETH: b.ethChange24h,
+          SOL: b.solChange24h,
+          USDT: 0,
+          TRX: b.trxChange24h,
+          USDT_TRC: 0,
+          TON: b.tonChange24h,
+          USDT_TON: 0,
+        };
+        setAssets(SUPPORTED_ASSETS.map((asset) => ({
+          ...asset,
+          amount: amounts[asset.symbol],
+          valueEUR: amounts[asset.symbol] * prices[asset.symbol],
+          priceEUR: prices[asset.symbol],
+          change24h: changes[asset.symbol],
+        })));
+        setLoading(false);
+      }).catch(() => setLoading(false));
+    };
 
-  // In real mode: always show base coins and TRX (needed for Tron fees).
-  const BASE_SYMBOLS = new Set(['BTC', 'ETH', 'SOL', 'USDT', 'TRX']);
-  const visibleAssets = isReal
-    ? assets.filter((a) => BASE_SYMBOLS.has(a.symbol) || a.amount > 0)
-    : assets;
+    loadBalances();
+    const timer = window.setInterval(loadBalances, MARKET_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [isDemo]);
+
+  const visibleAssets = assets;
 
   const cryptoTotal = visibleAssets.reduce((s, a) => s + a.valueEUR, 0);
   const FIAT        = isReal ? 0 : 2847.50;
@@ -167,7 +207,9 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
                 <div className="flex-1 min-w-0">
                   <p className="text-white text-sm font-medium">{asset.name}</p>
                   <p className="text-[#3A6045] text-xs">
-                    {loading ? '...' : `${asset.amount.toLocaleString('ru-RU', { maximumFractionDigits: 6 })} ${asset.symbol.replace('_TRC', '').replace('_TON', '')}`}
+                    {loading
+                      ? '...'
+                      : `${asset.amount.toLocaleString('ru-RU', { maximumFractionDigits: 6 })} ${asset.unit} · 1 ${asset.unit} ≈ €${asset.priceEUR.toLocaleString('ru-RU', { maximumFractionDigits: asset.priceEUR < 1 ? 4 : 2 })}`}
                   </p>
                 </div>
                 <div className="text-right flex-shrink-0">

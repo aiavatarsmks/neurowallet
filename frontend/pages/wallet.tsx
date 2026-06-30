@@ -14,7 +14,7 @@ import { NeuraChat } from '@/components/NeuraChat';
 import { ProfileScreen } from '@/components/ProfileScreen';
 import { CardsScreen } from '@/components/CardsScreen';
 import { WalletScreen } from '@/components/WalletScreen';
-import { ReceiveScreen } from '@/components/ReceiveScreen';
+import { ReceiveScreen, type ReceiveNetwork } from '@/components/ReceiveScreen';
 import { CryptoSendScreen } from '@/components/CryptoSendScreen';
 
 const NeuraAvatar = dynamic(
@@ -68,7 +68,7 @@ export default function WalletPage() {
   const [chatHasMessages, setChatHasMessages] = useState(false);
   const [pinRequired, setPinRequired] = useState(false);
   const [walletPassword, setWalletPassword] = useState<string | null>(null);
-  const [receiveCoin, setReceiveCoin] = useState<'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TON' | 'TRX'>('ETH');
+  const [receiveCoin, setReceiveCoin] = useState<ReceiveNetwork>('ETH');
   const [cryptoSendCoin, setCryptoSendCoin] = useState<CryptoSendCoin>('ETH');
   const [cryptoSendDraft, setCryptoSendDraft] = useState<CryptoSendDraft | null>(null);
 
@@ -81,11 +81,15 @@ export default function WalletPage() {
   // Check if PIN gate is needed (wallet exists + PIN set up + not yet unlocked)
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (isDemo) {
+      setPinRequired(false);
+      return;
+    }
     const hasWallet = !!localStorage.getItem('wallet_eth_address');
     if (hasWallet && hasPinSetup() && walletPassword === null) {
       setPinRequired(true);
     }
-  }, [walletPassword]);
+  }, [isDemo, walletPassword]);
 
   if (isLoading || (!user && !isDemo)) {
     return (
@@ -100,7 +104,7 @@ export default function WalletPage() {
   }
 
   // PIN gate — shown when wallet is locked
-  if (pinRequired && walletPassword === null) {
+  if (!isDemo && pinRequired && walletPassword === null) {
     return (
       <PinEntry
         onSuccess={(pwd) => {
@@ -139,11 +143,11 @@ export default function WalletPage() {
 
   const handleReceiveCrypto = (symbol: string) => {
     const map: Record<string, string> = {
-      'USDT_TRC': 'TRX',
-      'USDT_TON': 'TON',
+      'USDT_TRC': 'TRC20',
+      'USDT_TON': 'USDT_TON',
       'USDT': 'USDT',
     };
-    const net = (map[symbol] ?? symbol) as 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TON' | 'TRX';
+    const net = (map[symbol] ?? symbol) as ReceiveNetwork;
     setReceiveCoin(net);
     setActiveTab('receive');
   };

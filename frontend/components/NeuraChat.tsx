@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { fetchRealBalances, WalletBalances } from '@/lib/crypto/balances';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Message {
   id: string;
@@ -25,7 +26,7 @@ const FALLBACK_RESPONSE =
 
 async function getResponse(
   history: { from: 'neura' | 'user'; text: string }[],
-  walletContext?: WalletBalances & { ethAddr?: string; btcAddr?: string; solAddr?: string; tronAddr?: string },
+  walletContext?: WalletBalances & { ethAddr?: string; btcAddr?: string; solAddr?: string; tronAddr?: string; tonAddr?: string },
 ): Promise<string> {
   try {
     const { data: sessionData } = await supabase.auth.getSession();
@@ -68,27 +69,33 @@ interface NeuraChatProps {
 }
 
 export const NeuraChat: React.FC<NeuraChatProps> = ({ onAvatarState, avatarHeight = 160, onFirstMessage }) => {
+  const { isDemo } = useAuth();
   const [messages, setMessages] = useState<Message[]>([OPENING]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [hasUserMessages, setHasUserMessages] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const walletCtxRef = useRef<(WalletBalances & { ethAddr?: string; btcAddr?: string; solAddr?: string; tronAddr?: string }) | undefined>(undefined);
+  const walletCtxRef = useRef<(WalletBalances & { ethAddr?: string; btcAddr?: string; solAddr?: string; tronAddr?: string; tonAddr?: string }) | undefined>(undefined);
 
   // Load wallet balances once for Neira context
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (isDemo) {
+      walletCtxRef.current = undefined;
+      return;
+    }
     const ethAddr  = localStorage.getItem('wallet_eth_address')  || '';
     const solAddr  = localStorage.getItem('wallet_sol_address')  || '';
     const btcAddr  = localStorage.getItem('wallet_btc_address')  || '';
     const tronAddr = localStorage.getItem('wallet_tron_address') || '';
+    const tonAddr  = localStorage.getItem('wallet_ton_address')  || '';
     if (!ethAddr) return;
-    fetchRealBalances(ethAddr, solAddr, btcAddr, tronAddr)
+    fetchRealBalances(ethAddr, solAddr, btcAddr, tronAddr, tonAddr)
       .then((b) => {
-        walletCtxRef.current = { ...b, ethAddr, solAddr, btcAddr, tronAddr };
+        walletCtxRef.current = { ...b, ethAddr, solAddr, btcAddr, tronAddr, tonAddr };
       })
       .catch(() => {/* silent */});
-  }, []);
+  }, [isDemo]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });

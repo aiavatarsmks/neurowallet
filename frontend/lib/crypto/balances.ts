@@ -13,10 +13,11 @@ const SOL_RPC    = 'https://api.mainnet-beta.solana.com';
 const USDT_ADDR  = '0xdAC17F958D2ee523a2206206994597C13D831ec7'; // ERC-20 Mainnet
 const ERC20_ABI  = ['function balanceOf(address) view returns (uint256)'];
 const PRICES_URL =
-  'https://api.coingecko.com/api/v3/simple/price?ids=ethereum,solana,bitcoin,tron-network,the-open-network&vs_currencies=eur';
+  'https://api.coingecko.com/api/v3/simple/price?ids=ethereum,solana,bitcoin,tron-network,the-open-network&vs_currencies=eur&include_24hr_change=true&include_last_updated_at=true';
 
 const PRICE_CACHE_KEY = 'nw_prices_cache';
-const PRICE_TTL_MS    = 60_000; // 60 s
+export const MARKET_REFRESH_MS = 30_000; // near-real-time without hammering public APIs
+const PRICE_TTL_MS    = MARKET_REFRESH_MS;
 
 export interface WalletBalances {
   eth:      number;
@@ -32,6 +33,12 @@ export interface WalletBalances {
   btcEur:   number;
   trxEur:   number;
   tonEur:   number;
+  ethChange24h: number;
+  solChange24h: number;
+  btcChange24h: number;
+  trxChange24h: number;
+  tonChange24h: number;
+  priceUpdatedAt: number;
 }
 
 export interface PriceData {
@@ -40,6 +47,12 @@ export interface PriceData {
   btcEur:   number;
   trxEur:   number;
   tonEur:   number;
+  ethChange24h: number;
+  solChange24h: number;
+  btcChange24h: number;
+  trxChange24h: number;
+  tonChange24h: number;
+  priceUpdatedAt: number;
   fetchedAt: number;
 }
 
@@ -50,7 +63,17 @@ export async function fetchPrices(): Promise<PriceData> {
     const raw = localStorage.getItem(PRICE_CACHE_KEY);
     if (raw) {
       const cached: PriceData = JSON.parse(raw);
-      if (Date.now() - cached.fetchedAt < PRICE_TTL_MS) return cached;
+      if (Date.now() - cached.fetchedAt < PRICE_TTL_MS) {
+        return {
+          ...cached,
+          ethChange24h: cached.ethChange24h ?? 0,
+          solChange24h: cached.solChange24h ?? 0,
+          btcChange24h: cached.btcChange24h ?? 0,
+          trxChange24h: cached.trxChange24h ?? 0,
+          tonChange24h: cached.tonChange24h ?? 0,
+          priceUpdatedAt: cached.priceUpdatedAt ?? cached.fetchedAt,
+        };
+      }
     }
   }
 
@@ -63,6 +86,18 @@ export async function fetchPrices(): Promise<PriceData> {
       btcEur:    data.bitcoin?.eur             ?? 55000,
       trxEur:    data['tron-network']?.eur      ?? 0.22,
       tonEur:    data['the-open-network']?.eur  ?? 3.5,
+      ethChange24h: data.ethereum?.eur_24h_change ?? 0,
+      solChange24h: data.solana?.eur_24h_change ?? 0,
+      btcChange24h: data.bitcoin?.eur_24h_change ?? 0,
+      trxChange24h: data['tron-network']?.eur_24h_change ?? 0,
+      tonChange24h: data['the-open-network']?.eur_24h_change ?? 0,
+      priceUpdatedAt: Math.max(
+        data.ethereum?.last_updated_at ?? 0,
+        data.solana?.last_updated_at ?? 0,
+        data.bitcoin?.last_updated_at ?? 0,
+        data['tron-network']?.last_updated_at ?? 0,
+        data['the-open-network']?.last_updated_at ?? 0,
+      ) * 1000,
       fetchedAt: Date.now(),
     };
     if (typeof window !== 'undefined') {
@@ -70,7 +105,20 @@ export async function fetchPrices(): Promise<PriceData> {
     }
     return prices;
   } catch {
-    return { ethEur: 2800, solEur: 120, btcEur: 55000, trxEur: 0.22, tonEur: 3.5, fetchedAt: 0 };
+    return {
+      ethEur: 2800,
+      solEur: 120,
+      btcEur: 55000,
+      trxEur: 0.22,
+      tonEur: 3.5,
+      ethChange24h: 0,
+      solChange24h: 0,
+      btcChange24h: 0,
+      trxChange24h: 0,
+      tonChange24h: 0,
+      priceUpdatedAt: 0,
+      fetchedAt: 0,
+    };
   }
 }
 
@@ -164,7 +212,20 @@ export async function fetchRealBalances(
   const priceData =
     prices.status === 'fulfilled'
       ? prices.value
-      : { ethEur: 2800, solEur: 120, btcEur: 55000, trxEur: 0.22, tonEur: 3.5 };
+      : {
+          ethEur: 2800,
+          solEur: 120,
+          btcEur: 55000,
+          trxEur: 0.22,
+          tonEur: 3.5,
+          ethChange24h: 0,
+          solChange24h: 0,
+          btcChange24h: 0,
+          trxChange24h: 0,
+          tonChange24h: 0,
+          priceUpdatedAt: 0,
+          fetchedAt: 0,
+        };
 
   return {
     eth,
@@ -180,6 +241,12 @@ export async function fetchRealBalances(
     btcEur:  priceData.btcEur,
     trxEur:  priceData.trxEur,
     tonEur:  priceData.tonEur,
+    ethChange24h: priceData.ethChange24h,
+    solChange24h: priceData.solChange24h,
+    btcChange24h: priceData.btcChange24h,
+    trxChange24h: priceData.trxChange24h,
+    tonChange24h: priceData.tonChange24h,
+    priceUpdatedAt: priceData.priceUpdatedAt,
   };
 }
 

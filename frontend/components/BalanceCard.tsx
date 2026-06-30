@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { fetchRealBalances, WalletBalances } from '@/lib/crypto/balances';
+import { fetchRealBalances, MARKET_REFRESH_MS, WalletBalances } from '@/lib/crypto/balances';
+import { SUPPORTED_ASSETS, type AssetSymbol } from '@/lib/crypto/assets';
 
 // ── Demo data (shown in demo mode only) ──────────────────────────────────────
 const DEMO_FIAT_TOTAL  = 5157.00;
@@ -53,6 +54,13 @@ export const BalanceCard: React.FC = () => {
     const tgName = localStorage.getItem('tg_first_name');
     setDisplayName(user?.name?.split(' ')[0] || tgName || '');
 
+    if (isDemo) {
+      setIsReal(false);
+      setBalances(null);
+      setLoading(false);
+      return;
+    }
+
     const eth  = localStorage.getItem('wallet_eth_address');
     if (!eth) return; // demo mode
 
@@ -64,10 +72,16 @@ export const BalanceCard: React.FC = () => {
     const tron = localStorage.getItem('wallet_tron_address') || '';
     const ton  = localStorage.getItem('wallet_ton_address')  || '';
 
-    fetchRealBalances(eth, sol, btc, tron, ton)
-      .then((b: WalletBalances) => { setBalances(b); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [user]);
+    const loadBalances = () => {
+      fetchRealBalances(eth, sol, btc, tron, ton)
+        .then((b: WalletBalances) => { setBalances(b); setLoading(false); })
+        .catch(() => setLoading(false));
+    };
+
+    loadBalances();
+    const timer = window.setInterval(loadBalances, MARKET_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [user, isDemo]);
 
   // ── Derived values ────────────────────────────────────────────────────────────
   const cryptoTotal = balances ? calcCryptoTotal(balances) : 0;
@@ -90,12 +104,43 @@ export const BalanceCard: React.FC = () => {
   const cryptoRows = isDemo
     ? DEMO_CRYPTO_ROWS
     : balances
-      ? [
-          { symbol: 'BTC',  valueEUR: balances.btc * balances.btcEur, change: 0 },
-          { symbol: 'ETH',  valueEUR: balances.eth * balances.ethEur, change: 0 },
-          { symbol: 'TRX',  valueEUR: balances.trx * balances.trxEur, change: 0 },
-          { symbol: 'USDT', valueEUR: balances.usdt,                  change: 0 },
-        ]
+      ? SUPPORTED_ASSETS.map((asset) => {
+          const amounts: Record<AssetSymbol, number> = {
+            BTC: balances.btc,
+            ETH: balances.eth,
+            SOL: balances.sol,
+            USDT: balances.usdt,
+            TRX: balances.trx,
+            USDT_TRC: balances.usdtTrc,
+            TON: balances.ton,
+            USDT_TON: balances.usdtTon,
+          };
+          const prices: Record<AssetSymbol, number> = {
+            BTC: balances.btcEur,
+            ETH: balances.ethEur,
+            SOL: balances.solEur,
+            USDT: 1,
+            TRX: balances.trxEur,
+            USDT_TRC: 1,
+            TON: balances.tonEur,
+            USDT_TON: 1,
+          };
+          const changes: Record<AssetSymbol, number> = {
+            BTC: balances.btcChange24h,
+            ETH: balances.ethChange24h,
+            SOL: balances.solChange24h,
+            USDT: 0,
+            TRX: balances.trxChange24h,
+            USDT_TRC: 0,
+            TON: balances.tonChange24h,
+            USDT_TON: 0,
+          };
+          return {
+            symbol: asset.symbol,
+            valueEUR: amounts[asset.symbol] * prices[asset.symbol],
+            change: changes[asset.symbol],
+          };
+        })
       : [];
 
   const visibleViews: View[] = isDemo ? ['total', 'fiat', 'crypto'] : ['total', 'crypto'];

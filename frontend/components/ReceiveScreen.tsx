@@ -1,43 +1,60 @@
 import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
+import { useAuth } from '@/contexts/AuthContext';
 
-type Network = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TON' | 'TRX';
+export type ReceiveNetwork = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TRX' | 'TRC20' | 'TON' | 'USDT_TON';
 
-const FALLBACK_ADDRESSES: Record<Network, string> = {
+const FALLBACK_ADDRESSES: Record<ReceiveNetwork, string> = {
   BTC:  'bc1q742d35cc6634c0532925a3b844bc454e4438f44',
   ETH:  '0x742d35Cc6634C0532925a3b844Bc454e4438f44e',
   SOL:  'AkELM1tRiHF9PMeRxSgD5UG4v7P3MtNzL8kqSEEtPkX',
   USDT: '0x742d35Cc6634C0532925a3b844Bc454e4438f44e',
-  TON:  'EQD2NmD_lH5f5u1Kj3KfGyTvhZSX0Eg6qp2a5IQUKXxOG3M',
   TRX:  'TQn9Y2khDD95AoRQBkz8ZJXsF9wdDXqcfF',
+  TRC20: 'TQn9Y2khDD95AoRQBkz8ZJXsF9wdDXqcfF',
+  TON:  'EQD2NmD_lH5f5u1Kj3KfGyTvhZSX0Eg6qp2a5IQUKXxOG3M',
+  USDT_TON: 'EQD2NmD_lH5f5u1Kj3KfGyTvhZSX0Eg6qp2a5IQUKXxOG3M',
 };
 
-const NET_LABELS: Record<Network, string> = {
+const NET_LABELS: Record<ReceiveNetwork, string> = {
   BTC:  'Bitcoin Network',
-  ETH:  'Ethereum (ERC-20)',
+  ETH:  'Ethereum',
   SOL:  'Solana Network',
-  USDT: 'Ethereum (ERC-20)',
-  TON:  'TON Network',
+  USDT: 'USDT ERC-20',
   TRX:  'Tron Network',
+  TRC20: 'USDT TRC-20',
+  TON:  'TON Network',
+  USDT_TON: 'USDT TON',
 };
 
-const COLORS: Record<Network, string> = {
+const COLORS: Record<ReceiveNetwork, string> = {
   BTC:  '#F7931A',
   ETH:  '#627EEA',
   SOL:  '#9945FF',
   USDT: '#26A17B',
-  TON:  '#0098EA',
   TRX:  '#EF0027',
+  TRC20: '#EF0027',
+  TON:  '#0098EA',
+  USDT_TON: '#0098EA',
 };
 
-const ICONS: Record<Network, string> = { BTC: '₿', ETH: 'Ξ', SOL: '◎', USDT: '₮', TON: '💎', TRX: '₮' };
+const ICONS: Record<ReceiveNetwork, string> = {
+  BTC: '₿',
+  ETH: 'Ξ',
+  SOL: '◎',
+  USDT: '₮',
+  TRX: '◆',
+  TRC20: '₮',
+  TON: '💎',
+  USDT_TON: '₮',
+};
 
 interface ReceiveScreenProps {
-  initialNetwork?: Network;
+  initialNetwork?: ReceiveNetwork;
 }
 
 export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = 'ETH' }) => {
-  const [network, setNetwork] = useState<Network>(initialNetwork);
+  const { isDemo } = useAuth();
+  const [network, setNetwork] = useState<ReceiveNetwork>(initialNetwork);
   const [copied, setCopied] = useState(false);
   const [addresses, setAddresses] = useState(FALLBACK_ADDRESSES);
   const [qrDataUrl, setQrDataUrl] = useState('');
@@ -49,6 +66,10 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (isDemo) {
+      setAddresses(FALLBACK_ADDRESSES);
+      return;
+    }
     const eth  = localStorage.getItem('wallet_eth_address');
     const sol  = localStorage.getItem('wallet_sol_address');
     const btc  = localStorage.getItem('wallet_btc_address');
@@ -59,10 +80,12 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
       SOL:  sol  || FALLBACK_ADDRESSES.SOL,
       BTC:  btc  || FALLBACK_ADDRESSES.BTC,
       USDT: eth  || FALLBACK_ADDRESSES.USDT,
-      TON:  ton  || FALLBACK_ADDRESSES.TON,
       TRX:  tron || FALLBACK_ADDRESSES.TRX,
+      TRC20: tron || FALLBACK_ADDRESSES.TRC20,
+      TON:  ton  || FALLBACK_ADDRESSES.TON,
+      USDT_TON: ton || FALLBACK_ADDRESSES.USDT_TON,
     });
-  }, []);
+  }, [isDemo]);
 
   const address = addresses[network];
   const color   = COLORS[network];
@@ -103,7 +126,7 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
 
       {/* Network selector */}
       <div className="flex gap-2 self-stretch flex-wrap">
-        {(['ETH', 'SOL', 'BTC', 'USDT', 'TON', 'TRX'] as Network[]).map((n) => (
+        {(['ETH', 'USDT', 'SOL', 'BTC', 'TRX', 'TRC20', 'TON', 'USDT_TON'] as ReceiveNetwork[]).map((n) => (
           <button
             key={n}
             onClick={() => { setNetwork(n); setCopied(false); }}
@@ -116,7 +139,7 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
             }}
           >
             <span>{ICONS[n]}</span>
-            <span>{n}</span>
+            <span>{n === 'TRC20' ? 'USDT TRC' : n === 'USDT_TON' ? 'USDT TON' : n}</span>
           </button>
         ))}
       </div>
@@ -180,9 +203,15 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
       >
         <p className="text-[#FFC400] text-xs leading-relaxed">
           {network === 'TON'
-            ? '⚠️ Отправляйте только TON или USDT TON (Jetton) на этот адрес.'
+            ? '⚠️ Отправляйте только TON на этот адрес.'
+            : network === 'USDT_TON'
+            ? '⚠️ Отправляйте только USDT TON (Jetton) на этот адрес.'
             : network === 'TRX'
-            ? '⚠️ Отправляйте только USDT TRC-20 или TRX на этот адрес.'
+            ? '⚠️ Отправляйте только TRX на этот адрес.'
+            : network === 'TRC20'
+            ? '⚠️ Отправляйте только USDT TRC-20 на этот адрес.'
+            : network === 'USDT'
+            ? '⚠️ Отправляйте только USDT ERC-20 на этот адрес.'
             : <>⚠️ Отправляйте только <strong>{network}</strong> на этот адрес.
           Отправка других монет может привести к безвозвратной потере средств.</>}
         </p>

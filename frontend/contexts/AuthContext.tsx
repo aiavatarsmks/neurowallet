@@ -159,6 +159,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const enterDemo = () => {
     if (typeof window !== 'undefined') localStorage.setItem(DEMO_KEY, 'true');
+    supabase.auth.signOut();
     setState({ user: null, isDemo: true, isLoading: false });
   };
 

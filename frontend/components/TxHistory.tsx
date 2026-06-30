@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface TxRow {
   id:      string;
@@ -21,6 +22,39 @@ const CHAIN_META = {
   TON:      { icon: '💎', color: '#0098EA', label: 'TON',      explorer: (h: string) => `https://tonscan.org/tx/${h}` },
   USDT_TON: { icon: '₮',  color: '#0098EA', label: 'USDT TON', explorer: (h: string) => `https://tonscan.org/tx/${h}` },
 };
+
+const DEMO_TXS: TxRow[] = [
+  {
+    id: 'demo-btc-in',
+    chain: 'BTC',
+    type: 'in',
+    amount: 0.0042,
+    address: 'bc1qdemo9r8s7neuro5wallet3sample',
+    hash: 'demo-btc-in',
+    date: new Date(Date.now() - 35 * 60_000).toISOString(),
+    fee: 0,
+  },
+  {
+    id: 'demo-usdt-out',
+    chain: 'USDT',
+    type: 'out',
+    amount: 75,
+    address: '0xDemo4A65F7F3NeuroWalletSample',
+    hash: 'demo-usdt-out',
+    date: new Date(Date.now() - 4 * 3600_000).toISOString(),
+    fee: 0.0008,
+  },
+  {
+    id: 'demo-trx-out',
+    chain: 'TRX',
+    type: 'out',
+    amount: 18.5,
+    address: 'TDemoTronNeuroWalletSample9aP',
+    hash: 'demo-trx-out',
+    date: new Date(Date.now() - 26 * 3600_000).toISOString(),
+    fee: 0.1,
+  },
+];
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -67,12 +101,19 @@ interface TxHistoryProps {
 }
 
 export const TxHistory: React.FC<TxHistoryProps> = ({ limit = 15 }) => {
+  const { isDemo } = useAuth();
   const [txs,     setTxs]     = useState<TxRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [noWallet, setNoWallet] = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (isDemo) {
+      setTxs(DEMO_TXS.slice(0, limit));
+      setNoWallet(false);
+      setLoading(false);
+      return;
+    }
 
     const eth  = localStorage.getItem('wallet_eth_address');
     const sol  = localStorage.getItem('wallet_sol_address');
@@ -100,7 +141,7 @@ export const TxHistory: React.FC<TxHistoryProps> = ({ limit = 15 }) => {
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [limit]);
+  }, [isDemo, limit]);
 
   if (loading) return <TxSkeleton />;
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '@/contexts/AuthContext';
 import { neuroIdFromUserId, syncMyNeuroDirectory } from '@/lib/neuro-id';
+import { explorerUrlForAsset, SUPPORTED_ASSETS, type AssetAddressKey } from '@/lib/crypto/assets';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -118,6 +119,14 @@ const TelegramBadge = () => (
   </div>
 );
 
+const DEMO_ADDRESSES = {
+  eth: '0x742d35Cc6634C0532925a3b844Bc454e4438f44e',
+  sol: 'AkELM1tRiHF9PMeRxSgD5UG4v7P3MtNzL8kqSEEtPkX',
+  btc: 'bc1q742d35cc6634c0532925a3b844bc454e4438f44',
+  tron: 'TQn9Y2khDD95AoRQBkz8ZJXsF9wdDXqcfF',
+  ton: 'EQD2NmD_lH5f5u1Kj3KfGyTvhZSX0Eg6qp2a5IQUKXxOG3M',
+};
+
 export const ProfileScreen: React.FC = () => {
   const router = useRouter();
   const { user, isDemo, signOut } = useAuth();
@@ -136,6 +145,20 @@ export const ProfileScreen: React.FC = () => {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (isDemo) {
+      setEthAddr(DEMO_ADDRESSES.eth);
+      setSolAddr(DEMO_ADDRESSES.sol);
+      setBtcAddr(DEMO_ADDRESSES.btc);
+      setTronAddr(DEMO_ADDRESSES.tron);
+      setTonAddr(DEMO_ADDRESSES.ton);
+      setHasWallet(true);
+      setTgUsername('');
+      setTgFirstName('');
+      setTgPhotoUrl('');
+      setNeuroId('nw-demo-user');
+      setNeuroIdSyncState('synced');
+      return;
+    }
     const eth  = localStorage.getItem('wallet_eth_address')  || '';
     const sol  = localStorage.getItem('wallet_sol_address')  || '';
     const btc  = localStorage.getItem('wallet_btc_address')  || '';
@@ -168,7 +191,7 @@ export const ProfileScreen: React.FC = () => {
         })
         .catch(() => setNeuroIdSyncState('pending'));
     }
-  }, [user]);
+  }, [user, isDemo]);
 
   const isTgUser    = !!tgUsername || !!localStorage.getItem?.('tg_user_id');
   const displayName = isDemo
@@ -180,6 +203,13 @@ export const ProfileScreen: React.FC = () => {
   const initials    = displayName.slice(0, 2).toUpperCase();
 
   const handleSignOut = () => { signOut(); router.replace('/'); };
+  const addressByKey: Record<AssetAddressKey, string> = {
+    btc: btcAddr,
+    eth: ethAddr,
+    sol: solAddr,
+    tron: tronAddr,
+    ton: tonAddr,
+  };
 
   return (
     <div className="px-6 pt-2 pb-6 flex flex-col gap-5">
@@ -253,41 +283,19 @@ export const ProfileScreen: React.FC = () => {
         <div>
           <p className="text-white text-sm font-semibold mb-3">Адреса кошелька</p>
           <div className="flex flex-col gap-2">
-            <AddressRow
-              label="Ethereum / USDT"
-              icon="Ξ"
-              color="#627EEA"
-              address={ethAddr}
-              explorerUrl={`https://etherscan.io/address/${ethAddr}`}
-            />
-            <AddressRow
-              label="Solana"
-              icon="◎"
-              color="#9945FF"
-              address={solAddr}
-              explorerUrl={`https://solscan.io/account/${solAddr}`}
-            />
-            <AddressRow
-              label="Bitcoin"
-              icon="₿"
-              color="#F7931A"
-              address={btcAddr}
-              explorerUrl={`https://blockstream.info/address/${btcAddr}`}
-            />
-            <AddressRow
-              label="USDT TRC-20 (Tron)"
-              icon="₮"
-              color="#EF0027"
-              address={tronAddr}
-              explorerUrl={`https://tronscan.org/#/address/${tronAddr}`}
-            />
-            <AddressRow
-              label="TON / USDT TON"
-              icon="💎"
-              color="#0098EA"
-              address={tonAddr}
-              explorerUrl={tonAddr ? `https://tonscan.org/address/${tonAddr}` : undefined}
-            />
+            {SUPPORTED_ASSETS.map((asset) => {
+              const address = addressByKey[asset.addressKey];
+              return (
+                <AddressRow
+                  key={asset.symbol}
+                  label={asset.addressLabel}
+                  icon={asset.icon}
+                  color={asset.color}
+                  address={address}
+                  explorerUrl={explorerUrlForAsset(asset, address)}
+                />
+              );
+            })}
           </div>
         </div>
       ) : (
