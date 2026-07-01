@@ -36,7 +36,7 @@ const TelegramIcon = () => (
 
 export default function AuthPage() {
   const router = useRouter();
-  const { signIn, signUp, signInWithTelegram, enterDemo, user, isLoading, isTelegramUser } = useAuth();
+  const { signIn, signUp, signInWithTelegram, enterDemo, signOut, user, isLoading, isTelegramUser } = useAuth();
 
   const [mode, setMode]         = useState<Mode>('signup');
   const [name, setName]         = useState('');
