@@ -92,12 +92,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     supabase.auth.getSession().then(({ data }) => {
       const user = data.session?.user ? toUser(data.session.user) : null;
-      setState({ user, isDemo: false, isLoading: false });
+      // Use functional update so we never override an isDemo=true set by enterDemo()
+      setState(prev => prev.isDemo ? prev : { user, isDemo: false, isLoading: false });
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       const user = session?.user ? toUser(session.user) : null;
-      setState(s => ({ ...s, user, isLoading: false }));
+      // Same: preserve isDemo if user explicitly entered demo mode
+      setState(s => s.isDemo ? s : { ...s, user, isLoading: false });
     });
 
     return () => subscription.unsubscribe();
