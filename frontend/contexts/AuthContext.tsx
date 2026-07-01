@@ -75,12 +75,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (tgSdk?.first_name) localStorage.setItem('tg_first_name', tgSdk.first_name);
             if (tgSdk?.last_name)  localStorage.setItem('tg_last_name',  tgSdk.last_name);
             if (tgSdk?.photo_url)  localStorage.setItem('tg_photo_url',  tgSdk.photo_url);
-            setState({ user: data.user, isDemo: false, isLoading: false });
+            // Don't override if user chose demo mode while TG auth was in flight
+            setState(prev => prev.isDemo ? prev : { user: data.user, isDemo: false, isLoading: false });
           } else {
-            setState({ user: null, isDemo: false, isLoading: false });
+            setState(prev => prev.isDemo ? prev : { user: null, isDemo: false, isLoading: false });
           }
         })
-        .catch(() => setState({ user: null, isDemo: false, isLoading: false }));
+        .catch(() => setState(prev => prev.isDemo ? prev : { user: null, isDemo: false, isLoading: false }));
       return;
     }
 

@@ -101,7 +101,12 @@ export default function AuthPage() {
     }
   };
 
-  const handleDemo = () => { enterDemo(); router.push('/wallet'); };
+  const handleDemo = () => {
+    // Sign out any active session so the real-user redirect effect doesn't fire
+    signOut();
+    // Small tick to let signOut state settle, then enter demo
+    setTimeout(() => { enterDemo(); router.push('/wallet'); }, 50);
+  };
 
   const tgDisplayName = tgUser
     ? [tgUser.first_name, tgUser.last_name].filter(Boolean).join(' ')
