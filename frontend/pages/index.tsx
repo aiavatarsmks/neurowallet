@@ -58,6 +58,7 @@ export default function OnboardingPage() {
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [hasExistingWallet, setHasExistingWallet] = useState(false);
   const [welcomeSeen, setWelcomeSeen] = useState(false);
+  const [routeChecked, setRouteChecked] = useState(false);
   const router = useRouter();
   const { enterDemo, isDemo, isLoading, user } = useAuth();
   const { t } = useLanguage();
@@ -65,21 +66,24 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     if (isLoading || typeof window === 'undefined') return;
+
     const seen = localStorage.getItem(WELCOME_SEEN_KEY) === '1';
     const hasWallet = !!localStorage.getItem('wallet_eth_address');
     setWelcomeSeen(seen);
     setHasExistingWallet(hasWallet);
-    if (!seen) return;
 
     if (isDemo) {
       router.replace('/wallet');
     } else if (hasWallet) {
       // Returning users choose explicitly: unlock real wallet or enter demo.
       // PIN is requested only after pressing "Войти".
+      setRouteChecked(true);
     } else if (user) {
       router.replace('/onboarding');
-    } else {
+    } else if (seen) {
       router.replace('/auth');
+    } else {
+      setRouteChecked(true);
     }
   }, [isDemo, isLoading, router, user]);
 
@@ -114,6 +118,21 @@ export default function OnboardingPage() {
 
   // "Пропустить" тоже ведёт на auth, а не в wallet
   const goToApp = goToAuth;
+
+  if (isLoading || !routeChecked) {
+    return (
+      <main
+        className="min-h-screen flex items-center justify-center max-w-[430px] mx-auto"
+        style={{ backgroundColor: '#080C09' }}
+      >
+        <div
+          className="w-2 h-2 rounded-full"
+          style={{ background: '#00FF7F', animation: 'pulse 1s ease-in-out infinite' }}
+        />
+        <style>{`@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}`}</style>
+      </main>
+    );
+  }
 
   if (!isLoading && welcomeSeen && hasExistingWallet && !isDemo) {
     return (
