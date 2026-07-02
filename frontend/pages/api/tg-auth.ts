@@ -12,7 +12,7 @@
  * Security notes:
  *   - TELEGRAM_BOT_TOKEN is server-only — never NEXT_PUBLIC_
  *   - The derived password is HMAC(telegram_id, bot_token) — deterministic but secret
- *   - initData is validated within 24 h (auth_date check)
+ *   - initData is validated within 15 min (auth_date freshness check)
  */
 
 import type { NextApiRequest, NextApiResponse } from 'next';
@@ -45,9 +45,10 @@ function validateTelegramInitData(initData: string, botToken: string): Record<st
     return null;
   }
 
-  // Check auth_date is within 24 hours
+  // Freshness: initData is regenerated every time the Mini App opens, so a
+  // tight window is safe. 15 minutes (was 24 h — too wide a replay window).
   const authDate = parseInt(params.get('auth_date') ?? '0', 10);
-  if (Date.now() / 1000 - authDate > 86400) return null;
+  if (Date.now() / 1000 - authDate > 900) return null;
 
   return Object.fromEntries(params.entries());
 }
