@@ -48,5 +48,5 @@ Out of scope:
 - Never share your seed phrase with anyone — NeuroWallet staff will never ask for it
 - Use a strong, unique password
 - Enable MFA when available
-- Verify the URL is exactly `neurowallet.app` before entering credentials
+- Verify the URL is exactly `neurowallet.tech` before entering credentials
 - Keep your device and browser up to date

@@ -85,8 +85,10 @@ NeuroWallet — мультичейн крипто-кошелёк (ETH, BTC, SOL,
 ## Деплой
 
 - **Vercel**, автодеплой из `main` GitHub (`aiavatarsmks/neurowallet`).
-  Рабочий URL: `neurowallet-frontend.vercel.app`. Домен `neurovalet.tech`
-  (IONOS DNS) — на момент фиксации не резолвится, использовать Vercel-URL.
+  Канонический домен: **`https://neurowallet.tech`** (IONOS DNS → Vercel;
+  www 308-редиректит на apex). `neurowallet-frontend.vercel.app` — нижележащий
+  Vercel-URL, продолжает работать. Упоминание «neurovalet.tech» в старых
+  заметках — опечатка: такой домен не зарегистрирован.
 - CSP отдаётся HTTP-заголовком, `script-src` без `unsafe-inline`; нарушения
   собираются в `/api/csp-report` (см. `frontend/next.config.js`).
 - Telegram-бот подключён webhook'ом на `/api/tg-webhook` c обязательным

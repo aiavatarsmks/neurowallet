@@ -7,14 +7,13 @@
  *
  * Setup (one-time, after deploy):
  *   curl -X POST "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook" \
- *     -d "url=https://neurowallet-frontend.vercel.app/api/tg-webhook" \
+ *     -d "url=https://neurowallet.tech/api/tg-webhook" \
  *     -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>"
  *
- *   NOTE: the custom domain neurovalet.tech currently does not resolve
- *   (DNS_PROBE_FINISHED_NXDOMAIN as of 2026-07-02 — IONOS DNS not pointing
- *   at Vercel correctly). Use the working neurowallet-frontend.vercel.app
- *   URL until DNS is fixed, then switch both this webhook URL and
- *   NEXT_PUBLIC_APP_URL back to https://neurovalet.tech.
+ *   Canonical domain: https://neurowallet.tech (IONOS DNS → Vercel, fixed
+ *   2026-07-02; the old redirect loop apex↔www via a stale Netlify CNAME
+ *   is resolved). neurowallet-frontend.vercel.app keeps working as the
+ *   underlying Vercel URL.
  *
  * Env vars:
  *   TELEGRAM_BOT_TOKEN      — server-only, already used by tg-auth / tg-notify
@@ -24,7 +23,7 @@
  *                             webhook call (Telegram sets this automatically
  *                             once secret_token is passed to setWebhook).
  *   NEXT_PUBLIC_APP_URL     — Mini App URL. Falls back to
- *                             https://neurowallet-frontend.vercel.app
+ *                             https://neurowallet.tech
  *
  * Security notes:
  *   - This endpoint is public (Telegram calls it, not a logged-in user), so it
@@ -37,7 +36,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { checkRateLimit } from '@/lib/server/api-security';
 
-const MINI_APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://neurowallet-frontend.vercel.app';
+const MINI_APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://neurowallet.tech';
 
 // ─── Copy (продающий / sales variant — see NeuroWallet_Welcome_Final.docx) ────
 
