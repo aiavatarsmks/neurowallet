@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { sendEth, sendUsdt, sendUsdtTrc20, sendTrx, sendSol, sendBtc, sendTon, sendUsdtTon, isValidEthAddress, isValidSolAddress, isValidBtcAddress, isValidTronAddress, isValidTonAddress } from '@/lib/crypto/transactions';
 import { fetchRealBalances, MARKET_REFRESH_MS } from '@/lib/crypto/balances';
+import { upgradeStoredKeystoreIfWeak } from '@/lib/crypto/keystore-migration';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -184,6 +185,11 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       setStep('done');
       onAvatarState?.('talking');
       setTimeout(() => onAvatarState?.('idle'), 4000);
+
+      // One-time migration: the password is proven correct by the successful
+      // send, so re-encrypt a legacy scrypt N=8192 keystore with N=131072.
+      // Fire-and-forget — never blocks or breaks the send flow.
+      void upgradeStoredKeystoreIfWeak(password);
 
       // Push-уведомление в Telegram (если пользователь залогинен через TG)
       const tgId = typeof window !== 'undefined' ? localStorage.getItem('tg_user_id') : null;
