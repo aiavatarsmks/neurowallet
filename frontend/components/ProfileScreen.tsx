@@ -3,6 +3,8 @@ import { useRouter } from 'next/router';
 import { useAuth } from '@/contexts/AuthContext';
 import { neuroIdFromUserId, syncMyNeuroDirectory } from '@/lib/neuro-id';
 import { explorerUrlForAsset, SUPPORTED_ASSETS, type AssetAddressKey } from '@/lib/crypto/assets';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -42,6 +44,7 @@ const ExternalIcon = () => (
 // ─── CopyButton ───────────────────────────────────────────────────────────────
 
 const CopyButton: React.FC<{ text: string }> = ({ text }) => {
+  const { t } = useLanguage();
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
     try {
@@ -71,7 +74,7 @@ const CopyButton: React.FC<{ text: string }> = ({ text }) => {
       }}
     >
       {copied ? <CheckIcon /> : <CopyIcon />}
-      {copied ? 'Скопировано' : 'Копировать'}
+      {copied ? t('profileCopied') : t('profileCopy')}
     </button>
   );
 };
@@ -130,6 +133,7 @@ const DEMO_ADDRESSES = {
 export const ProfileScreen: React.FC = () => {
   const router = useRouter();
   const { user, isDemo, signOut } = useAuth();
+  const { t } = useLanguage();
 
   const [ethAddr,  setEthAddr]  = useState('');
   const [solAddr,  setSolAddr]  = useState('');
@@ -196,7 +200,7 @@ export const ProfileScreen: React.FC = () => {
   const isTgUser    = !!tgUsername || !!localStorage.getItem?.('tg_user_id');
   const displayName = isDemo
     ? 'Demo Mode'
-    : tgFirstName || (user?.name ?? user?.email ?? 'Пользователь');
+    : tgFirstName || (user?.name ?? user?.email ?? t('profileDefaultUser'));
   const displaySub  = tgUsername
     ? `@${tgUsername}`
     : isDemo ? 'demo@neurowallet.ai' : (user?.email ?? '');
@@ -257,7 +261,7 @@ export const ProfileScreen: React.FC = () => {
             <div>
               <p className="text-white text-sm font-semibold">NeuroID</p>
               <p className="text-[#3A6045] text-xs mt-0.5">
-                Для переводов внутри NeuroWallet
+                {t('profileNeuroIdSubtitle')}
               </p>
             </div>
             <span
@@ -267,13 +271,13 @@ export const ProfileScreen: React.FC = () => {
                 color: neuroIdSyncState === 'synced' ? '#00FF7F' : '#f59e0b',
               }}
             >
-              {neuroIdSyncState === 'synced' ? 'Активен' : 'Локально'}
+              {neuroIdSyncState === 'synced' ? t('profileActive') : t('profileLocal')}
             </span>
           </div>
           <p className="text-white text-sm font-mono mb-3">{neuroId}</p>
           <CopyButton text={neuroId} />
           <p className="text-[#3A6045] text-xs mt-3 leading-relaxed">
-            По NeuroID другой пользователь сможет найти твой адрес нужной сети и отправить крипту on-chain.
+            {t('profileNeuroIdHint')}
           </p>
         </div>
       )}
@@ -281,7 +285,7 @@ export const ProfileScreen: React.FC = () => {
       {/* Wallet addresses */}
       {hasWallet ? (
         <div>
-          <p className="text-white text-sm font-semibold mb-3">Адреса кошелька</p>
+          <p className="text-white text-sm font-semibold mb-3">{t('profileAddressesTitle')}</p>
           <div className="flex flex-col gap-2">
             {SUPPORTED_ASSETS.map((asset) => {
               const address = addressByKey[asset.addressKey];
@@ -303,13 +307,13 @@ export const ProfileScreen: React.FC = () => {
           className="rounded-2xl p-4"
           style={{ background: 'rgba(0,255,127,0.04)', border: '1px solid rgba(0,255,127,0.1)' }}
         >
-          <p className="text-[#3A6045] text-sm">Кошелёк не создан. Пройди онбординг.</p>
+          <p className="text-[#3A6045] text-sm">{t('profileNoWallet')}</p>
         </div>
       )}
 
       {/* Security */}
       <div>
-        <p className="text-white text-sm font-semibold mb-3">Безопасность</p>
+        <p className="text-white text-sm font-semibold mb-3">{t('profileSecurityTitle')}</p>
         <div className="flex flex-col gap-2">
           <div
             className="flex items-center gap-3 rounded-2xl px-4 py-3.5"
@@ -317,14 +321,14 @@ export const ProfileScreen: React.FC = () => {
           >
             <span style={{ color: '#00FF7F' }}><ShieldIcon /></span>
             <div className="flex-1">
-              <p className="text-white text-sm">Хранение ключей</p>
-              <p className="text-[#3A6045] text-xs mt-0.5">Зашифровано на устройстве · AES-256 · scrypt</p>
+              <p className="text-white text-sm">{t('profileKeyStorage')}</p>
+              <p className="text-[#3A6045] text-xs mt-0.5">{t('profileKeyStorageDesc')}</p>
             </div>
             <span
               className="text-[10px] font-bold px-2 py-0.5 rounded-full"
               style={{ background: 'rgba(0,255,127,0.1)', color: '#00FF7F' }}
             >
-              ✓ Локально
+              {t('profileLocalBadge')}
             </span>
           </div>
 
@@ -334,14 +338,14 @@ export const ProfileScreen: React.FC = () => {
           >
             <span style={{ color: '#3A6045' }}><KeyIcon /></span>
             <div className="flex-1">
-              <p className="text-white text-sm">Приватные ключи</p>
-              <p className="text-[#3A6045] text-xs mt-0.5">Никогда не покидают устройство</p>
+              <p className="text-white text-sm">{t('profilePrivateKeys')}</p>
+              <p className="text-[#3A6045] text-xs mt-0.5">{t('profilePrivateKeysDesc')}</p>
             </div>
             <span
               className="text-[10px] font-bold px-2 py-0.5 rounded-full"
               style={{ background: 'rgba(0,255,127,0.1)', color: '#00FF7F' }}
             >
-              ✓ Только у тебя
+              {t('profileOnlyYouBadge')}
             </span>
           </div>
         </div>
@@ -350,8 +354,8 @@ export const ProfileScreen: React.FC = () => {
       {/* Neira trust level */}
       <div className="rounded-2xl p-4" style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.1)' }}>
         <div className="flex justify-between items-center mb-3">
-          <p className="text-white text-sm font-semibold">Уровень доверия Нейры</p>
-          <span className="text-[#00FF7F] text-xs font-bold">Средний</span>
+          <p className="text-white text-sm font-semibold">{t('profileTrustLevel')}</p>
+          <span className="text-[#00FF7F] text-xs font-bold">{t('profileTrustMedium')}</span>
         </div>
         <div className="relative h-2 rounded-full overflow-hidden" style={{ background: 'rgba(0,255,127,0.1)' }}>
           <div
@@ -360,8 +364,14 @@ export const ProfileScreen: React.FC = () => {
           />
         </div>
         <p className="text-[#3A6045] text-xs mt-2">
-          Нейра даёт советы и аналитику. Для автоматических действий — повысь уровень доверия.
+          {t('profileTrustDesc')}
         </p>
+      </div>
+
+      {/* Language */}
+      <div className="rounded-2xl p-4 flex items-center justify-between" style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.1)' }}>
+        <p className="text-white text-sm font-semibold">{t('profileLanguage')}</p>
+        <LanguageSwitcher />
       </div>
 
       {/* Sign out */}
@@ -370,7 +380,7 @@ export const ProfileScreen: React.FC = () => {
         className="w-full py-3.5 rounded-2xl text-sm font-medium transition-all active:scale-95"
         style={{ background: 'transparent', border: '1px solid rgba(255,59,48,0.3)', color: '#ff3b30' }}
       >
-        {isDemo ? 'Выйти из демо-режима' : 'Выйти из аккаунта'}
+        {isDemo ? t('profileSignOutDemo') : t('profileSignOutReal')}
       </button>
     </div>
   );

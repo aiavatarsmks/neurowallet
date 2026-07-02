@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { fetchRealBalances, MARKET_REFRESH_MS, WalletBalances } from '@/lib/crypto/balances';
 import { SUPPORTED_ASSETS, type AssetSymbol } from '@/lib/crypto/assets';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 // ─── Demo data (shown when no real wallet is set up) ──────────────────────
 
@@ -42,6 +43,7 @@ interface WalletScreenProps {
 
 export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onReceiveCrypto }) => {
   const { isDemo } = useAuth();
+  const { t } = useLanguage();
   const [assets,  setAssets]  = useState<AssetRow[]>(DEMO_ASSETS);
   const [loading, setLoading] = useState(false);
   const [isReal,  setIsReal]  = useState(false);
@@ -129,12 +131,12 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
         }}
       >
         <p className="text-[#3A6045] text-xs font-medium mb-1">
-          {isReal ? 'Реальный крипто-портфель' : 'Крипто-портфель (демо)'}
+          {isReal ? t('walletRealPortfolio') : t('walletDemoPortfolio')}
         </p>
         {loading ? (
           <div className="flex items-center gap-2 py-1">
             <div className="w-2 h-2 rounded-full bg-[#00FF7F] opacity-60" style={{ animation: 'pulse 1s ease-in-out infinite' }} />
-            <span className="text-[#3A6045] text-sm">Загружаем балансы...</span>
+            <span className="text-[#3A6045] text-sm">{t('walletLoadingBalances')}</span>
             <style>{`@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}`}</style>
           </div>
         ) : (
@@ -174,22 +176,22 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
               €
             </div>
             <div>
-              <p className="text-white text-sm font-medium">Евро EUR</p>
-              <p className="text-[#3A6045] text-xs">Текущий счёт (демо)</p>
+              <p className="text-white text-sm font-medium">{t('walletEuroFiat')}</p>
+              <p className="text-[#3A6045] text-xs">{t('walletCurrentAccountDemo')}</p>
             </div>
           </div>
           <div className="text-right">
             <p className="text-white text-sm font-semibold">
               €{FIAT.toLocaleString('ru-RU', { minimumFractionDigits: 2 })}
             </p>
-            <p className="text-[#3A6045] text-xs">стабильно</p>
+            <p className="text-[#3A6045] text-xs">{t('walletStable')}</p>
           </div>
         </div>
       )}
 
       {/* Crypto assets */}
       <div>
-        <p className="text-white text-sm font-semibold mb-3">Крипто-активы</p>
+        <p className="text-white text-sm font-semibold mb-3">{t('walletCryptoAssetsTitle')}</p>
         <div className="flex flex-col gap-3">
           {visibleAssets.map((asset) => (
             <div
@@ -221,7 +223,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
                       className="text-xs font-semibold"
                       style={{ color: asset.change24h > 0 ? '#00FF7F' : '#FF5252' }}
                     >
-                      {asset.change24h > 0 ? '+' : ''}{asset.change24h}% 24ч
+                      {asset.change24h > 0 ? '+' : ''}{asset.change24h}% {t('walletHours24')}
                     </p>
                   )}
                 </div>
@@ -233,14 +235,14 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
                   className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all active:scale-95"
                   style={{ background: 'transparent', border: `1px solid ${asset.color}55`, color: asset.color }}
                 >
-                  Отправить
+                  {t('send')}
                 </button>
                 <button
                   onClick={() => onReceiveCrypto(asset.symbol)}
                   className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all active:scale-95"
                   style={{ background: asset.bgColor, border: `1px solid ${asset.color}33`, color: '#ffffff' }}
                 >
-                  Получить
+                  {t('receive')}
                 </button>
               </div>
             </div>
@@ -254,7 +256,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
         style={{ background: 'rgba(0,255,127,0.04)', border: '1px solid rgba(0,255,127,0.1)' }}
       >
         <div>
-          <p className="text-[#3A6045] text-xs">{isReal ? 'Крипто-портфель' : 'Общий капитал (фиат + крипто)'}</p>
+          <p className="text-[#3A6045] text-xs">{isReal ? t('walletTotalCryptoPortfolio') : t('walletTotalNetWorth')}</p>
           <p className="text-white text-xl font-bold mt-0.5">
             €{(cryptoTotal + (isReal ? 0 : FIAT)).toLocaleString('ru-RU', { minimumFractionDigits: 2 })}
           </p>
@@ -262,7 +264,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
         {!isReal && (
           <div className="text-right">
             <p className="text-[#00FF7F] text-sm font-semibold">+8.7%</p>
-            <p className="text-[#3A6045] text-xs">за месяц</p>
+            <p className="text-[#3A6045] text-xs">{t('walletPerMonth')}</p>
           </div>
         )}
       </div>
@@ -276,21 +278,21 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
         }}
       >
         <div className="flex items-center justify-between mb-1">
-          <p className="text-white text-sm font-semibold">Стейкинг ETH</p>
+          <p className="text-white text-sm font-semibold">{t('walletStakingTitle')}</p>
           <span
             className="text-[#00FF7F] text-xs font-bold px-2.5 py-0.5 rounded-full"
             style={{ background: 'rgba(0,255,127,0.1)' }}
           >
-            до 5.2% APY
+            {t('walletStakingApy')}
           </span>
         </div>
-        <p className="text-[#3A6045] text-xs">Зарабатывай на крипто, пока Нейра следит за рынком</p>
+        <p className="text-[#3A6045] text-xs">{t('walletStakingDesc')}</p>
         <button
           className="mt-3 w-full py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-95"
           style={{ background: 'rgba(0,255,127,0.1)', border: '1px solid rgba(0,255,127,0.2)', color: '#00FF7F' }}
           onClick={() => {}}
         >
-          Подключить стейкинг
+          {t('walletConnectStaking')}
         </button>
       </div>
     </div>

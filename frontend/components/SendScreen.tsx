@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { supabase } from '@/lib/supabase';
 import { isNeuroId, normalizeNeuroId } from '@/lib/neuro-id';
 
@@ -18,30 +19,12 @@ interface Contact {
 
 const STORAGE_KEY = 'nw_recipients_v1';
 const INVITE_BOT_URL = process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL || 'https://t.me/NeuroWallet_bot';
-const INVITE_TEXT = [
-  'Привет! Приглашаю тебя в NeuroWallet — криптокошелёк нового поколения с AI-агентом внутри.',
-  '',
-  `Открыть в Telegram: ${INVITE_BOT_URL}`,
-].join('\n');
 
 const DEMO_CONTACTS: Contact[] = [
   { id: '1', name: 'John Doe',   initials: 'JD', trusted: true,  lastAmount: '€150', currency: 'EUR' },
   { id: '2', name: 'Alice Kim',  initials: 'AK', trusted: true,  lastAmount: '€320', currency: 'EUR' },
   { id: '3', name: 'Mike Ross',  initials: 'MR', trusted: false, currency: 'USDT' },
 ];
-
-const CURRENCIES: Record<TransferCurrency, { label: string; short: string; icon: string; placeholder: string }> = {
-  EUR:      { label: 'Евро',          short: 'EUR',      icon: '€', placeholder: 'Email, телефон или IBAN' },
-  USD:      { label: 'Доллар',        short: 'USD',      icon: '$', placeholder: 'Email, телефон или реквизиты' },
-  USDT:     { label: 'USDT ERC-20',   short: 'USDT',     icon: '₮', placeholder: '0x…' },
-  ETH:      { label: 'Ethereum',      short: 'ETH',      icon: 'Ξ', placeholder: '0x…' },
-  BTC:      { label: 'Bitcoin',       short: 'BTC',      icon: '₿', placeholder: 'bc1… или 1…' },
-  SOL:      { label: 'Solana',        short: 'SOL',      icon: '◎', placeholder: 'Solana address' },
-  TON:      { label: 'TON',           short: 'TON',      icon: '◆', placeholder: 'EQ… или UQ…' },
-  TRX:      { label: 'TRON',          short: 'TRX',      icon: '◆', placeholder: 'T…' },
-  TRC20:    { label: 'USDT TRC-20',   short: 'TRC20',    icon: '₮', placeholder: 'T…' },
-  USDT_TON: { label: 'USDT TON',      short: 'USDT TON', icon: '₮', placeholder: 'EQ… или UQ…' },
-};
 
 const CURRENCY_ORDER: TransferCurrency[] = ['EUR', 'USD', 'USDT', 'ETH', 'BTC', 'SOL', 'TON', 'TRX', 'TRC20', 'USDT_TON'];
 const CRYPTO_CURRENCIES = new Set<TransferCurrency>(['USDT', 'ETH', 'BTC', 'SOL', 'TON', 'TRX', 'TRC20', 'USDT_TON']);
@@ -63,10 +46,6 @@ function initialsFor(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   const letters = parts.slice(0, 2).map((p) => p[0]?.toUpperCase()).join('');
   return letters || '+';
-}
-
-function currencySymbol(currency: TransferCurrency): string {
-  return CURRENCIES[currency].icon;
 }
 
 function isCrypto(currency: TransferCurrency): boolean {
@@ -92,6 +71,7 @@ function persistSavedContacts(contacts: Contact[]): void {
 
 export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCryptoTransfer }) => {
   const { isDemo } = useAuth();
+  const { t } = useLanguage();
   const [step, setStep] = useState<SendStep>('contacts');
   const [selected, setSelected] = useState<Contact | null>(null);
   const [savedContacts, setSavedContacts] = useState<Contact[]>([]);
@@ -105,6 +85,27 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
   const [lookupError, setLookupError] = useState('');
   const [resolvedNeuroId, setResolvedNeuroId] = useState('');
   const [sendError, setSendError] = useState('');
+
+  const INVITE_TEXT = [
+    t('sendInviteText'),
+    '',
+    `${t('sendOpenInTelegram')} ${INVITE_BOT_URL}`,
+  ].join('\n');
+
+  const CURRENCIES: Record<TransferCurrency, { label: string; short: string; icon: string; placeholder: string }> = {
+    EUR:      { label: t('currencyEUR'),  short: 'EUR',      icon: '€', placeholder: t('currencyPlaceholderFiat1') },
+    USD:      { label: t('currencyUSD'),  short: 'USD',      icon: '$', placeholder: t('currencyPlaceholderFiat2') },
+    USDT:     { label: 'USDT ERC-20',     short: 'USDT',     icon: '₮', placeholder: '0x…' },
+    ETH:      { label: 'Ethereum',        short: 'ETH',      icon: 'Ξ', placeholder: '0x…' },
+    BTC:      { label: 'Bitcoin',         short: 'BTC',      icon: '₿', placeholder: `bc1… ${t('authOr')} 1…` },
+    SOL:      { label: 'Solana',          short: 'SOL',      icon: '◎', placeholder: 'Solana address' },
+    TON:      { label: 'TON',             short: 'TON',      icon: '◆', placeholder: `EQ… ${t('authOr')} UQ…` },
+    TRX:      { label: 'TRON',            short: 'TRX',      icon: '◆', placeholder: 'T…' },
+    TRC20:    { label: 'USDT TRC-20',     short: 'TRC20',    icon: '₮', placeholder: 'T…' },
+    USDT_TON: { label: 'USDT TON',        short: 'USDT TON', icon: '₮', placeholder: `EQ… ${t('authOr')} UQ…` },
+  };
+
+  const currencySymbol = (curr: TransferCurrency): string => CURRENCIES[curr].icon;
 
   useEffect(() => {
     setSavedContacts(loadSavedContacts());
@@ -178,19 +179,19 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
     try {
       const { data } = await supabase.auth.getSession();
       const token = data.session?.access_token;
-      if (!token) throw new Error('Войди в аккаунт, чтобы искать NeuroID.');
+      if (!token) throw new Error(t('sendLoginRequiredNeuroId'));
 
       const res = await fetch(`/api/neuro-id/resolve?neuro_id=${encodeURIComponent(neuroId)}&coin=${encodeURIComponent(currency)}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'NeuroID не найден.');
+      if (!res.ok) throw new Error(json.error || t('sendNeuroIdNotFound'));
 
       setRecipientName(json.display_name || json.neuro_id);
       setRecipientAddress(json.address);
       setResolvedNeuroId(json.neuro_id);
     } catch (err) {
-      setLookupError(err instanceof Error ? err.message : 'Не удалось найти NeuroID.');
+      setLookupError(err instanceof Error ? err.message : t('sendNeuroIdLookupFailed'));
     } finally {
       setLookupLoading(false);
     }
@@ -218,7 +219,7 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
     setSendError('');
     if (selected && isCrypto(selectedCurrency)) {
       if (!selected.address) {
-        setSendError('Для крипто-перевода нужен адрес получателя или найденный NeuroID.');
+        setSendError(t('sendCryptoAddressRequired'));
         return;
       }
       onSendCryptoTransfer?.({
@@ -231,7 +232,7 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
       return;
     }
 
-    setSendError('Фиатные внутренние переводы требуют отдельного custodial ledger. Сейчас доступна реальная отправка крипты.');
+    setSendError(t('sendFiatError'));
   };
 
   const handleDemoDone = () => {
@@ -253,17 +254,17 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
         </div>
         <div>
           <p className="text-white text-xl font-bold">
-            {amountNum.toLocaleString('ru-RU', { maximumFractionDigits: 6 })} {selectedCurrency} отправлено
+            {t('sendDoneTitle').replace('{amt}', amountNum.toLocaleString('ru-RU', { maximumFractionDigits: 6 })).replace('{currency}', selectedCurrency)}
           </p>
-          <p className="text-[#3A6045] text-sm mt-1">{selected?.name} • только что</p>
+          <p className="text-[#3A6045] text-sm mt-1">{t('sendDoneJustNow').replace('{name}', selected?.name ?? '')}</p>
         </div>
         <div
           className="w-full rounded-2xl p-4 text-left"
           style={{ background: 'rgba(0,255,127,0.06)', border: '1px solid rgba(0,255,127,0.15)' }}
         >
-          <p className="text-[#00FF7F] text-xs font-semibold mb-1">Нейра</p>
+          <p className="text-[#00FF7F] text-xs font-semibold mb-1">{t('navNeura')}</p>
           <p className="text-white text-sm">
-            Получатель сохранён в адресной книге. Для реальной отправки крипты следующий шаг — подтверждение адреса и подпись транзакции.
+            {t('sendDoneNeuraText')}
           </p>
         </div>
         <button
@@ -271,7 +272,7 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
           className="w-full py-4 rounded-2xl font-semibold text-sm"
           style={{ background: 'rgba(0,255,127,0.1)', border: '1.5px solid rgba(0,255,127,0.3)', color: '#00FF7F' }}
         >
-          Новый перевод
+          {t('sendNewTransfer')}
         </button>
       </div>
     );
@@ -279,12 +280,12 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
 
   return (
     <div className="px-6 pt-2 flex flex-col gap-5">
-      <h2 className="text-white text-lg font-bold">Отправить</h2>
+      <h2 className="text-white text-lg font-bold">{t('sendTitle')}</h2>
 
       {step === 'contacts' && (
         <div className="flex flex-col gap-3">
           {contacts.length > 0 && (
-            <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider">Получатели</p>
+            <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider">{t('sendRecipientsLabel')}</p>
           )}
           {contacts.map((contact) => {
             const meta = CURRENCIES[contact.currency ?? 'EUR'];
@@ -304,14 +305,14 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
                 <div className="flex-1 min-w-0">
                   <p className="text-white font-medium text-sm">{contact.name}</p>
                   <p className="text-[#3A6045] text-xs mt-0.5 truncate">
-                    {contact.address ? contact.address : contact.lastAmount ? `Последний: ${contact.lastAmount}` : 'Новый контакт'} · {meta.short}
+                    {contact.address ? contact.address : contact.lastAmount ? t('sendLastAmount').replace('{amt}', contact.lastAmount) : t('sendNewContact')} · {meta.short}
                   </p>
                 </div>
                 <span
                   className="text-[10px] font-semibold px-2 py-1 rounded-full"
                   style={{ background: contact.trusted ? 'rgba(0,255,127,0.1)' : 'rgba(245,158,11,0.08)', color: contact.trusted ? '#00FF7F' : '#f59e0b' }}
                 >
-                  {contact.trusted ? '✓ Доверенный' : 'Проверить'}
+                  {contact.trusted ? t('sendTrusted') : t('sendVerify')}
                 </span>
               </button>
             );
@@ -326,8 +327,8 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
               <span className="text-[#00FF7F] text-xl font-light">+</span>
             </div>
             <div className="flex-1">
-              <p className="text-white text-sm font-medium">Добавить получателя</p>
-              <p className="text-[#3A6045] text-xs mt-0.5">Имя, валюта и адрес</p>
+              <p className="text-white text-sm font-medium">{t('sendAddRecipient')}</p>
+              <p className="text-[#3A6045] text-xs mt-0.5">{t('sendAddRecipientDesc')}</p>
             </div>
           </button>
 
@@ -336,7 +337,7 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
             className="w-full py-3.5 rounded-2xl font-semibold text-sm transition-all active:scale-95"
             style={{ background: 'rgba(0,255,127,0.06)', border: '1px solid rgba(0,255,127,0.14)', color: '#00FF7F' }}
           >
-            {copiedInvite ? 'Ссылка на приглашение готова' : 'Пригласить в NeuroWallet'}
+            {copiedInvite ? t('sendInviteLinkReady') : t('sendInviteToApp')}
           </button>
         </div>
       )}
@@ -347,16 +348,16 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <polyline points="15 18 9 12 15 6"/>
             </svg>
-            Назад
+            {t('sendBack')}
           </button>
 
           <div>
-            <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider mb-2">Имя получателя</p>
+            <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider mb-2">{t('sendRecipientNameLabel')}</p>
             <input
               type="text"
               value={recipientName}
               onChange={(event) => setRecipientName(event.target.value)}
-              placeholder="Например, Максим / Binance / Алексей"
+              placeholder={t('sendRecipientNamePlaceholder')}
               className="w-full rounded-2xl px-4 py-3.5 text-white text-sm bg-transparent outline-none"
               style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.12)', caretColor: '#00FF7F' }}
               autoFocus
@@ -364,7 +365,7 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
           </div>
 
           <div>
-            <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider mb-2">Валюта</p>
+            <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider mb-2">{t('sendCurrencyLabel')}</p>
             <div className="grid grid-cols-3 gap-2">
               {CURRENCY_ORDER.map((item) => {
                 const meta = CURRENCIES[item];
@@ -390,13 +391,13 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
 
           <div>
             <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider mb-2">
-              {isCrypto(currency) ? 'NeuroID или адрес кошелька' : 'Реквизиты или контакт'}
+              {isCrypto(currency) ? t('sendNeuroIdOrAddress') : t('sendRequisitesOrContact')}
             </p>
             <input
               type="text"
               value={recipientAddress}
               onChange={(event) => { setRecipientAddress(event.target.value); setResolvedNeuroId(''); setLookupError(''); }}
-              placeholder={isCrypto(currency) ? `nw-... или ${CURRENCIES[currency].placeholder}` : CURRENCIES[currency].placeholder}
+              placeholder={isCrypto(currency) ? `nw-... ${t('authOr')} ${CURRENCIES[currency].placeholder}` : CURRENCIES[currency].placeholder}
               className="w-full rounded-2xl px-4 py-3.5 text-white text-sm bg-transparent outline-none font-mono"
               style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.12)', caretColor: '#00FF7F' }}
             />
@@ -408,11 +409,11 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
                 className="mt-2 w-full py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-95 disabled:opacity-40"
                 style={{ background: 'rgba(0,255,127,0.08)', border: '1px solid rgba(0,255,127,0.18)', color: '#00FF7F' }}
               >
-                {lookupLoading ? 'Ищу NeuroID…' : `Найти ${normalizeNeuroId(recipientAddress)}`}
+                {lookupLoading ? t('sendSearchingNeuroId') : t('sendFindNeuroId').replace('{id}', normalizeNeuroId(recipientAddress))}
               </button>
             )}
             {resolvedNeuroId && (
-              <p className="text-[#00FF7F] text-xs mt-2">NeuroID найден: {resolvedNeuroId}. Адрес подставлен для {CURRENCIES[currency].short}.</p>
+              <p className="text-[#00FF7F] text-xs mt-2">{t('sendNeuroIdFound').replace('{id}', resolvedNeuroId).replace('{coin}', CURRENCIES[currency].short)}</p>
             )}
             {lookupError && (
               <p className="text-xs mt-2" style={{ color: '#FF5252' }}>{lookupError}</p>
@@ -420,9 +421,9 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
           </div>
 
           <div className="rounded-2xl p-4" style={{ background: 'rgba(0,255,127,0.05)', border: '1px solid rgba(0,255,127,0.12)' }}>
-            <p className="text-[#00FF7F] text-xs font-semibold mb-1.5">Нейра</p>
+            <p className="text-[#00FF7F] text-xs font-semibold mb-1.5">{t('navNeura')}</p>
             <p className="text-white text-sm leading-relaxed">
-              Можно вставить обычный адрес или NeuroID. Если это NeuroID, я найду адрес нужной сети и всё равно покажу его перед подписью транзакции.
+              {t('sendNeuraHelperText')}
             </p>
           </div>
 
@@ -432,7 +433,7 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
             className="w-full py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95 disabled:opacity-30"
             style={{ background: '#00FF7F', color: '#080C09' }}
           >
-            Сохранить и продолжить
+            {t('sendSaveContinue')}
           </button>
 
           <button
@@ -440,7 +441,7 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
             className="w-full py-3.5 rounded-2xl font-semibold text-sm transition-all active:scale-95"
             style={{ background: 'transparent', border: '1px solid rgba(0,255,127,0.18)', color: '#00FF7F' }}
           >
-            {copiedInvite ? 'Ссылка на приглашение готова' : 'Пригласить получателя в приложение'}
+            {copiedInvite ? t('sendInviteLinkReady') : t('sendInviteRecipient')}
           </button>
         </div>
       )}
@@ -451,7 +452,7 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <polyline points="15 18 9 12 15 6"/>
             </svg>
-            Назад
+            {t('sendBack')}
           </button>
 
           <div className="flex items-center gap-3 rounded-2xl px-4 py-3" style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.08)' }}>
@@ -460,12 +461,12 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-white text-sm font-medium">{selected.name}</p>
-              <p className="text-[#3A6045] text-xs truncate">{selected.address || 'Без адреса'} · {selectedMeta.label}</p>
+              <p className="text-[#3A6045] text-xs truncate">{selected.address || t('sendNoAddress')} · {selectedMeta.label}</p>
             </div>
           </div>
 
           <div className="text-center py-6">
-            <p className="text-[#3A6045] text-xs mb-3">Сумма</p>
+            <p className="text-[#3A6045] text-xs mb-3">{t('sendAmountLabel')}</p>
             <div className="flex items-center justify-center gap-2">
               <span className="text-[#00FF7F] text-5xl font-bold">{currencySymbol(selectedCurrency)}</span>
               <input
@@ -485,20 +486,20 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
             type="text"
             value={note}
             onChange={(event) => setNote(event.target.value)}
-            placeholder="Заметка (необязательно)"
+            placeholder={t('sendNotePlaceholder')}
             className="w-full rounded-2xl px-4 py-3.5 text-white text-sm bg-transparent outline-none"
             style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.1)' }}
           />
 
           <div className="rounded-2xl p-4" style={{ background: 'rgba(0,255,127,0.06)', border: '1px solid rgba(0,255,127,0.12)' }}>
-            <p className="text-[#00FF7F] text-xs font-semibold mb-1.5">Нейра</p>
+            <p className="text-[#00FF7F] text-xs font-semibold mb-1.5">{t('navNeura')}</p>
             {selected.trusted ? (
               <p className="text-white text-sm">
-                {selected.name} — доверенный контакт. {selected.lastAmount ? `Последний перевод: ${selected.lastAmount}.` : ''} Реквизиты совпадают.
+                {`${t('sendTrustedContactText').replace('{name}', selected.name)} ${selected.lastAmount ? t('sendLastTransferText').replace('{amt}', selected.lastAmount) : ''} ${t('sendDetailsMatch')}`.replace(/\s+/g, ' ').trim()}
               </p>
             ) : (
               <p className="text-white text-sm">
-                ⚠️ Получатель новый. Проверь адрес вручную перед отправкой, особенно если это {selectedMeta.short}.
+                {t('sendNewRecipientWarning').replace('{coin}', selectedMeta.short)}
               </p>
             )}
           </div>
@@ -509,7 +510,7 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
             className="w-full py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95 disabled:opacity-30"
             style={{ background: '#00FF7F', color: '#080C09' }}
           >
-            Продолжить
+            {t('sendContinue')}
           </button>
         </div>
       )}
@@ -520,40 +521,40 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <polyline points="15 18 9 12 15 6"/>
             </svg>
-            Назад
+            {t('sendBack')}
           </button>
 
           <div className="rounded-2xl p-5 flex flex-col gap-3" style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.12)' }}>
             <div className="flex justify-between gap-4">
-              <span className="text-[#3A6045] text-sm">Получатель</span>
+              <span className="text-[#3A6045] text-sm">{t('sendRecipientLabel')}</span>
               <span className="text-white text-sm font-medium text-right">{selected.name}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-[#3A6045] text-sm">Валюта</span>
+              <span className="text-[#3A6045] text-sm">{t('sendCurrencyLabel')}</span>
               <span className="text-white text-sm font-medium">{selectedMeta.label}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-[#3A6045] text-sm">Сумма</span>
+              <span className="text-[#3A6045] text-sm">{t('sendAmountLabel')}</span>
               <span className="text-[#00FF7F] text-sm font-bold">
                 {amountNum.toLocaleString('ru-RU', { maximumFractionDigits: 6 })} {selectedMeta.short}
               </span>
             </div>
             {selected.address && (
               <div style={{ borderTop: '1px solid rgba(0,255,127,0.08)', paddingTop: '12px' }}>
-                <p className="text-[#3A6045] text-xs mb-1">Адрес / реквизиты</p>
+                <p className="text-[#3A6045] text-xs mb-1">{t('sendAddressLabel')}</p>
                 <p className="text-white text-xs font-mono break-all">{selected.address}</p>
               </div>
             )}
             {note && (
               <div className="flex justify-between gap-4">
-                <span className="text-[#3A6045] text-sm">Заметка</span>
+                <span className="text-[#3A6045] text-sm">{t('sendNoteLabel')}</span>
                 <span className="text-white text-sm text-right">{note}</span>
               </div>
             )}
             <div className="flex justify-between gap-4">
-              <span className="text-[#3A6045] text-sm">Проверка</span>
+              <span className="text-[#3A6045] text-sm">{t('sendVerificationLabel')}</span>
               <span className="text-sm font-semibold" style={{ color: selected.trusted ? '#00FF7F' : '#f59e0b' }}>
-                {selected.trusted ? '✓ Верифицирован' : '⚠ Новый получатель'}
+                {selected.trusted ? t('sendVerified') : t('sendNewRecipientBadge')}
               </span>
             </div>
           </div>
@@ -563,7 +564,7 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
             className="w-full py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95"
             style={{ background: '#00FF7F', color: '#080C09', boxShadow: '0 0 20px rgba(0,255,127,0.3)' }}
           >
-            {isCrypto(selectedCurrency) ? 'Перейти к подписи' : 'Подтвердить'}
+            {isCrypto(selectedCurrency) ? t('sendProceedToSign') : t('sendConfirmBtn')}
           </button>
           {sendError && (
             <div className="rounded-2xl p-3" style={{ background: 'rgba(255,82,82,0.06)', border: '1px solid rgba(255,82,82,0.2)' }}>

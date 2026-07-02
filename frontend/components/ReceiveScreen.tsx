@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 export type ReceiveNetwork = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TRX' | 'TRC20' | 'TON' | 'USDT_TON';
 
@@ -54,6 +55,7 @@ interface ReceiveScreenProps {
 
 export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = 'ETH' }) => {
   const { isDemo } = useAuth();
+  const { t } = useLanguage();
   const [network, setNetwork] = useState<ReceiveNetwork>(initialNetwork);
   const [copied, setCopied] = useState(false);
   const [addresses, setAddresses] = useState(FALLBACK_ADDRESSES);
@@ -122,7 +124,7 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
 
   return (
     <div className="px-6 pt-2 pb-6 flex flex-col items-center gap-5">
-      <h2 className="text-white text-lg font-bold self-start">Получить крипту</h2>
+      <h2 className="text-white text-lg font-bold self-start">{t('receiveTitle')}</h2>
 
       {/* Network selector */}
       <div className="flex gap-2 self-stretch flex-wrap">
@@ -162,7 +164,7 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
             className="flex items-center justify-center text-xs font-semibold"
             style={{ width: 190, height: 190, color: '#111827' }}
           >
-            Генерируем QR...
+            {t('receiveGeneratingQr')}
           </div>
         )}
         <div
@@ -179,7 +181,7 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
         className="self-stretch rounded-2xl px-4 py-3"
         style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.12)' }}
       >
-        <p className="text-[#3A6045] text-[10px] uppercase tracking-wider mb-1.5">Адрес кошелька</p>
+        <p className="text-[#3A6045] text-[10px] uppercase tracking-wider mb-1.5">{t('receiveAddressLabel')}</p>
         <p className="text-white text-xs font-mono break-all leading-relaxed">{address}</p>
       </div>
 
@@ -193,7 +195,7 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
           boxShadow:     copied ? 'none' : '0 0 20px rgba(0,255,127,0.3)',
         }}
       >
-        {copied ? '✓ Адрес скопирован!' : 'Копировать адрес'}
+        {copied ? t('receiveCopied') : t('receiveCopyAddress')}
       </button>
 
       {/* Warning */}
@@ -203,17 +205,16 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
       >
         <p className="text-[#FFC400] text-xs leading-relaxed">
           {network === 'TON'
-            ? '⚠️ Отправляйте только TON на этот адрес.'
+            ? t('receiveWarnTon')
             : network === 'USDT_TON'
-            ? '⚠️ Отправляйте только USDT TON (Jetton) на этот адрес.'
+            ? t('receiveWarnUsdtTon')
             : network === 'TRX'
-            ? '⚠️ Отправляйте только TRX на этот адрес.'
+            ? t('receiveWarnTrx')
             : network === 'TRC20'
-            ? '⚠️ Отправляйте только USDT TRC-20 на этот адрес.'
+            ? t('receiveWarnTrc20')
             : network === 'USDT'
-            ? '⚠️ Отправляйте только USDT ERC-20 на этот адрес.'
-            : <>⚠️ Отправляйте только <strong>{network}</strong> на этот адрес.
-          Отправка других монет может привести к безвозвратной потере средств.</>}
+            ? t('receiveWarnUsdt')
+            : <>{t('receiveWarnGenericPrefix')} <strong>{network}</strong> {t('receiveWarnGenericSuffix')}</>}
         </p>
       </div>
     </div>

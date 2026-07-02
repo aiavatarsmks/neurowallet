@@ -1,4 +1,5 @@
 import React from 'react';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 type Tab = 'home' | 'send' | 'add' | 'cards' | 'wallet';
 
@@ -36,14 +37,16 @@ const WalletIcon = () => (
   </svg>
 );
 
-const NAV_ITEMS = [
-  { id: 'home'  as Tab, label: 'Главная',   Icon: HomeIcon  },
-  { id: 'send'  as Tab, label: 'Отправить', Icon: SendIcon  },
-  { id: 'cards' as Tab, label: 'Карты',     Icon: CardsIcon },
-  { id: 'wallet'as Tab, label: 'Активы',    Icon: WalletIcon },
-];
-
 export const BottomNav: React.FC<BottomNavProps> = ({ active = 'home', onTabChange }) => {
+  const { t } = useLanguage();
+
+  const NAV_ITEMS = [
+    { id: 'home'  as Tab, label: t('navHome'),  Icon: HomeIcon  },
+    { id: 'send'  as Tab, label: t('navSend'),  Icon: SendIcon  },
+    { id: 'cards' as Tab, label: t('navCards'), Icon: CardsIcon },
+    { id: 'wallet'as Tab, label: t('navWallet'),Icon: WalletIcon },
+  ];
+
   return (
     <nav
       className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] flex items-center justify-around px-4 pt-3 pb-8"
@@ -86,7 +89,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ active = 'home', onTabChan
             <polyline points="6,22 6,6 22,22 22,6" stroke="#080C09" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </button>
-        <span className="text-[10px] font-medium" style={{ color: active === 'add' ? '#00FF7F' : '#3A6045' }}>Нейра</span>
+        <span className="text-[10px] font-medium" style={{ color: active === 'add' ? '#00FF7F' : '#3A6045' }}>{t('navNeura')}</span>
       </div>
 
       {/* Right two */}

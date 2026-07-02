@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { verifyPin, getLockoutMs, getRemainingAttempts } from '@/lib/pin';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 interface PinEntryProps {
   onSuccess: (walletPassword: string) => void;
@@ -8,6 +9,7 @@ interface PinEntryProps {
 const DIGITS = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
 
 export const PinEntry: React.FC<PinEntryProps> = ({ onSuccess }) => {
+  const { t } = useLanguage();
   const [pin,       setPin]       = useState('');
   const [error,     setError]     = useState('');
   const [loading,   setLoading]   = useState(false);
@@ -52,11 +54,11 @@ export const PinEntry: React.FC<PinEntryProps> = ({ onSuccess }) => {
         if (msg.startsWith('LOCKED:')) {
           const mins = msg.split(':')[1];
           setLockSecs(parseInt(mins, 10) * 60);
-          setError(`Слишком много попыток. Повторите через ${mins} мин.`);
+          setError(t('pinLockedMsg').replace('{mins}', mins));
         } else if (msg.startsWith('WRONG:')) {
           const left = parseInt(msg.split(':')[1], 10);
           setRemaining(left);
-          setError(`Неверный PIN. Осталось попыток: ${left}`);
+          setError(t('pinWrongMsg').replace('{n}', String(left)));
         } else {
           setError(msg);
         }
@@ -81,8 +83,8 @@ export const PinEntry: React.FC<PinEntryProps> = ({ onSuccess }) => {
             <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
           </svg>
         </div>
-        <p className="text-white text-lg font-semibold">Введите PIN-код</p>
-        <p className="text-[#3A6045] text-sm mt-1">Для доступа к кошельку</p>
+        <p className="text-white text-lg font-semibold">{t('pinEnterTitle')}</p>
+        <p className="text-[#3A6045] text-sm mt-1">{t('pinForAccess')}</p>
       </div>
 
       {/* PIN dots */}
@@ -103,7 +105,7 @@ export const PinEntry: React.FC<PinEntryProps> = ({ onSuccess }) => {
       {/* Error / lockout message */}
       {lockSecs > 0 ? (
         <p className="text-red-400 text-sm mb-6 text-center">
-          Заблокировано на {Math.ceil(lockSecs / 60)} мин {lockSecs % 60} сек
+          {t('pinLockedCountdown').replace('{mins}', String(Math.ceil(lockSecs / 60))).replace('{secs}', String(lockSecs % 60))}
         </p>
       ) : error ? (
         <p className="text-red-400 text-sm mb-6 text-center">{error}</p>
@@ -132,7 +134,7 @@ export const PinEntry: React.FC<PinEntryProps> = ({ onSuccess }) => {
       </div>
 
       {remaining < 5 && remaining > 0 && !error && (
-        <p className="text-[#3A6045] text-xs mt-6">Попыток осталось: {remaining}</p>
+        <p className="text-[#3A6045] text-xs mt-6">{t('pinAttemptsLeft').replace('{n}', String(remaining))}</p>
       )}
     </div>
   );

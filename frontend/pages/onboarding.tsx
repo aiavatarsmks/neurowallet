@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { generateMnemonic, importWalletFromMnemonic } from '@/lib/crypto/wallet';
 import { PinSetup } from '@/components/PinSetup';
 
@@ -37,6 +38,7 @@ function useTgSafeTop(): number {
 export default function OnboardingWalletPage() {
   const router = useRouter();
   const { user, isDemo, isLoading } = useAuth();
+  const { t } = useLanguage();
   const safeTop = useTgSafeTop();
 
   const [step, setStep] = useState<Step>('choice');
@@ -89,7 +91,7 @@ export default function OnboardingWalletPage() {
   const handleImportContinue = () => {
     const words = importMnemonicInput.trim().toLowerCase().split(/\s+/);
     if (words.length !== 12) {
-      setError('Нужно ровно 12 слов');
+      setError(t('onbWordCountError'));
       return;
     }
     setMnemonic(importMnemonicInput.trim().toLowerCase());
@@ -117,7 +119,7 @@ export default function OnboardingWalletPage() {
       const expected = words[verifyIndices[i]].trim().toLowerCase();
       const entered  = verifyInputs[i].trim().toLowerCase();
       if (expected !== entered) {
-        setError(`Слово #${verifyIndices[i] + 1} введено неверно. Проверь запись и попробуй снова.`);
+        setError(t('onbWordWrong').replace('{n}', String(verifyIndices[i] + 1)));
         return;
       }
     }
@@ -126,9 +128,9 @@ export default function OnboardingWalletPage() {
   };
 
   const handleGenerate = async () => {
-    if (!password) { setError('Введи пароль'); return; }
-    if (password.length < 6) { setError('Пароль — минимум 6 символов'); return; }
-    if (password !== confirmPassword) { setError('Пароли не совпадают'); return; }
+    if (!password) { setError(t('onbEnterPassword')); return; }
+    if (password.length < 6) { setError(t('onbPasswordMin')); return; }
+    if (password !== confirmPassword) { setError(t('onbPasswordMismatch')); return; }
 
     setStep('generating');
     setError('');
@@ -149,7 +151,7 @@ export default function OnboardingWalletPage() {
       }
       setStep('pin-setup');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ошибка генерации');
+      setError(e instanceof Error ? e.message : t('onbGenError'));
       setStep('set-password');
     }
   };
@@ -196,8 +198,8 @@ export default function OnboardingWalletPage() {
               </svg>
             </div>
             <div className="text-center">
-              <h1 className="text-white text-2xl font-bold tracking-tight">Настрой кошелёк</h1>
-              <p className="text-[#3A6045] text-sm mt-1">Выбери способ создания</p>
+              <h1 className="text-white text-2xl font-bold tracking-tight">{t('onbChoiceTitle')}</h1>
+              <p className="text-[#3A6045] text-sm mt-1">{t('onbChoiceSubtitle')}</p>
             </div>
           </div>
 
@@ -207,8 +209,8 @@ export default function OnboardingWalletPage() {
               className="w-full py-5 rounded-2xl font-semibold text-sm transition-all active:scale-95 flex flex-col items-start px-5 gap-1"
               style={{ background: 'rgba(0,255,127,0.07)', border: '1.5px solid rgba(0,255,127,0.3)', color: '#00FF7F' }}
             >
-              <span className="text-base font-bold">✦ Создать новый кошелёк</span>
-              <span className="text-[#3A6045] text-xs font-normal">Сгенерируем 12 слов — ключ от твоих активов</span>
+              <span className="text-base font-bold">{t('onbCreateNewTitle')}</span>
+              <span className="text-[#3A6045] text-xs font-normal">{t('onbCreateNewSubtitle')}</span>
             </button>
 
             <button
@@ -216,13 +218,13 @@ export default function OnboardingWalletPage() {
               className="w-full py-5 rounded-2xl font-semibold text-sm transition-all active:scale-95 flex flex-col items-start px-5 gap-1"
               style={{ background: '#0D1A10', border: '1.5px solid rgba(0,255,127,0.15)', color: 'white' }}
             >
-              <span className="text-base font-bold">Импортировать кошелёк</span>
-              <span className="text-[#3A6045] text-xs font-normal">Введи 12 слов от существующего кошелька</span>
+              <span className="text-base font-bold">{t('onbImportTitle')}</span>
+              <span className="text-[#3A6045] text-xs font-normal">{t('onbImportSubtitle')}</span>
             </button>
           </div>
 
           <p className="text-center text-[#3A6045] text-xs mt-6">
-            Твои ключи хранятся только на устройстве. NeuroWallet не имеет доступа к средствам.
+            {t('onbChoiceFooter')}
           </p>
         </div>
       )}
@@ -231,8 +233,8 @@ export default function OnboardingWalletPage() {
       {step === 'show-mnemonic' && (
         <div className="flex flex-col flex-1 pb-10 gap-5" style={{ paddingTop: safeTop }}>
           <div>
-            <h1 className="text-white text-2xl font-bold">Запиши фразу</h1>
-            <p className="text-[#3A6045] text-sm mt-1">12 слов — единственный способ восстановить кошелёк</p>
+            <h1 className="text-white text-2xl font-bold">{t('onbShowTitle')}</h1>
+            <p className="text-[#3A6045] text-sm mt-1">{t('onbShowSubtitle')}</p>
           </div>
 
           <div
@@ -240,7 +242,7 @@ export default function OnboardingWalletPage() {
             style={{ background: 'rgba(255,196,0,0.06)', border: '1px solid rgba(255,196,0,0.22)' }}
           >
             <p className="text-[#FFC400] text-xs leading-relaxed">
-              ⚠️ Никогда не делись этими словами. Никто из команды NeuroWallet никогда их не запросит.
+              {t('onbShowWarning')}
             </p>
           </div>
 
@@ -272,14 +274,14 @@ export default function OnboardingWalletPage() {
               }}
             >
               {copied ? (
-                <>✓ Скопировано</>
+                <>{t('onbCopied')}</>
               ) : (
                 <>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
                   </svg>
-                  Копировать все 12 слов
+                  {t('onbCopyAll')}
                 </>
               )}
             </button>
@@ -291,7 +293,7 @@ export default function OnboardingWalletPage() {
             className="w-full py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95 disabled:opacity-40"
             style={{ background: '#00FF7F', color: '#080C09', boxShadow: canContinue ? '0 0 24px rgba(0,255,127,0.35)' : 'none' }}
           >
-            {canContinue ? 'Я записал — продолжить' : 'Читай внимательно...'}
+            {canContinue ? t('onbIWroteItDown') : t('onbReadCarefully')}
           </button>
         </div>
       )}
@@ -302,10 +304,10 @@ export default function OnboardingWalletPage() {
           <div>
             <button onClick={() => setStep('show-mnemonic')} className="text-[#3A6045] text-sm mb-4 flex items-center gap-1">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
-              Назад
+              {t('onbBack')}
             </button>
-            <h1 className="text-white text-2xl font-bold">Проверка записи</h1>
-            <p className="text-[#3A6045] text-sm mt-1">Введи 3 слова из своей фразы</p>
+            <h1 className="text-white text-2xl font-bold">{t('onbVerifyTitle')}</h1>
+            <p className="text-[#3A6045] text-sm mt-1">{t('onbVerifySubtitle')}</p>
           </div>
 
           <div
@@ -313,7 +315,7 @@ export default function OnboardingWalletPage() {
             style={{ background: 'rgba(0,255,127,0.04)', border: '1px solid rgba(0,255,127,0.12)' }}
           >
             <p className="text-[#3A6045] text-xs leading-relaxed">
-              Если ты правильно записал фразу, введи слова ниже. Это гарантирует, что ты сможешь восстановить кошелёк.
+              {t('onbVerifyHint')}
             </p>
           </div>
 
@@ -321,7 +323,7 @@ export default function OnboardingWalletPage() {
             {verifyIndices.map((wordIdx, i) => (
               <div key={wordIdx} className="flex flex-col gap-1.5">
                 <label className="text-[#3A6045] text-xs font-medium uppercase tracking-wider px-1">
-                  Слово #{wordIdx + 1}
+                  {t('onbWordLabel').replace('{n}', String(wordIdx + 1))}
                 </label>
                 <input
                   type="text"
@@ -332,7 +334,7 @@ export default function OnboardingWalletPage() {
                     setVerifyInputs(next);
                     setError('');
                   }}
-                  placeholder={`Введи слово #${wordIdx + 1}`}
+                  placeholder={t('onbWordPlaceholder').replace('{n}', String(wordIdx + 1))}
                   autoCapitalize="none"
                   autoCorrect="off"
                   spellCheck={false}
@@ -360,7 +362,7 @@ export default function OnboardingWalletPage() {
             className="w-full py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95 disabled:opacity-40"
             style={{ background: '#00FF7F', color: '#080C09', boxShadow: '0 0 24px rgba(0,255,127,0.35)' }}
           >
-            Подтвердить
+            {t('onbConfirm')}
           </button>
         </div>
       )}
@@ -371,10 +373,10 @@ export default function OnboardingWalletPage() {
           <div>
             <button onClick={() => setStep('choice')} className="text-[#3A6045] text-sm mb-4 flex items-center gap-1">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
-              Назад
+              {t('onbBack')}
             </button>
-            <h1 className="text-white text-2xl font-bold">Импорт кошелька</h1>
-            <p className="text-[#3A6045] text-sm mt-1">Введи 12 слов через пробел</p>
+            <h1 className="text-white text-2xl font-bold">{t('onbImportPageTitle')}</h1>
+            <p className="text-[#3A6045] text-sm mt-1">{t('onbImportPageSubtitle')}</p>
           </div>
 
           <textarea
@@ -403,7 +405,7 @@ export default function OnboardingWalletPage() {
             className="w-full py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95 disabled:opacity-40"
             style={{ background: '#00FF7F', color: '#080C09', boxShadow: '0 0 24px rgba(0,255,127,0.35)' }}
           >
-            Проверить и продолжить
+            {t('onbImportContinue')}
           </button>
         </div>
       )}
@@ -412,19 +414,19 @@ export default function OnboardingWalletPage() {
       {step === 'set-password' && (
         <div className="flex flex-col flex-1 pb-10 gap-6" style={{ paddingTop: safeTop }}>
           <div>
-            <h1 className="text-white text-2xl font-bold">Защити кошелёк</h1>
-            <p className="text-[#3A6045] text-sm mt-1">Пароль шифрует ключи на устройстве</p>
+            <h1 className="text-white text-2xl font-bold">{t('onbProtectTitle')}</h1>
+            <p className="text-[#3A6045] text-sm mt-1">{t('onbProtectSubtitle')}</p>
           </div>
 
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
-              <label className="text-[#3A6045] text-xs font-medium uppercase tracking-wider px-1">Пароль</label>
+              <label className="text-[#3A6045] text-xs font-medium uppercase tracking-wider px-1">{t('onbPasswordLabel')}</label>
               <div className="relative">
                 <input
                   type={showPass ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => { setPassword(e.target.value); setError(''); }}
-                  placeholder="Минимум 6 символов"
+                  placeholder={t('authPasswordPlaceholder')}
                   className="w-full px-4 py-3.5 pr-12 rounded-xl text-white text-sm outline-none placeholder:text-[#3A6045]"
                   style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.15)', caretColor: '#00FF7F' }}
                 />
@@ -435,12 +437,12 @@ export default function OnboardingWalletPage() {
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-[#3A6045] text-xs font-medium uppercase tracking-wider px-1">Подтверди пароль</label>
+              <label className="text-[#3A6045] text-xs font-medium uppercase tracking-wider px-1">{t('onbConfirmPasswordLabel')}</label>
               <input
                 type={showPass ? 'text' : 'password'}
                 value={confirmPassword}
                 onChange={(e) => { setConfirmPassword(e.target.value); setError(''); }}
-                placeholder="Повтори пароль"
+                placeholder={t('onbConfirmPasswordPlaceholder')}
                 className="w-full px-4 py-3.5 rounded-xl text-white text-sm outline-none placeholder:text-[#3A6045]"
                 style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.15)', caretColor: '#00FF7F' }}
               />
@@ -458,7 +460,7 @@ export default function OnboardingWalletPage() {
             className="w-full py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95"
             style={{ background: '#00FF7F', color: '#080C09', boxShadow: '0 0 24px rgba(0,255,127,0.35)' }}
           >
-            Создать кошелёк
+            {t('onbCreateWallet')}
           </button>
         </div>
       )}
@@ -479,8 +481,8 @@ export default function OnboardingWalletPage() {
             />
           </div>
           <div className="text-center">
-            <p className="text-white font-semibold">Генерируем кошелёк...</p>
-            <p className="text-[#3A6045] text-sm mt-1">Это займёт несколько секунд</p>
+            <p className="text-white font-semibold">{t('onbGenerating')}</p>
+            <p className="text-[#3A6045] text-sm mt-1">{t('onbGeneratingSubtitle')}</p>
           </div>
           <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
         </div>

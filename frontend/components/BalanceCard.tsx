@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { fetchRealBalances, MARKET_REFRESH_MS, WalletBalances } from '@/lib/crypto/balances';
 import { SUPPORTED_ASSETS, type AssetSymbol } from '@/lib/crypto/assets';
 
@@ -23,9 +24,9 @@ function fmt(n: number): string {
   return n.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function getGreeting(): string {
+function getGreeting(t: (k: any) => string): string {
   const h = new Date().getHours();
-  return h < 12 ? 'Доброе утро' : h < 18 ? 'Добрый день' : 'Добрый вечер';
+  return h < 12 ? t('greetingMorning') : h < 18 ? t('greetingDay') : t('greetingEvening');
 }
 
 function calcCryptoTotal(b: WalletBalances): number {
@@ -41,6 +42,7 @@ function calcCryptoTotal(b: WalletBalances): number {
 
 export const BalanceCard: React.FC = () => {
   const { user, isDemo } = useAuth();
+  const { t } = useLanguage();
   const [view,         setView]         = useState<View>('total');
   const [isReal,       setIsReal]       = useState(false);
   const [loading,      setLoading]      = useState(false);
@@ -97,9 +99,9 @@ export const BalanceCard: React.FC = () => {
     activeCrypto;
 
   const label =
-    view === 'total' ? (isDemo ? 'Общий баланс'   : 'Крипто-портфель') :
-    view === 'fiat'  ? 'Фиат' :
-    'Крипто-портфель';
+    view === 'total' ? (isDemo ? t('labelTotalBalance') : t('labelCryptoPortfolio')) :
+    view === 'fiat'  ? t('labelFiat') :
+    t('labelCryptoPortfolio');
 
   const cryptoRows = isDemo
     ? DEMO_CRYPTO_ROWS
@@ -148,7 +150,7 @@ export const BalanceCard: React.FC = () => {
   return (
     <div className="px-6 pt-1 pb-4">
       <p className="text-[#3A6045] text-sm font-medium mb-3">
-        {getGreeting()}{displayName ? `, ${displayName}` : ''}
+        {getGreeting(t)}{displayName ? `, ${displayName}` : ''}
       </p>
 
       {/* View switcher */}
@@ -164,7 +166,7 @@ export const BalanceCard: React.FC = () => {
               border:     `1px solid ${view === v ? 'rgba(0,255,127,0.3)' : 'transparent'}`,
             }}
           >
-            {v === 'total' ? 'Всего' : v === 'fiat' ? 'Фиат' : 'Крипто'}
+            {v === 'total' ? t('viewTotal') : v === 'fiat' ? t('viewFiat') : t('viewCrypto')}
           </button>
         ))}
       </div>
@@ -174,7 +176,7 @@ export const BalanceCard: React.FC = () => {
       {loading ? (
         <div className="flex items-center gap-2 py-1">
           <div className="w-2 h-2 rounded-full bg-[#00FF7F] opacity-60" style={{ animation: 'pulse 1s ease-in-out infinite' }} />
-          <span className="text-[#3A6045] text-sm">Загружаем...</span>
+          <span className="text-[#3A6045] text-sm">{t('loadingText')}</span>
           <style>{`@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}`}</style>
         </div>
       ) : (
@@ -218,13 +220,13 @@ export const BalanceCard: React.FC = () => {
             ))}
           </div>
         ) : (
-          <p className="text-[#3A6045] text-xs mt-1.5">Фиат-счёт — скоро</p>
+          <p className="text-[#3A6045] text-xs mt-1.5">{t('fiatComingSoon')}</p>
         )
       )}
 
       {/* No wallet yet (real mode only) */}
       {!isDemo && view !== 'fiat' && !isReal && !loading && (
-        <p className="text-[#3A6045] text-xs mt-1.5">Создайте кошелёк, чтобы увидеть баланс</p>
+        <p className="text-[#3A6045] text-xs mt-1.5">{t('noWalletYet')}</p>
       )}
     </div>
   );

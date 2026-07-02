@@ -3,6 +3,7 @@ import { sendEth, sendUsdt, sendUsdtTrc20, sendTrx, sendSol, sendBtc, sendTon, s
 import { fetchRealBalances, MARKET_REFRESH_MS } from '@/lib/crypto/balances';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 type Coin = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TRX' | 'TRC20' | 'TON' | 'USDT_TON';
 type Step = 'form' | 'confirm' | 'password' | 'sending' | 'done';
@@ -50,6 +51,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   onAvatarState,
 }) => {
   const { isDemo } = useAuth();
+  const { t, lang } = useLanguage();
   const [coin,     setCoin]     = useState<Coin>(initialCoin);
   const [address,  setAddress]  = useState('');
   const [amount,   setAmount]   = useState('');
@@ -190,7 +192,9 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         const token = data.session?.access_token;
         const coinLabel = coin === 'TRC20' ? 'USDT TRC-20' : coin === 'USDT' ? 'USDT ERC-20' : coin === 'USDT_TON' ? 'USDT TON' : coin;
         const shortAddr = address.trim().slice(0, 6) + '...' + address.trim().slice(-4);
-        const msg = `✅ <b>Транзакция отправлена</b>\n\n💸 ${amountNum} ${coinLabel}\n📤 На адрес: <code>${shortAddr}</code>\n🔗 TX: <code>${hash.slice(0, 16)}...</code>`;
+        const msg = lang === 'en'
+          ? `✅ <b>Transaction sent</b>\n\n💸 ${amountNum} ${coinLabel}\n📤 To address: <code>${shortAddr}</code>\n🔗 TX: <code>${hash.slice(0, 16)}...</code>`
+          : `✅ <b>Транзакция отправлена</b>\n\n💸 ${amountNum} ${coinLabel}\n📤 На адрес: <code>${shortAddr}</code>\n🔗 TX: <code>${hash.slice(0, 16)}...</code>`;
         if (token) {
           fetch('/api/tg-notify', {
             method: 'POST',
@@ -205,33 +209,33 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
     } catch (e: unknown) {
       const msg = (e instanceof Error ? e.message : String(e)).toLowerCase();
       if (msg.includes('no_keystore')) {
-        setSendErr('Кошелёк не найден. Пройди онбординг заново.');
+        setSendErr(t('csErrNoWallet'));
       } else if (msg.includes('no_sol_enc')) {
-        setSendErr('SOL-ключ не найден. Пересоздай кошелёк через онбординг.');
+        setSendErr(t('csErrNoSol'));
       } else if (msg.includes('password') || msg.includes('invalid') || msg.includes('decrypt') || msg.includes('bad mac') || msg.includes('неверный пароль')) {
-        setPwError('Неверный пароль. Попробуй ещё раз.');
+        setPwError(t('csErrWrongPassword'));
       } else if (msg.includes('insufficient') || msg.includes('insufficient funds')) {
-        setSendErr('Недостаточно средств для оплаты комиссии.');
+        setSendErr(t('csErrInsufficientFee'));
       } else if (msg.includes('nonce') || msg.includes('replacement')) {
-        setSendErr('Предыдущая транзакция ещё не завершилась. Подожди немного.');
+        setSendErr(t('csErrPendingTx'));
       } else if (msg.includes('no_btc_enc')) {
-        setSendErr('BTC-ключ не найден. Пересоздай кошелёк через онбординг.');
+        setSendErr(t('csErrNoBtc'));
       } else if (msg.includes('no_tron_enc')) {
-        setSendErr('Tron-ключ не найден. Пересоздай кошелёк через онбординг.');
+        setSendErr(t('csErrNoTron'));
       } else if (msg.includes('no_ton_enc')) {
-        setSendErr('TON-ключ не найден. Пересоздай кошелёк через онбординг.');
+        setSendErr(t('csErrNoTon'));
       } else if (msg.includes('trongrid') || msg.includes('tron') && msg.includes('недоступен')) {
-        setSendErr('TronGrid недоступен. Проверь соединение и попробуй позже.');
+        setSendErr(t('csErrTrongridDown'));
       } else if (msg.includes('utxo') || msg.includes('подтверждённых')) {
-        setSendErr('Нет подтверждённых UTXO. Подожди подтверждения входящих транзакций (обычно ~10 мин).');
+        setSendErr(t('csErrNoUtxo'));
       } else if (msg.includes('dust') || msg.includes('546')) {
-        setSendErr('Сумма слишком маленькая (меньше 546 sat). Увеличь сумму.');
+        setSendErr(t('csErrDust'));
       } else if (msg.includes('segwit') || msg.includes('bc1')) {
-        setSendErr(e instanceof Error ? e.message : 'SegWit-адреса пока не поддерживаются.');
+        setSendErr(e instanceof Error ? e.message : t('csErrSegwit'));
       } else if (msg.includes('blockhash not found') || msg.includes('blockhash')) {
-        setSendErr('Ошибка сети Solana. Попробуй ещё раз.');
+        setSendErr(t('csErrSolanaNetwork'));
       } else {
-        setSendErr('Ошибка отправки: ' + (e instanceof Error ? e.message : String(e)).slice(0, 100));
+        setSendErr(`${t('csErrGeneric')} ${(e instanceof Error ? e.message : String(e)).slice(0, 100)}`);
       }
       onAvatarState?.('idle');
     } finally {
@@ -255,9 +259,9 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         </div>
 
         <div>
-          <p className="text-white text-xl font-bold">{amountNum} {coin} отправлено</p>
+          <p className="text-white text-xl font-bold">{t('csSent').replace('{amt}', String(amountNum)).replace('{coin}', coin)}</p>
           <p className="text-[#3A6045] text-sm mt-1">
-            {recipientName ? `${recipientName} • ` : ''}Транзакция отправлена в сеть
+            {`${recipientName ? `${recipientName} • ` : ''}${t('csTxSentToNetwork')}`}
           </p>
         </div>
 
@@ -285,11 +289,11 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
               className="mt-2 inline-block text-xs font-semibold"
               style={{ color: '#00FF7F' }}
             >
-              {coin === 'SOL'                        ? 'Посмотреть на Solscan →'
-               : coin === 'BTC'                      ? 'Посмотреть на Blockstream →'
-               : coin === 'TRX' || coin === 'TRC20'    ? 'Посмотреть на Tronscan →'
-               : coin === 'TON' || coin === 'USDT_TON' ? 'Посмотреть на Tonscan →'
-               : 'Посмотреть на Etherscan →'}
+              {coin === 'SOL'                        ? t('csViewOnSolscan')
+               : coin === 'BTC'                      ? t('csViewOnBlockstream')
+               : coin === 'TRX' || coin === 'TRC20'    ? t('csViewOnTronscan')
+               : coin === 'TON' || coin === 'USDT_TON' ? t('csViewOnTonscan')
+               : t('csViewOnEtherscan')}
             </a>
           </div>
         )}
@@ -298,25 +302,25 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           className="w-full rounded-2xl p-3.5"
           style={{ background: 'rgba(0,255,127,0.05)', border: '1px solid rgba(0,255,127,0.12)' }}
         >
-          <p className="text-[#00FF7F] text-xs font-semibold mb-1">Нейра</p>
+          <p className="text-[#00FF7F] text-xs font-semibold mb-1">{t('navNeura')}</p>
           <p className="text-white text-xs leading-relaxed">
             {txHash
               ? coin === 'TRX'
-                ? 'TRX отправлен. Tron подтверждает транзакции за несколько секунд.'
+                ? t('csNeuraDoneTrx')
                 : coin === 'TRC20'
-                ? 'USDT TRC-20 отправлен. Tron подтверждает транзакции за 3–5 секунд и берёт минимальную комиссию.'
+                ? t('csNeuraDoneTrc20')
                 : coin === 'USDT'
-                ? 'USDT переведён. Транзакция подтвердится за 1–2 минуты, после чего баланс обновится.'
+                ? t('csNeuraDoneUsdt')
                 : coin === 'BTC'
-                ? 'BTC отправлен. Обычно подтверждается за 10–60 минут.'
+                ? t('csNeuraDoneBtc')
                 : coin === 'SOL'
-                ? 'SOL отправлен. Подтверждается за несколько секунд.'
+                ? t('csNeuraDoneSol')
                 : coin === 'TON'
-                ? 'TON отправлен. TON подтверждает транзакции за 5–15 секунд.'
+                ? t('csNeuraDoneTon')
                 : coin === 'USDT_TON'
-                ? 'USDT TON отправлен. Jetton-транзакции подтверждаются за несколько секунд.'
-                : 'Транзакция отправлена. Обычно ETH подтверждается за 1–2 минуты.'
-              : 'Транзакция отправлена в сеть. Ожидается подтверждение.'}
+                ? t('csNeuraDoneUsdtTon')
+                : t('csNeuraDoneEth')
+              : t('csNeuraDoneFallback')}
           </p>
         </div>
 
@@ -325,7 +329,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           className="w-full py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95"
           style={{ background: 'rgba(0,255,127,0.1)', border: '1.5px solid rgba(0,255,127,0.3)', color: '#00FF7F' }}
         >
-          Новая транзакция
+          {t('csNewTransaction')}
         </button>
       </div>
     );
@@ -339,23 +343,23 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
 
     return (
       <div className="px-6 pt-2 flex flex-col gap-5">
-        <h2 className="text-white text-lg font-bold">Введи пароль кошелька</h2>
+        <h2 className="text-white text-lg font-bold">{t('csEnterWalletPassword')}</h2>
 
         <div
           className="rounded-2xl p-4 flex flex-col gap-2"
           style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.10)' }}
         >
           <div className="flex justify-between text-xs">
-            <span className="text-[#3A6045]">Отправляешь</span>
+            <span className="text-[#3A6045]">{t('csYouSend')}</span>
             <span className="text-white font-bold">{amountNum} {coin}</span>
           </div>
           <div className="flex justify-between text-xs">
-            <span className="text-[#3A6045]">На адрес</span>
+            <span className="text-[#3A6045]">{t('csToAddress')}</span>
             <span className="text-white font-mono">{shortAddr}</span>
           </div>
           {recipientName && (
             <div className="flex justify-between text-xs">
-              <span className="text-[#3A6045]">Получатель</span>
+              <span className="text-[#3A6045]">{t('csRecipientField')}</span>
               <span className="text-white font-medium">{recipientName}</span>
             </div>
           )}
@@ -369,7 +373,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
 
         <div>
           <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider mb-2">
-            Пароль для подписи транзакции
+            {t('csPasswordForSigning')}
           </p>
           <div
             className="rounded-2xl px-4 py-3.5"
@@ -383,7 +387,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
               value={password}
               onChange={(e) => { setPassword(e.target.value); setPwError(''); }}
               onKeyDown={(e) => e.key === 'Enter' && password && handleConfirmSend()}
-              placeholder="Пароль кошелька"
+              placeholder={t('csPasswordPlaceholder')}
               autoFocus
               className="w-full bg-transparent text-white text-sm outline-none placeholder:text-[#3A6045]"
               style={{ caretColor: '#00FF7F' }}
@@ -407,9 +411,9 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           className="rounded-2xl p-3.5"
           style={{ background: 'rgba(0,255,127,0.04)', border: '1px solid rgba(0,255,127,0.1)' }}
         >
-          <p className="text-[#00FF7F] text-xs font-semibold mb-1">Нейра</p>
+          <p className="text-[#00FF7F] text-xs font-semibold mb-1">{t('navNeura')}</p>
           <p className="text-[#3A6045] text-xs leading-relaxed">
-            Приватный ключ расшифровывается только в памяти твоего устройства и никуда не передаётся.
+            {t('csNeuraPrivacyNote')}
           </p>
         </div>
 
@@ -420,7 +424,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
             className="flex-1 py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95 disabled:opacity-40"
             style={{ background: 'transparent', border: '1.5px solid rgba(0,255,127,0.15)', color: '#3A6045' }}
           >
-            Назад
+            {t('csBack')}
           </button>
           <button
             onClick={handleConfirmSend}
@@ -433,9 +437,9 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
                   <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#080C09" strokeWidth="2.5">
                     <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
                   </svg>
-                  Отправка…
+                  {t('csSending')}
                 </span>
-              : 'Подтвердить и отправить'}
+              : t('csConfirmAndSend')}
           </button>
         </div>
       </div>
@@ -450,17 +454,17 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
 
     return (
       <div className="px-6 pt-2 flex flex-col gap-4">
-        <h2 className="text-white text-lg font-bold">Подтверждение</h2>
+        <h2 className="text-white text-lg font-bold">{t('csConfirmTitle')}</h2>
 
         <div
           className="rounded-2xl p-5 flex flex-col gap-3"
           style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.12)' }}
         >
           {([
-            ['Монета',   <span key="c" className="flex items-center gap-1.5"><span className="font-bold" style={{ color: data.color }}>{data.icon}</span><span className="text-white">{coin}</span></span>],
-            ['Сумма',    <span key="a" className="text-white font-bold">{amountNum} {coin}</span>],
-            ['Комиссия', <span key="f" className="text-[#3A6045]">{FEE_EUR[coin]}</span>],
-            ...(recipientName ? [['Получатель', <span key="r" className="text-white font-medium">{recipientName}</span>]] as [string, React.ReactNode][] : []),
+            [t('csCoin'),   <span key="c" className="flex items-center gap-1.5"><span className="font-bold" style={{ color: data.color }}>{data.icon}</span><span className="text-white">{coin}</span></span>],
+            [t('csAmount'),    <span key="a" className="text-white font-bold">{amountNum} {coin}</span>],
+            [t('csFee'), <span key="f" className="text-[#3A6045]">{FEE_EUR[coin]}</span>],
+            ...(recipientName ? [[t('csRecipient'), <span key="r" className="text-white font-medium">{recipientName}</span>]] as [string, React.ReactNode][] : []),
             ...(neuroId ? [['NeuroID', <span key="n" className="text-[#00FF7F] font-mono">{neuroId}</span>]] as [string, React.ReactNode][] : []),
           ] as [string, React.ReactNode][]).map(([label, val]) => (
             <div key={label} className="flex justify-between items-center">
@@ -469,7 +473,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
             </div>
           ))}
           <div style={{ borderTop: '1px solid rgba(0,255,127,0.08)', paddingTop: '12px' }}>
-            <p className="text-[#3A6045] text-xs mb-1">Адрес получателя</p>
+            <p className="text-[#3A6045] text-xs mb-1">{t('csRecipientAddressLabel')}</p>
             <p className="text-white text-xs font-mono break-all">{address}</p>
           </div>
         </div>
@@ -478,9 +482,9 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           className="rounded-2xl p-3.5"
           style={{ background: 'rgba(0,255,127,0.04)', border: '1px solid rgba(0,255,127,0.12)' }}
         >
-          <p className="text-[#00FF7F] text-xs font-semibold mb-1">Нейра</p>
+          <p className="text-[#00FF7F] text-xs font-semibold mb-1">{t('navNeura')}</p>
           <p className="text-white text-xs leading-relaxed">
-            Адрес не в адресной книге. Проверь первые и последние 6 символов перед отправкой:{' '}
+            {t('csNeuraAddressWarning')}{' '}
             <span className="font-mono">{shortAddr}</span>
           </p>
         </div>
@@ -491,7 +495,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
             style={{ background: 'rgba(247,147,26,0.06)', border: '1px solid rgba(247,147,26,0.2)' }}
           >
             <p className="text-xs" style={{ color: '#F7931A' }}>
-              ⚠️ Отправка {coin} скоро будет доступна. Сейчас это демо-режим.
+              {t('csComingSoonWarning').replace('{coin}', coin)}
             </p>
           </div>
         )}
@@ -502,14 +506,14 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
             className="flex-1 py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95"
             style={{ background: 'transparent', border: '1.5px solid rgba(0,255,127,0.15)', color: '#3A6045' }}
           >
-            Назад
+            {t('csBack')}
           </button>
           <button
             onClick={() => data.implemented && !isDemo ? setStep('password') : handleConfirmSend()}
             className="flex-1 py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95"
             style={{ background: '#00FF7F', color: '#080C09', boxShadow: '0 0 20px rgba(0,255,127,0.3)' }}
           >
-            {data.implemented && !isDemo ? 'Ввести пароль' : 'Отправить (демо)'}
+            {data.implemented && !isDemo ? t('csEnterPassword') : t('csSendDemo')}
           </button>
         </div>
       </div>
@@ -519,11 +523,11 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   // ─── Form step ────────────────────────────────────────────────────────────
   return (
     <div className="px-6 pt-2 flex flex-col gap-5">
-      <h2 className="text-white text-lg font-bold">Отправить крипту</h2>
+      <h2 className="text-white text-lg font-bold">{t('csTitle')}</h2>
 
       {/* Coin selector */}
       <div>
-        <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider mb-2">Монета</p>
+        <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider mb-2">{t('csCoinLabel')}</p>
         <div className="flex gap-2">
           {(['ETH', 'BTC', 'SOL', 'USDT', 'TRX', 'TRC20', 'TON', 'USDT_TON'] as Coin[]).map((c) => {
             const d = COINS[c];
@@ -546,7 +550,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
                     className="absolute -top-1.5 -right-1 text-[8px] font-bold px-1 rounded-full"
                     style={{ background: 'rgba(58,96,69,0.8)', color: '#3A6045' }}
                   >
-                    скоро
+                    {t('csComingSoonBadge')}
                   </span>
                 )}
               </button>
@@ -554,17 +558,17 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           })}
         </div>
         <p className="text-[#3A6045] text-xs mt-2">
-          Доступно:{' '}
+          {t('csAvailable')}{' '}
           {balReady
             ? <span className="text-white font-medium">{available.toLocaleString('ru-RU', { maximumFractionDigits: 6 })} {coin}</span>
-            : <span className="text-[#3A6045]">загрузка…</span>
+            : <span className="text-[#3A6045]">{t('csLoadingEllipsis')}</span>
           }
         </p>
       </div>
 
       {/* Address */}
       <div>
-        <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider mb-2">Адрес получателя</p>
+        <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider mb-2">{t('csAddressLabel')}</p>
         <div
           className="rounded-2xl px-4 py-3.5"
           style={{
@@ -582,13 +586,13 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           />
         </div>
         {address && !addressValid && (
-          <p className="text-xs mt-1" style={{ color: '#FF5252' }}>Неверный формат адреса</p>
+          <p className="text-xs mt-1" style={{ color: '#FF5252' }}>{t('csInvalidAddress')}</p>
         )}
       </div>
 
       {/* Amount */}
       <div>
-        <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider mb-2">Сумма</p>
+        <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider mb-2">{t('csAmountLabel')}</p>
         <div
           className="text-center py-5 rounded-2xl"
           style={{
@@ -611,8 +615,8 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           {amountNum > 0 && (
             <p className="text-sm mt-1.5">
               {insufficient
-                ? <span style={{ color: '#FF5252' }}>Недостаточно средств</span>
-                : <span className="text-[#3A6045]">доступно: {available.toLocaleString('ru-RU', { maximumFractionDigits: 6 })} {coin}</span>
+                ? <span style={{ color: '#FF5252' }}>{t('csInsufficientFunds')}</span>
+                : <span className="text-[#3A6045]">{t('csAvailableInline').replace('{amt}', available.toLocaleString('ru-RU', { maximumFractionDigits: 6 })).replace('{coin}', coin)}</span>
               }
             </p>
           )}
@@ -635,7 +639,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         className="w-full py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95 disabled:opacity-30"
         style={{ background: '#00FF7F', color: '#080C09' }}
       >
-        Продолжить
+        {t('csContinue')}
       </button>
     </div>
   );

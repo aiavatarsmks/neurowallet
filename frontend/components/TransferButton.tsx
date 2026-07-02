@@ -1,4 +1,5 @@
 import React from 'react';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 interface TransferButtonProps {
   onSend?: () => void;
@@ -6,6 +7,7 @@ interface TransferButtonProps {
 }
 
 export const TransferButton: React.FC<TransferButtonProps> = ({ onSend, onReceive }) => {
+  const { t } = useLanguage();
   return (
     <div className="flex gap-3 px-6 pb-4">
       <button
@@ -22,7 +24,7 @@ export const TransferButton: React.FC<TransferButtonProps> = ({ onSend, onReceiv
           <line x1="22" y1="2" x2="11" y2="13"/>
           <polygon points="22 2 15 22 11 13 2 9 22 2"/>
         </svg>
-        Отправить
+        {t('send')}
       </button>
 
       <button
@@ -40,7 +42,7 @@ export const TransferButton: React.FC<TransferButtonProps> = ({ onSend, onReceiv
           <line x1="12" y1="12" x2="12" y2="21"/>
           <path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/>
         </svg>
-        Получить
+        {t('receive')}
       </button>
     </div>
   );

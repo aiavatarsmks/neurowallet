@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { fetchRealBalances, WalletBalances } from '@/lib/crypto/balances';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 interface Message {
   id: string;
@@ -12,26 +13,25 @@ interface Message {
 
 const now = () => new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 
-const QUICK_PROMPTS = [
-  'Мои расходы',
-  'Мой крипто-портфель',
-  'Есть аномалии?',
-  'Когда продавать BTC?',
-  'Оптимизировать бюджет',
-  'Конвертировать в евро',
-];
+function fallbackResponse(lang: 'ru' | 'en'): string {
+  return lang === 'en' ? 'AI is temporarily unavailable, try again later.' : 'AI временно недоступен, попробуй чуть позже.';
+}
 
-const FALLBACK_RESPONSE =
-  'AI временно недоступен, попробуй чуть позже.';
+function loginRequiredResponse(lang: 'ru' | 'en'): string {
+  return lang === 'en'
+    ? 'Sign in so Neura can safely answer about your wallet.'
+    : 'Войди в аккаунт, чтобы Нейра могла безопасно отвечать по твоему кошельку.';
+}
 
 async function getResponse(
   history: { from: 'neura' | 'user'; text: string }[],
+  lang: 'ru' | 'en',
   walletContext?: WalletBalances & { ethAddr?: string; btcAddr?: string; solAddr?: string; tronAddr?: string; tonAddr?: string },
 ): Promise<string> {
   try {
     const { data: sessionData } = await supabase.auth.getSession();
     const token = sessionData.session?.access_token;
-    if (!token) return 'Войди в аккаунт, чтобы Нейра могла безопасно отвечать по твоему кошельку.';
+    if (!token) return loginRequiredResponse(lang);
 
     const res = await fetch('/api/neura-chat', {
       method: 'POST',
@@ -45,22 +45,16 @@ async function getResponse(
           content: m.text,
         })),
         walletContext,
+        lang,
       }),
     });
     const data = await res.json();
     if (data.error) return data.error;
-    return data.reply ?? FALLBACK_RESPONSE;
+    return data.reply ?? fallbackResponse(lang);
   } catch {
-    return FALLBACK_RESPONSE;
+    return fallbackResponse(lang);
   }
 }
-
-const OPENING: Message = {
-  id: 'opening',
-  from: 'neura',
-  text: 'Привет! Я Нейра — твой финансовый AI-советник. Уже проанализировала транзакции и крипто-портфель. BTC вырос на 4.2% сегодня, и есть одна аномалия, о которой стоит поговорить. С чего начнём?',
-  timestamp: now(),
-};
 
 interface NeuraChatProps {
   onAvatarState?: (state: 'idle' | 'talking' | 'thinking') => void;
@@ -70,7 +64,11 @@ interface NeuraChatProps {
 
 export const NeuraChat: React.FC<NeuraChatProps> = ({ onAvatarState, avatarHeight = 160, onFirstMessage }) => {
   const { isDemo } = useAuth();
-  const [messages, setMessages] = useState<Message[]>([OPENING]);
+  const { t, lang } = useLanguage();
+  const QUICK_PROMPTS = [t('neuraQuickPrompt1'), t('neuraQuickPrompt2'), t('neuraQuickPrompt3'), t('neuraQuickPrompt4'), t('neuraQuickPrompt5'), t('neuraQuickPrompt6')];
+  const [messages, setMessages] = useState<Message[]>(() => [
+    { id: 'opening', from: 'neura', text: t('neuraOpeningMessage'), timestamp: now() },
+  ]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [hasUserMessages, setHasUserMessages] = useState(false);
@@ -114,7 +112,7 @@ export const NeuraChat: React.FC<NeuraChatProps> = ({ onAvatarState, avatarHeigh
     setIsTyping(true);
     onAvatarState?.('thinking');
 
-    getResponse(historyForApi, walletCtxRef.current).then((response) => {
+    getResponse(historyForApi, lang, walletCtxRef.current).then((response) => {
       const neuraMsg: Message = { id: (Date.now() + 1).toString(), from: 'neura', text: response, timestamp: now() };
       setMessages((m) => [...m, neuraMsg]);
       setIsTyping(false);
@@ -138,8 +136,8 @@ export const NeuraChat: React.FC<NeuraChatProps> = ({ onAvatarState, avatarHeigh
           <span className="text-[#00FF7F] text-xs font-bold">N</span>
         </div>
         <div>
-          <p className="text-white text-sm font-semibold">Нейра</p>
-          <p className="text-[#3A6045] text-xs">AI финансовый советник</p>
+          <p className="text-white text-sm font-semibold">{t('navNeura')}</p>
+          <p className="text-[#3A6045] text-xs">{t('neuraSubtitle')}</p>
         </div>
         <div className="ml-auto flex items-center gap-1.5">
           <div
@@ -163,7 +161,7 @@ export const NeuraChat: React.FC<NeuraChatProps> = ({ onAvatarState, avatarHeigh
               }
             >
               {msg.from === 'neura' && (
-                <p className="text-[#00FF7F] text-[10px] font-semibold mb-1.5 uppercase tracking-wider">Нейра</p>
+                <p className="text-[#00FF7F] text-[10px] font-semibold mb-1.5 uppercase tracking-wider">{t('navNeura')}</p>
               )}
               <p className="text-white text-sm leading-relaxed">{msg.text}</p>
               <p className="text-[#3A6045] text-[10px] mt-1.5 text-right">{msg.timestamp}</p>
@@ -223,7 +221,7 @@ export const NeuraChat: React.FC<NeuraChatProps> = ({ onAvatarState, avatarHeigh
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage(input)}
-            placeholder="Спроси Нейру..."
+            placeholder={t('neuraInputPlaceholder')}
             className="flex-1 bg-transparent text-white text-sm outline-none placeholder:text-[#3A6045]"
             style={{ caretColor: '#00FF7F' }}
           />

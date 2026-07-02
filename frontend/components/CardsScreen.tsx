@@ -1,10 +1,11 @@
 import React from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 const DEMO_CARD = {
   holder: 'МАКС ИВАНОВ',
   last4: '4921',
-  expiry: '12/27',
+  expiry: '09/28',
   limit: 5000,
   spent: 1247,
   transactions: [
@@ -22,11 +23,12 @@ function fmt(n: number): string {
 
 export const CardsScreen: React.FC = () => {
   const { isDemo } = useAuth();
+  const { t } = useLanguage();
 
   if (!isDemo) {
     return (
       <div className="px-6 pt-2 pb-6 flex flex-col gap-5">
-        <h2 className="text-white text-lg font-bold">Мои карты</h2>
+        <h2 className="text-white text-lg font-bold">{t('cardsTitle')}</h2>
         <div
           className="flex flex-col items-center justify-center rounded-3xl py-16 gap-4"
           style={{
@@ -41,9 +43,9 @@ export const CardsScreen: React.FC = () => {
             <span className="text-3xl">💳</span>
           </div>
           <div className="text-center px-6">
-            <p className="text-white text-base font-semibold mb-1">Виртуальная карта — скоро</p>
+            <p className="text-white text-base font-semibold mb-1">{t('cardsComingSoonTitle')}</p>
             <p className="text-[#3A6045] text-sm leading-relaxed">
-              Мы работаем над выпуском виртуальных карт. Они появятся здесь после запуска.
+              {t('cardsComingSoonText')}
             </p>
           </div>
         </div>
@@ -55,54 +57,114 @@ export const CardsScreen: React.FC = () => {
 
   return (
     <div className="px-6 pt-2 pb-8 flex flex-col gap-5">
-      <h2 className="text-white text-lg font-bold">Мои карты</h2>
+      <h2 className="text-white text-lg font-bold">{t('cardsTitle')}</h2>
 
       {/* Card visual */}
       <div
-        className="rounded-3xl p-6 relative overflow-hidden"
+        className="relative overflow-hidden"
         style={{
-          background: 'linear-gradient(135deg, #0D2B1A 0%, #0A1F14 50%, #071509 100%)',
-          border: '1px solid rgba(0,255,127,0.25)',
-          boxShadow: '0 8px 32px rgba(0,255,127,0.12)',
+          minHeight: 225,
+          borderRadius: 26,
+          padding: '28px 28px 24px',
+          background:
+            'linear-gradient(135deg, #062816 0%, #06391d 44%, #021006 100%)',
+          border: '1px solid rgba(0,255,127,0.28)',
+          boxShadow:
+            '0 18px 42px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,255,127,0.12)',
         }}
       >
-        {/* Decorative glow */}
         <div
-          className="absolute top-0 right-0 w-48 h-48 rounded-full opacity-10 pointer-events-none"
-          style={{ background: 'radial-gradient(circle, #00FF7F 0%, transparent 70%)', transform: 'translate(30%, -30%)' }}
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background:
+              'radial-gradient(circle at 18% 18%, rgba(0,255,127,0.14) 0, transparent 32%), radial-gradient(circle at 72% 18%, rgba(0,255,127,0.2) 0, transparent 30%), radial-gradient(circle at 52% 82%, rgba(0,180,90,0.15) 0, transparent 38%)',
+          }}
         />
-        <div className="flex justify-between items-start mb-8">
-          <div>
-            <p className="text-[#3A6045] text-xs mb-0.5">NeuroWallet</p>
-            <p className="text-white text-sm font-semibold">Виртуальная</p>
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            inset: 0,
+            background:
+              'linear-gradient(115deg, transparent 0%, rgba(255,255,255,0.06) 38%, transparent 58%)',
+            transform: 'translateX(-18%)',
+          }}
+        />
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            left: 22,
+            right: 22,
+            top: 92,
+            height: 1,
+            background: 'linear-gradient(90deg, transparent, rgba(0,255,127,0.26), transparent)',
+          }}
+        />
+
+        <div className="relative z-10 flex justify-between items-start">
+          <div className="min-w-0">
+            <p
+              className="text-[10px] uppercase tracking-[0.22em] mb-1.5"
+              style={{ color: 'rgba(0,255,127,0.28)' }}
+            >
+              NEUROWALLET
+            </p>
+            <p className="text-white text-base font-semibold leading-none">{t('cardsVirtualLabel')}</p>
           </div>
-          <svg width="44" height="28" viewBox="0 0 44 28" fill="none">
-            <circle cx="16" cy="14" r="14" fill="#FF5F00" opacity="0.85"/>
-            <circle cx="28" cy="14" r="14" fill="#EB001B" opacity="0.7"/>
-            <text x="22" y="19" textAnchor="middle" fontSize="8" fill="white" fontWeight="bold">VISA</text>
-          </svg>
+          <div
+            className="flex-shrink-0"
+            style={{
+              width: 48,
+              height: 34,
+              borderRadius: 8,
+              background: 'linear-gradient(135deg, rgba(0,255,127,0.22), rgba(0,255,127,0.05))',
+              border: '1px solid rgba(0,255,127,0.38)',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14)',
+            }}
+          />
         </div>
 
-        <p className="text-white text-xl font-mono tracking-widest mb-6">
-          •••• •••• •••• {DEMO_CARD.last4}
+        <p
+          className="relative z-10 font-mono"
+          style={{
+            marginTop: 52,
+            marginBottom: 26,
+            color: 'rgba(255,255,255,0.92)',
+            fontSize: 21,
+            letterSpacing: '0.16em',
+            textShadow: '0 0 14px rgba(0,255,127,0.16)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          **** **** **** {DEMO_CARD.last4}
         </p>
 
-        <div className="flex justify-between items-end">
+        <div className="relative z-10 grid grid-cols-[1.25fr_0.65fr_0.75fr] gap-5 items-end">
           <div>
-            <p className="text-[#3A6045] text-[10px] uppercase tracking-wider mb-0.5">Владелец</p>
-            <p className="text-white text-sm font-semibold">{DEMO_CARD.holder}</p>
+            <p className="text-[10px] uppercase tracking-[0.16em] mb-1" style={{ color: 'rgba(0,255,127,0.22)' }}>{t('cardsHolder')}</p>
+            <p className="text-white text-sm font-semibold tracking-wide">{DEMO_CARD.holder}</p>
           </div>
-          <div className="text-right">
-            <p className="text-[#3A6045] text-[10px] uppercase tracking-wider mb-0.5">Срок</p>
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.16em] mb-1" style={{ color: 'rgba(0,255,127,0.22)' }}>{t('cardsExpiry')}</p>
             <p className="text-white text-sm font-semibold">{DEMO_CARD.expiry}</p>
           </div>
+          <p
+            className="text-right font-serif italic font-bold leading-none"
+            style={{
+              color: 'rgba(255,255,255,0.92)',
+              fontSize: 34,
+              letterSpacing: 0,
+              textShadow: '0 0 18px rgba(255,255,255,0.12)',
+            }}
+          >
+            VISA
+          </p>
         </div>
       </div>
 
       {/* Limit bar */}
       <div className="rounded-2xl p-4" style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.1)' }}>
         <div className="flex justify-between mb-2">
-          <span className="text-[#3A6045] text-xs">Лимит</span>
+          <span className="text-[#3A6045] text-xs">{t('cardsLimit')}</span>
           <span className="text-white text-xs font-semibold">€{fmt(DEMO_CARD.spent)} / €{fmt(DEMO_CARD.limit)}</span>
         </div>
         <div className="h-1.5 rounded-full" style={{ background: 'rgba(0,255,127,0.1)' }}>
@@ -111,16 +173,16 @@ export const CardsScreen: React.FC = () => {
             style={{ width: `${usedPct}%`, background: 'linear-gradient(90deg, #00FF7F, #00CC66)' }}
           />
         </div>
-        <p className="text-[#3A6045] text-[10px] mt-1.5">Использовано {usedPct}% лимита</p>
+        <p className="text-[#3A6045] text-[10px] mt-1.5">{t('cardsUsedPct').replace('{pct}', String(usedPct))}</p>
       </div>
 
       {/* Action buttons */}
       <div className="grid grid-cols-4 gap-2">
         {[
-          { icon: '❄️',  label: 'Заморозить' },
-          { icon: '📋',  label: 'Реквизиты'  },
+          { icon: '❄️',  label: t('cardsFreeze') },
+          { icon: '📋',  label: t('cardsDetails')  },
           { icon: '🍎',  label: 'Apple Pay'  },
-          { icon: '⚙️',  label: 'Лимиты'     },
+          { icon: '⚙️',  label: t('cardsLimits')     },
         ].map((btn) => (
           <button
             key={btn.label}
@@ -135,7 +197,7 @@ export const CardsScreen: React.FC = () => {
 
       {/* Recent card transactions */}
       <div>
-        <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider mb-3">Транзакции по карте</p>
+        <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider mb-3">{t('cardsTransactionsTitle')}</p>
         <div className="flex flex-col gap-2">
           {DEMO_CARD.transactions.map((tx) => (
             <div

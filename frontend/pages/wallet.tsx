@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/router';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { PinEntry } from '@/components/PinEntry';
 import { hasPinSetup } from '@/lib/pin';
 import { BalanceCard } from '@/components/BalanceCard';
@@ -34,17 +35,6 @@ interface CryptoSendDraft {
   neuroId?: string;
 }
 
-const HEADER_TITLES: Record<Tab, string> = {
-  home:          'NeuroWallet',
-  send:          'Отправить',
-  add:           'Нейра AI',
-  cards:         'Карты',
-  wallet:        'Активы',
-  profile:       'Профиль',
-  receive:       'Получить крипту',
-  'crypto-send': 'Отправить крипту',
-};
-
 const BACK_TABS: Tab[] = ['send', 'add', 'cards', 'profile', 'receive', 'crypto-send'];
 
 const SettingsIcon = () => (
@@ -62,7 +52,18 @@ const BackIcon = () => (
 
 export default function WalletPage() {
   const router = useRouter();
+  const { t } = useLanguage();
   const { user, isDemo, isLoading } = useAuth();
+  const HEADER_TITLES: Record<Tab, string> = {
+    home:          t('headerHome'),
+    send:          t('headerSend'),
+    add:           t('headerNeura'),
+    cards:         t('headerCards'),
+    wallet:        t('headerWallet'),
+    profile:       t('headerProfile'),
+    receive:       t('headerReceive'),
+    'crypto-send': t('headerCryptoSend'),
+  };
   const [activeTab, setActiveTab] = useState<Tab>('home');
   const [avatarState, setAvatarState] = useState<'idle' | 'talking' | 'thinking'>('idle');
   const [chatHasMessages, setChatHasMessages] = useState(false);
@@ -164,7 +165,7 @@ export default function WalletPage() {
             onClick={() => setActiveTab('home')}
             className="w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-90"
             style={{ backgroundColor: '#0D1A10', border: '1px solid rgba(0,255,127,0.15)', color: '#00FF7F' }}
-            aria-label="Назад"
+            aria-label={t('ariaBack')}
           >
             <BackIcon />
           </button>
@@ -190,7 +191,7 @@ export default function WalletPage() {
             border: '1px solid rgba(0,255,127,0.15)',
             color: '#00FF7F',
           }}
-          aria-label="Профиль"
+          aria-label={t('ariaProfile')}
         >
           <SettingsIcon />
         </button>
@@ -225,9 +226,17 @@ export default function WalletPage() {
                 <span className="text-xs">✨</span>
               </div>
               <div>
-                <p className="text-[#00FF7F] text-xs font-semibold mb-0.5">Нейра</p>
+                <p className="text-[#00FF7F] text-xs font-semibold mb-0.5">{t('navNeura')}</p>
                 <p className="text-white text-sm leading-relaxed">
-                  BTC вырос на <span style={{ color: '#00FF7F' }}>+4.2%</span> сегодня. Ваш портфель в плюсе. Рекомендую зафиксировать часть прибыли.
+                  {(() => {
+                    const text = t('neuraInsightText');
+                    const parts = text.split('+4.2%');
+                    return (
+                      <>
+                        {parts[0]}<span style={{ color: '#00FF7F' }}>+4.2%</span>{parts[1]}
+                      </>
+                    );
+                  })()}
                 </p>
               </div>
             </div>
@@ -235,7 +244,7 @@ export default function WalletPage() {
 
           <section className="px-6">
             <div className="flex items-center justify-between mb-2">
-              <p className="font-semibold text-sm" style={{ color: '#00FF7F' }}>Транзакции</p>
+              <p className="font-semibold text-sm" style={{ color: '#00FF7F' }}>{t('transactionsHeader')}</p>
               <MiniChart width={120} height={40} />
             </div>
             <TxHistory limit={7} />

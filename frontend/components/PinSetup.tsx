@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { setupPin } from '@/lib/pin';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 interface PinSetupProps {
   walletPassword: string;
@@ -10,6 +11,7 @@ interface PinSetupProps {
 const DIGITS = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
 
 export const PinSetup: React.FC<PinSetupProps> = ({ walletPassword, onComplete, onSkip }) => {
+  const { t } = useLanguage();
   const [step,    setStep]    = useState<'enter' | 'confirm'>('enter');
   const [pin,     setPin]     = useState('');
   const [first,   setFirst]   = useState('');
@@ -38,7 +40,7 @@ export const PinSetup: React.FC<PinSetupProps> = ({ walletPassword, onComplete, 
     // Confirm step
     if (pin !== first) {
       setPin('');
-      setError('PIN-коды не совпадают. Попробуйте снова.');
+      setError(t('pinMismatch'));
       setStep('enter');
       setFirst('');
       return;
@@ -50,7 +52,7 @@ export const PinSetup: React.FC<PinSetupProps> = ({ walletPassword, onComplete, 
       .then(() => onComplete())
       .catch(() => {
         setLoading(false);
-        setError('Ошибка сохранения. Попробуйте снова.');
+        setError(t('pinSaveError'));
         setPin('');
         setStep('enter');
         setFirst('');
@@ -75,12 +77,12 @@ export const PinSetup: React.FC<PinSetupProps> = ({ walletPassword, onComplete, 
           </svg>
         </div>
         <p className="text-white text-lg font-semibold">
-          {step === 'enter' ? 'Придумайте PIN-код' : 'Повторите PIN-код'}
+          {step === 'enter' ? t('pinCreateTitle') : t('pinRepeatTitle')}
         </p>
         <p className="text-[#3A6045] text-sm mt-1 leading-snug">
           {step === 'enter'
-            ? 'Будет использоваться для быстрого входа'
-            : 'Введите PIN ещё раз для подтверждения'}
+            ? t('pinCreateHint')
+            : t('pinRepeatHint')}
         </p>
       </div>
 
@@ -132,10 +134,10 @@ export const PinSetup: React.FC<PinSetupProps> = ({ walletPassword, onComplete, 
         className="mt-8 text-[#3A6045] text-sm"
         disabled={loading}
       >
-        Пропустить →
+        {t('pinSkip')}
       </button>
       <p className="text-[#3A6045] text-xs mt-2 text-center opacity-60">
-        Можно настроить позже в настройках
+        {t('pinSkipHint')}
       </p>
     </div>
   );

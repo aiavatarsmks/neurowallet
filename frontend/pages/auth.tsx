@@ -1,6 +1,7 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 type Mode = 'signin' | 'signup';
 
@@ -37,6 +38,7 @@ const TelegramIcon = () => (
 export default function AuthPage() {
   const router = useRouter();
   const { signIn, signUp, signInWithTelegram, enterDemo, signOut, user, isLoading, isTelegramUser } = useAuth();
+  const { t } = useLanguage();
 
   const [mode, setMode]         = useState<Mode>('signup');
   const [name, setName]         = useState('');
@@ -72,7 +74,7 @@ export default function AuthPage() {
       const hasWallet = typeof window !== 'undefined' && !!localStorage.getItem('wallet_eth_address');
       router.push(hasWallet ? '/wallet' : '/onboarding');
     } catch {
-      setError('Не удалось войти через Telegram. Попробуй позже.');
+      setError(t('authTgLoginFailed'));
     } finally {
       setTgLoading(false);
     }
@@ -81,8 +83,8 @@ export default function AuthPage() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
-    if (!email.trim() || !password.trim()) { setError('Заполните все поля'); return; }
-    if (password.length < 6) { setError('Пароль — минимум 6 символов'); return; }
+    if (!email.trim() || !password.trim()) { setError(t('authFillFields')); return; }
+    if (password.length < 6) { setError(t('authPasswordMinLength')); return; }
     setLoading(true);
     try {
       if (mode === 'signup') {
@@ -94,8 +96,8 @@ export default function AuthPage() {
         router.push(hasWallet ? '/wallet' : '/onboarding');
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Что-то пошло не так';
-      setError(msg === 'CONFIRM_EMAIL' ? 'Проверь почту — мы отправили ссылку для подтверждения' : msg);
+      const msg = err instanceof Error ? err.message : t('authGenericError');
+      setError(msg === 'CONFIRM_EMAIL' ? t('authConfirmEmail') : msg);
     } finally {
       setLoading(false);
     }
@@ -122,8 +124,8 @@ export default function AuthPage() {
               <polyline points="6,22 6,6 22,22 22,6" stroke="#00FF7F" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </div>
-          <p className="text-white font-semibold">Входим через Telegram...</p>
-          <p className="text-[#3A6045] text-sm">Привет, {tgDisplayName} 👋</p>
+          <p className="text-white font-semibold">{t('authSigningInTelegram')}</p>
+          <p className="text-[#3A6045] text-sm">{t('authHello').replace('{name}', tgDisplayName)}</p>
         </div>
       </main>
     );
@@ -148,7 +150,7 @@ export default function AuthPage() {
         </div>
         <div className="text-center">
           <p className="text-white text-xl font-bold tracking-tight">NeuroWallet</p>
-          <p className="text-[#3A6045] text-sm mt-0.5">Финансовый автопилот</p>
+          <p className="text-[#3A6045] text-sm mt-0.5">{t('authAppTagline')}</p>
         </div>
       </div>
 
@@ -186,13 +188,13 @@ export default function AuthPage() {
               style={{ background: '#0084ff', color: '#fff', boxShadow: '0 0 20px rgba(0,132,255,0.3)' }}
             >
               <TelegramIcon />
-              {tgLoading ? 'Входим...' : `Войти как ${tgUser.username ? '@' + tgUser.username : tgDisplayName}`}
+              {tgLoading ? t('authSigningIn') : `${t('authLoginAs')} ${tgUser.username ? '@' + tgUser.username : tgDisplayName}`}
             </button>
           </div>
 
           <div className="flex items-center gap-4 mb-5">
             <div className="flex-1 h-px" style={{ background: 'rgba(0,255,127,0.1)' }} />
-            <span className="text-[#3A6045] text-xs">или через email</span>
+            <span className="text-[#3A6045] text-xs">{t('authOrEmail')}</span>
             <div className="flex-1 h-px" style={{ background: 'rgba(0,255,127,0.1)' }} />
           </div>
         </>
@@ -209,7 +211,7 @@ export default function AuthPage() {
               ? { background: 'rgba(0,255,127,0.12)', color: '#00FF7F', border: '1px solid rgba(0,255,127,0.2)' }
               : { color: '#3A6045', border: '1px solid transparent' }}
           >
-            {m === 'signup' ? 'Регистрация' : 'Войти'}
+            {m === 'signup' ? t('authRegister') : t('authSignIn')}
           </button>
         ))}
       </div>
@@ -217,8 +219,8 @@ export default function AuthPage() {
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         {mode === 'signup' && (
           <div className="flex flex-col gap-1.5">
-            <label className="text-[#3A6045] text-xs font-medium uppercase tracking-wider px-1">Имя</label>
-            <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Как тебя зовут?" autoComplete="name"
+            <label className="text-[#3A6045] text-xs font-medium uppercase tracking-wider px-1">{t('authNameLabel')}</label>
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('authNamePlaceholder')} autoComplete="name"
               className="w-full px-4 py-3.5 rounded-xl text-white text-sm outline-none transition-all placeholder:text-[#3A6045]"
               style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.15)', caretColor: '#00FF7F' }}
               onFocus={(e) => (e.target.style.borderColor = 'rgba(0,255,127,0.4)')}
@@ -228,7 +230,7 @@ export default function AuthPage() {
         )}
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-[#3A6045] text-xs font-medium uppercase tracking-wider px-1">Email</label>
+          <label className="text-[#3A6045] text-xs font-medium uppercase tracking-wider px-1">{t('authEmailLabel')}</label>
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" required
             className="w-full px-4 py-3.5 rounded-xl text-white text-sm outline-none transition-all placeholder:text-[#3A6045]"
             style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.15)', caretColor: '#00FF7F' }}
@@ -238,10 +240,10 @@ export default function AuthPage() {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-[#3A6045] text-xs font-medium uppercase tracking-wider px-1">Пароль</label>
+          <label className="text-[#3A6045] text-xs font-medium uppercase tracking-wider px-1">{t('authPasswordLabel')}</label>
           <div className="relative">
             <input type={showPass ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)}
-              placeholder="Минимум 6 символов" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} required
+              placeholder={t('authPasswordPlaceholder')} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} required
               className="w-full px-4 py-3.5 pr-12 rounded-xl text-white text-sm outline-none transition-all placeholder:text-[#3A6045]"
               style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.15)', caretColor: '#00FF7F' }}
               onFocus={(e) => (e.target.style.borderColor = 'rgba(0,255,127,0.4)')}
@@ -263,13 +265,13 @@ export default function AuthPage() {
           className="w-full py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95 mt-2 disabled:opacity-50"
           style={{ background: '#00FF7F', color: '#080C09', boxShadow: '0 0 24px rgba(0,255,127,0.35)' }}
         >
-          {loading ? '...' : mode === 'signup' ? 'Создать аккаунт' : 'Войти в аккаунт'}
+          {loading ? '...' : mode === 'signup' ? t('authSubmitCreate') : t('authSubmitLogin')}
         </button>
       </form>
 
       <div className="flex items-center gap-4 my-5">
         <div className="flex-1 h-px" style={{ background: 'rgba(0,255,127,0.1)' }} />
-        <span className="text-[#3A6045] text-xs">или</span>
+        <span className="text-[#3A6045] text-xs">{t('authOr')}</span>
         <div className="flex-1 h-px" style={{ background: 'rgba(0,255,127,0.1)' }} />
       </div>
 
@@ -277,11 +279,11 @@ export default function AuthPage() {
         className="w-full py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95"
         style={{ background: 'transparent', border: '1.5px solid rgba(0,255,127,0.25)', color: '#00FF7F' }}
       >
-        ✦ Режим демо
+        {t('landingDemoMode')}
       </button>
 
       <p className="text-center text-[#3A6045] text-xs mt-3 pb-10">
-        В демо-режиме используются только тестовые данные.
+        {t('authDemoHint')}
       </p>
     </main>
   );

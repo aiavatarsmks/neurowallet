@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 interface TxRow {
   id:      string;
@@ -56,7 +57,7 @@ const DEMO_TXS: TxRow[] = [
   },
 ];
 
-function formatDate(iso: string): string {
+function formatDate(iso: string, t: (k: any) => string): string {
   const d = new Date(iso);
   const now = new Date();
   const diff = now.getTime() - d.getTime();
@@ -64,11 +65,11 @@ function formatDate(iso: string): string {
     const h = Math.floor(diff / 3600_000);
     if (h === 0) {
       const m = Math.floor(diff / 60_000);
-      return m <= 1 ? 'только что' : `${m} мин назад`;
+      return m <= 1 ? t('txJustNow') : t('txMinAgo').replace('{m}', String(m));
     }
-    return `${h} ч назад`;
+    return t('txHoursAgo').replace('{h}', String(h));
   }
-  if (diff < 2 * 86400_000) return 'вчера';
+  if (diff < 2 * 86400_000) return t('txYesterday');
   return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
 }
 
@@ -102,6 +103,7 @@ interface TxHistoryProps {
 
 export const TxHistory: React.FC<TxHistoryProps> = ({ limit = 15 }) => {
   const { isDemo } = useAuth();
+  const { t } = useLanguage();
   const [txs,     setTxs]     = useState<TxRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [noWallet, setNoWallet] = useState(false);
@@ -148,7 +150,7 @@ export const TxHistory: React.FC<TxHistoryProps> = ({ limit = 15 }) => {
   if (noWallet) {
     return (
       <p className="text-[#3A6045] text-sm py-6 text-center">
-        Кошелёк не создан
+        {t('txNoWallet')}
       </p>
     );
   }
@@ -156,7 +158,7 @@ export const TxHistory: React.FC<TxHistoryProps> = ({ limit = 15 }) => {
   if (txs.length === 0) {
     return (
       <p className="text-[#3A6045] text-sm py-6 text-center">
-        Транзакций пока нет
+        {t('txNoTransactions')}
       </p>
     );
   }
@@ -168,8 +170,8 @@ export const TxHistory: React.FC<TxHistoryProps> = ({ limit = 15 }) => {
           const meta     = CHAIN_META[tx.chain];
           const positive = tx.type === 'in';
           const label    = positive
-            ? `${tx.chain} получено`
-            : `${tx.chain} отправлено`;
+            ? t('txReceived').replace('{chain}', tx.chain)
+            : t('txSent').replace('{chain}', tx.chain);
 
           return (
             <li
@@ -208,7 +210,7 @@ export const TxHistory: React.FC<TxHistoryProps> = ({ limit = 15 }) => {
                   </span>
                 </div>
                 <p className="text-[#3A6045] text-xs mt-0.5">
-                  {positive ? 'от ' : 'на '}{shortAddr(tx.address)} · {formatDate(tx.date)}
+                  {positive ? `${t('txFrom')} ` : `${t('txTo')} `}{shortAddr(tx.address)} · {formatDate(tx.date, t)}
                 </p>
               </div>
 
