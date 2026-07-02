@@ -68,6 +68,10 @@ export interface TelegramWebApp {
   ready:         () => void;
   expand:        () => void;
   close:         () => void;
+  requestFullscreen?: () => void;
+  exitFullscreen?:    () => void;
+  disableVerticalSwipes?: () => void;
+  enableVerticalSwipes?:  () => void;
   showAlert:     (message: string, callback?: () => void) => void;
   showConfirm:   (message: string, callback: (ok: boolean) => void) => void;
   showPopup:     (params: object, callback?: (id: string) => void) => void;
@@ -78,6 +82,7 @@ export interface TelegramWebApp {
   };
   setHeaderColor:      (color: string) => void;
   setBackgroundColor:  (color: string) => void;
+  setBottomBarColor?:  (color: string) => void;
   enableClosingConfirmation:  () => void;
   disableClosingConfirmation: () => void;
 }
@@ -150,14 +155,42 @@ export function useTelegramInit() {
 
   useEffect(() => {
     if (initialized.current) return;
-    initialized.current = true;
 
-    const wa = getWebApp();
-    if (!wa) return;
+    let cancelled = false;
+    const timers: number[] = [];
 
-    wa.ready();
-    wa.expand();
-    wa.setHeaderColor('#080C09');
-    wa.setBackgroundColor('#080C09');
+    const init = (attempt = 0) => {
+      if (cancelled || initialized.current) return;
+
+      const wa = getWebApp();
+      if (!wa) {
+        if (attempt < 12) {
+          timers.push(window.setTimeout(() => init(attempt + 1), 120));
+        }
+        return;
+      }
+
+      initialized.current = true;
+
+      wa.ready();
+      wa.setHeaderColor('#080C09');
+      wa.setBackgroundColor('#080C09');
+      wa.setBottomBarColor?.('#080C09');
+      wa.disableVerticalSwipes?.();
+      wa.expand();
+      wa.requestFullscreen?.();
+
+      // iOS Telegram can apply the first expand before layout is stable.
+      timers.push(window.setTimeout(() => wa.expand(), 80));
+      timers.push(window.setTimeout(() => wa.expand(), 350));
+      timers.push(window.setTimeout(() => wa.requestFullscreen?.(), 500));
+    };
+
+    init();
+
+    return () => {
+      cancelled = true;
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
   }, []);
 }
