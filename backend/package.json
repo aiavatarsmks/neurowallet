@@ -11,14 +11,14 @@
     "lint": "echo \"(placeholder) backend lint\""
   },
   "dependencies": {
-    "fastify": "^4.29.0",
-    "@prisma/client": "5.13.0"
+    "@prisma/client": "5.13.0",
+    "fastify": "^5.9.0"
   },
   "devDependencies": {
     "prisma": "5.13.0",
-    "typescript": "5.3.3",
+    "supertest": "6.3.4",
     "ts-node": "10.9.2",
-    "vitest": "^3.2.0",
-    "supertest": "6.3.4"
+    "typescript": "5.3.3",
+    "vitest": "^3.2.0"
   }
 }
