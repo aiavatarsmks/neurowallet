@@ -117,9 +117,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   }
 
-  // Ack immediately — Telegram retries aggressively on slow/failed responses.
-  res.status(200).json({ ok: true });
-
+  // IMPORTANT: do the Telegram send(s) BEFORE responding to this webhook call.
+  // Vercel's serverless runtime can freeze the function right after the HTTP
+  // response is flushed, which would silently kill any "fire and forget"
+  // work started after res.json(). Telegram allows several seconds for a
+  // webhook response, so awaiting first is safe and reliable.
   try {
     const update = req.body as {
       message?: { chat: { id: number }; text?: string };
@@ -129,30 +131,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const message = update?.message;
     if (message?.text) {
       const chatId = message.chat.id;
-      if (!checkRateLimit(`tg-webhook:${chatId}`, 20)) return;
-
-      const text = message.text.trim();
-      if (text === '/start') {
-        await sendWelcome(botToken, chatId);
-      } else if (text === '/help') {
-        await tgCall(botToken, 'sendMessage', { chat_id: chatId, text: HELP_TEXT });
+      if (checkRateLimit(`tg-webhook:${chatId}`, 20)) {
+        const text = message.text.trim();
+        if (text === '/start') {
+          await sendWelcome(botToken, chatId);
+        } else if (text === '/help') {
+          await tgCall(botToken, 'sendMessage', { chat_id: chatId, text: HELP_TEXT });
+        }
       }
-      return;
-    }
-
-    const callback = update?.callback_query;
-    if (callback?.data === 'how_it_works' && callback.message) {
-      const chatId = callback.message.chat.id;
-      if (!checkRateLimit(`tg-webhook:${chatId}`, 20)) return;
-
-      await tgCall(botToken, 'answerCallbackQuery', { callback_query_id: callback.id });
-      await tgCall(botToken, 'sendMessage', {
-        chat_id: chatId,
-        text: HOW_IT_WORKS_TEXT,
-        parse_mode: 'HTML',
-      });
+    } else {
+      const callback = update?.callback_query;
+      if (callback?.data === 'how_it_works' && callback.message) {
+        const chatId = callback.message.chat.id;
+        if (checkRateLimit(`tg-webhook:${chatId}`, 20)) {
+          await tgCall(botToken, 'answerCallbackQuery', { callback_query_id: callback.id });
+          await tgCall(botToken, 'sendMessage', {
+            chat_id: chatId,
+            text: HOW_IT_WORKS_TEXT,
+            parse_mode: 'HTML',
+          });
+        }
+      }
     }
   } catch (err) {
     console.error('[tg-webhook] error:', err);
   }
+
+  return res.status(200).json({ ok: true });
 }
