@@ -27,6 +27,8 @@ export default function App(props: AppProps) {
           <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
           <meta name="theme-color" content="#080C09" />
           {/* CSP and security headers are set via next.config.js (HTTP headers) */}
+          <link rel="icon" href="/favicon.ico" sizes="any" />
+          <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
           <title>NeuroWallet</title>
         </Head>
 

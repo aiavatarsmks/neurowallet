@@ -68,6 +68,7 @@ export interface TelegramWebApp {
   ready:         () => void;
   expand:        () => void;
   close:         () => void;
+  isVersionAtLeast?: (version: string) => boolean;
   requestFullscreen?: () => void;
   exitFullscreen?:    () => void;
   disableVerticalSwipes?: () => void;
@@ -92,6 +93,30 @@ function getWebApp(): TelegramWebApp | null {
   return window.Telegram?.WebApp ?? null;
 }
 
+/**
+ * The Telegram SDK THROWS WebAppMethodUnsupported when a method exists in
+ * the JS but the client version is too old — including plain browsers,
+ * where the SDK reports version 6.0. Optional chaining does not protect
+ * against that, and an exception inside useEffect crashes the whole React
+ * tree ("Application error"). Every cosmetic/optional call goes through
+ * this guard: failure is silently ignored.
+ */
+function safeTg(fn: (() => void) | undefined): void {
+  try {
+    fn?.();
+  } catch {
+    /* unsupported in this Telegram client version — ignore */
+  }
+}
+
+function tgVersionAtLeast(wa: TelegramWebApp, version: string): boolean {
+  try {
+    return wa.isVersionAtLeast?.(version) ?? false;
+  } catch {
+    return false;
+  }
+}
+
 export function useTelegram() {
   const webApp        = getWebApp();
   const isInTelegram  = !!(webApp?.initData);
@@ -104,43 +129,43 @@ export function useTelegram() {
     initData: webApp?.initData ?? '',
 
     // Lifecycle
-    ready:  () => webApp?.ready(),
-    expand: () => webApp?.expand(),
-    close:  () => webApp?.close(),
+    ready:  () => safeTg(() => webApp?.ready()),
+    expand: () => safeTg(() => webApp?.expand()),
+    close:  () => safeTg(() => webApp?.close()),
 
-    // Haptics
+    // Haptics (6.1+ — throws on older clients and plain browsers)
     haptic: {
-      success: () => webApp?.HapticFeedback.notificationOccurred('success'),
-      error:   () => webApp?.HapticFeedback.notificationOccurred('error'),
-      tap:     () => webApp?.HapticFeedback.impactOccurred('light'),
+      success: () => safeTg(() => webApp?.HapticFeedback.notificationOccurred('success')),
+      error:   () => safeTg(() => webApp?.HapticFeedback.notificationOccurred('error')),
+      tap:     () => safeTg(() => webApp?.HapticFeedback.impactOccurred('light')),
     },
 
-    // Alerts
-    alert:   (msg: string) => webApp?.showAlert(msg),
-    confirm: (msg: string, cb: (ok: boolean) => void) => webApp?.showConfirm(msg, cb),
+    // Alerts (6.2+)
+    alert:   (msg: string) => safeTg(() => webApp?.showAlert(msg)),
+    confirm: (msg: string, cb: (ok: boolean) => void) => safeTg(() => webApp?.showConfirm(msg, cb)),
 
     // MainButton helpers
     mainButton: {
-      show:     (text: string, onClick: () => void) => {
+      show:     (text: string, onClick: () => void) => safeTg(() => {
         if (!webApp) return;
         webApp.MainButton.setText(text);
         webApp.MainButton.onClick(onClick);
         webApp.MainButton.show();
         webApp.MainButton.enable();
-      },
-      hide:     () => webApp?.MainButton.hide(),
-      loading:  () => { webApp?.MainButton.showProgress(); webApp?.MainButton.disable(); },
-      done:     (text: string) => { webApp?.MainButton.setText(text); webApp?.MainButton.enable(); webApp?.MainButton.hideProgress(); },
+      }),
+      hide:     () => safeTg(() => webApp?.MainButton.hide()),
+      loading:  () => safeTg(() => { webApp?.MainButton.showProgress(); webApp?.MainButton.disable(); }),
+      done:     (text: string) => safeTg(() => { webApp?.MainButton.setText(text); webApp?.MainButton.enable(); webApp?.MainButton.hideProgress(); }),
     },
 
     // BackButton helpers
     backButton: {
-      show: (onClick: () => void) => {
+      show: (onClick: () => void) => safeTg(() => {
         if (!webApp) return;
         webApp.BackButton.onClick(onClick);
         webApp.BackButton.show();
-      },
-      hide: () => webApp?.BackButton.hide(),
+      }),
+      hide: () => safeTg(() => webApp?.BackButton.hide()),
     },
 
     // Theme
@@ -172,18 +197,27 @@ export function useTelegramInit() {
 
       initialized.current = true;
 
-      wa.ready();
-      wa.setHeaderColor('#080C09');
-      wa.setBackgroundColor('#080C09');
-      wa.setBottomBarColor?.('#080C09');
-      wa.disableVerticalSwipes?.();
-      wa.expand();
-      wa.requestFullscreen?.();
+      // Version gates (Bot API): colors 6.1+ / 7.10+, swipes 7.7+,
+      // fullscreen 8.0+. Plain browsers report 6.0 — everything cosmetic
+      // must degrade silently there.
+      const canFullscreen = tgVersionAtLeast(wa, '8.0');
+
+      safeTg(() => wa.ready());
+      if (tgVersionAtLeast(wa, '6.1')) {
+        safeTg(() => wa.setHeaderColor('#080C09'));
+        safeTg(() => wa.setBackgroundColor('#080C09'));
+      }
+      if (tgVersionAtLeast(wa, '7.10')) safeTg(() => wa.setBottomBarColor?.('#080C09'));
+      if (tgVersionAtLeast(wa, '7.7'))  safeTg(() => wa.disableVerticalSwipes?.());
+      safeTg(() => wa.expand());
+      if (canFullscreen) safeTg(() => wa.requestFullscreen?.());
 
       // iOS Telegram can apply the first expand before layout is stable.
-      timers.push(window.setTimeout(() => wa.expand(), 80));
-      timers.push(window.setTimeout(() => wa.expand(), 350));
-      timers.push(window.setTimeout(() => wa.requestFullscreen?.(), 500));
+      timers.push(window.setTimeout(() => safeTg(() => wa.expand()), 80));
+      timers.push(window.setTimeout(() => safeTg(() => wa.expand()), 350));
+      if (canFullscreen) {
+        timers.push(window.setTimeout(() => safeTg(() => wa.requestFullscreen?.()), 500));
+      }
     };
 
     init();
