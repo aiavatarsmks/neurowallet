@@ -53,6 +53,37 @@ UPDATE/DELETE **на уровне БД** — даже для service role.
 `tx_history_requested`, `telegram_notification_requested`,
 `telegram_notification_sent`, `telegram_notification_failed`, `neuro_id_resolved`.
 
+### public.analytics_events — продуктовая аналитика (задача 1.1)
+Вставка только через `POST /api/track` (service role, allowlist имён событий
+и ключей properties — анти-PII). RLS включён, политик нет (deny by default).
+`user_id` NULL для анонимных pre-auth событий; склейка по `session_id`
+(эфемерный uuid вкладки) через событие `session_identified`. `trace_id`
+связывает события с `audit_log.metadata.trace_id` и `tx_drafts.trace_id`.
+**Адреса и суммы сюда не пишутся никогда.**
+
+### public.tx_drafts + public.simulation_results — send review (задача 1.2)
+
+> ⚠️ **PRIVACY / GDPR**: `tx_drafts` содержит **финансовое поведение
+> пользователя** — адреса получателей, суммы, монеты, статусы отправок.
+> Это осознанное решение: на этих данных стоят anti-poisoning эвристики
+> (задача 1.3: first-seen, similarity против recipient history) и address
+> book (задача 1.4). При любом privacy/GDPR-ревью эта таблица проверяется
+> ПЕРВОЙ. Эти данные не попадают в `analytics_events`, тексты уведомлений
+> и `audit_log.metadata` (audit получает только draft_id и монету — покрыто
+> тестом).
+
+`tx_drafts`: id, user_id → auth.users (CASCADE), coin (CHECK по 8 монетам),
+to_address (≤128), amount (>0), trace_id, status (drafted→sent/failed),
+tx_hash, created/updated. Записи через `POST/PATCH /api/tx-draft` **под JWT
+пользователя** — RLS select/insert/update только своё.
+
+`simulation_results`: draft_id → tx_drafts (CASCADE), status (ok/timeout/error),
+fee_native/fee_currency/fee_eur, warnings JSONB. RLS через принадлежность
+родительского драфта.
+
+Метрика приёмки 1.2 «≥95% отправок с preview» считается напрямую:
+`count(tx_drafts)` vs `count(analytics_events where event='send_succeeded')`.
+
 ## Конфигурация Auth (задача 0.7)
 
 | Параметр | Значение | Где |

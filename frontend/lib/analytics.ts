@@ -37,6 +37,8 @@ export type AnalyticsEvent =
   | 'send_initiated'
   | 'send_succeeded'
   | 'send_failed'
+  | 'send_review_shown'
+  | 'send_review_blocked'
   | 'first_send_succeeded'
   | 'ai_chat_used'
   | 'demo_entered'

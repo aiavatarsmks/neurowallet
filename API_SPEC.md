@@ -14,6 +14,8 @@
 | `/api/neuro-id/resolve` | GET | Supabase JWT | 30/мин/user | `neuro_id_resolved` |
 | `/api/tg-webhook` | POST | секрет-токен Telegram (fail-closed) | 20/мин/chat | — (нет user_id) |
 | `/api/csp-report` | POST | — (шлёт браузер) | 10/мин/IP | — (дедуп-лог) |
+| `/api/track` | POST | JWT опционален (anon = pre-auth) | 60/мин/user, 30/мин/IP | — (пишет в analytics_events) |
+| `/api/tx-draft` | POST, PATCH | Supabase JWT | 30/мин/user | `tx_draft_created`, `tx_draft_updated` (без адресов/сумм) |
 
 Общие правила:
 - **Auth**: заголовок `Authorization: Bearer <supabase_access_token>`; невалидный/отсутствующий → `401`.

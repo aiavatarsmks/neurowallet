@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { sendEth, sendUsdt, sendUsdtTrc20, sendTrx, sendSol, sendBtc, sendTon, sendUsdtTon, isValidEthAddress, isValidSolAddress, isValidBtcAddress, isValidTronAddress, isValidTonAddress } from '@/lib/crypto/transactions';
 import { fetchRealBalances, MARKET_REFRESH_MS } from '@/lib/crypto/balances';
 import { upgradeStoredKeystoreIfWeak } from '@/lib/crypto/keystore-migration';
 import { track, trackOnce, newTraceId } from '@/lib/analytics';
+import { simulateTransfer, isBlocked, type SimulationResult, type SimWarning } from '@/lib/crypto/simulate';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -65,6 +66,14 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   const [sendErr,  setSendErr]  = useState('');
   const [balances, setBalances] = useState<Record<Coin, number>>({ ETH: 0, BTC: 0, SOL: 0, USDT: 0, TRX: 0, TRC20: 0, TON: 0, USDT_TON: 0 });
   const [balReady, setBalReady] = useState(false);
+  const [eurRates, setEurRates] = useState({ eth: 2800, btc: 55000, sol: 120, trx: 0.22, ton: 3.5 });
+
+  // Review-симуляция (задача 1.2)
+  const [sim,        setSim]        = useState<SimulationResult | null>(null);
+  const [simLoading, setSimLoading] = useState(false);
+  const [simRetry,   setSimRetry]   = useState(0);
+  const traceRef   = useRef('');     // сквозной trace id одного send-флоу
+  const draftIdRef = useRef('');     // id серверного tx_draft
 
   useEffect(() => {
     setCoin(initialCoin);
@@ -95,6 +104,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       fetchRealBalances(eth, sol, btc, tron, ton)
         .then((b) => {
           setBalances({ ETH: b.eth, BTC: b.btc, SOL: b.sol, USDT: b.usdt, TRX: b.trx, TRC20: b.usdtTrc, TON: b.ton, USDT_TON: b.usdtTon });
+          setEurRates({ eth: b.ethEur, btc: b.btcEur, sol: b.solEur, trx: b.trxEur, ton: b.tonEur });
           setBalReady(true);
         })
         .catch(() => setBalReady(true));
@@ -110,6 +120,91 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   const available  = balances[coin];
   const insufficient = amountNum > 0 && amountNum > available;
 
+  // ── Review-симуляция при входе на confirm-шаг (реальный режим) ──────────
+  useEffect(() => {
+    if (step !== 'confirm' || isDemo || !data.implemented) return;
+    if (!traceRef.current) traceRef.current = newTraceId();
+    let cancelled = false;
+
+    (async () => {
+      setSim(null);
+      setSimLoading(true);
+      const result = await simulateTransfer({
+        coin,
+        toAddress: address.trim(),
+        amount: amountNum,
+        balances,
+        eurRates,
+        fromBtcAddress: localStorage.getItem('wallet_btc_address') ?? undefined,
+      });
+      if (cancelled) return;
+      setSim(result);
+      setSimLoading(false);
+
+      track('send_review_shown', { coin }, traceRef.current);
+      if (isBlocked(result)) {
+        const reason = result.warnings.find((w) => w.level === 'block')?.code ?? 'unknown';
+        track('send_review_blocked', { coin, reason_code: reason }, traceRef.current);
+      }
+
+      // Серверный драфт (метрики preview-coverage + сырьё для 1.3/1.4).
+      // Fire-and-forget: сбой записи никогда не блокирует отправку.
+      try {
+        const { data: s } = await supabase.auth.getSession();
+        const token = s.session?.access_token;
+        if (!token) return;
+        const res = await fetch('/api/tx-draft', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'x-trace-id': traceRef.current },
+          body: JSON.stringify({
+            coin,
+            to_address: address.trim(),
+            amount: amountNum,
+            simulation: {
+              status: result.status,
+              fee_native: result.feeNative,
+              fee_currency: result.feeCurrency,
+              fee_eur: result.feeEur,
+              warnings: result.warnings,
+            },
+          }),
+        });
+        const body = await res.json().catch(() => null);
+        if (res.ok && body?.id) draftIdRef.current = body.id;
+      } catch { /* драфт не критичен */ }
+    })();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, simRetry]);
+
+  /** Финализация драфта после попытки отправки — fire-and-forget. */
+  const finalizeDraft = (status: 'sent' | 'failed', hash?: string) => {
+    const id = draftIdRef.current;
+    if (!id) return;
+    void (async () => {
+      try {
+        const { data: s } = await supabase.auth.getSession();
+        const token = s.session?.access_token;
+        if (!token) return;
+        await fetch('/api/tx-draft', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'x-trace-id': traceRef.current },
+          body: JSON.stringify({ id, status, tx_hash: hash }),
+        });
+      } catch { /* не критично */ }
+    })();
+  };
+
+  const WARNING_I18N: Record<SimWarning['code'], Parameters<typeof t>[0]> = {
+    invalid_address: 'csWarnInvalidAddress',
+    invalid_amount: 'csWarnInvalidAmount',
+    insufficient_funds: 'csWarnInsufficientFunds',
+    insufficient_fee_balance: 'csWarnFeeBalance',
+    simulation_timeout: 'csWarnSimTimeout',
+    simulation_failed: 'csWarnSimFailed',
+  };
+
   const addressValid =
     coin === 'ETH' || coin === 'USDT'           ? isValidEthAddress(address.trim())
     : coin === 'SOL'                             ? isValidSolAddress(address.trim())
@@ -118,6 +213,9 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
     : isValidBtcAddress(address.trim()); // BTC
 
   const reset = () => {
+    traceRef.current = '';
+    draftIdRef.current = '';
+    setSim(null);
     setStep('form');
     setAddress('');
     setAmount('');
@@ -143,9 +241,9 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
     setPwError('');
     setSendErr('');
 
-    // Сквозной trace id флоу отправки: уходит в analytics_events и —
-    // заголовком x-trace-id — в audit_log сопутствующих API-вызовов.
-    const traceId = newTraceId();
+    // Сквозной trace id флоу: создан при входе на review-шаг, тот же uuid
+    // лежит в tx_drafts.trace_id, analytics_events и audit_log.
+    const traceId = traceRef.current || newTraceId();
     track('send_initiated', { coin }, traceId);
 
     try {
@@ -194,6 +292,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
 
       track('send_succeeded', { coin }, traceId);
       trackOnce('analytics_first_send', 'first_send_succeeded', { coin }, traceId);
+      finalizeDraft('sent', hash);
 
       // One-time migration: the password is proven correct by the successful
       // send, so re-encrypt a legacy scrypt N=8192 keystore with N=131072.
@@ -224,6 +323,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       }
     } catch (e: unknown) {
       track('send_failed', { coin }, traceId);
+      finalizeDraft('failed');
       const msg = (e instanceof Error ? e.message : String(e)).toLowerCase();
       if (msg.includes('no_keystore')) {
         setSendErr(t('csErrNoWallet'));
@@ -463,11 +563,29 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
     );
   }
 
-  // ─── Confirm step ─────────────────────────────────────────────────────────
+  // ─── Confirm step (review card, задача 1.2) ───────────────────────────────
   if (step === 'confirm') {
     const shortAddr = address.length > 16
       ? `${address.slice(0, 10)}…${address.slice(-6)}`
       : address;
+
+    const realReview = data.implemented && !isDemo;
+    const simBlocked = realReview && sim !== null && isBlocked(sim);
+    const confirmDisabled = realReview && (simLoading || simBlocked);
+
+    const fmtAmount = (v: number) =>
+      v >= 1 ? v.toFixed(4).replace(/\.?0+$/, '') : v.toPrecision(3);
+
+    const feeNode = !realReview
+      ? <span key="f" className="text-[#3A6045]">{FEE_EUR[coin]}</span>
+      : simLoading
+        ? <span key="f" className="text-[#3A6045] animate-pulse">{t('csSimulating')}</span>
+        : sim?.feeNative != null
+          ? <span key="f" className="text-white">
+              ≈ {fmtAmount(sim.feeNative)} {sim.feeCurrency}
+              {sim.feeEur != null ? ` (€${sim.feeEur.toFixed(2)})` : ''}
+            </span>
+          : <span key="f" style={{ color: '#F7931A' }}>{t('csFeeUnknown')}</span>;
 
     return (
       <div className="px-6 pt-2 flex flex-col gap-4">
@@ -480,7 +598,10 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           {([
             [t('csCoin'),   <span key="c" className="flex items-center gap-1.5"><span className="font-bold" style={{ color: data.color }}>{data.icon}</span><span className="text-white">{coin}</span></span>],
             [t('csAmount'),    <span key="a" className="text-white font-bold">{amountNum} {coin}</span>],
-            [t('csFee'), <span key="f" className="text-[#3A6045]">{FEE_EUR[coin]}</span>],
+            [t('csFee'), feeNode],
+            ...(realReview && sim?.balanceAfter != null
+              ? [[t('csBalanceAfter'), <span key="ba" className="text-white">{fmtAmount(sim.balanceAfter)} {coin}</span>]] as [string, React.ReactNode][]
+              : []),
             ...(recipientName ? [[t('csRecipient'), <span key="r" className="text-white font-medium">{recipientName}</span>]] as [string, React.ReactNode][] : []),
             ...(neuroId ? [['NeuroID', <span key="n" className="text-[#00FF7F] font-mono">{neuroId}</span>]] as [string, React.ReactNode][] : []),
           ] as [string, React.ReactNode][]).map(([label, val]) => (
@@ -506,6 +627,32 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           </p>
         </div>
 
+        {/* Warnings симуляции: block — красные, warn — оранжевые */}
+        {realReview && sim !== null && sim.warnings.map((w) => (
+          <div
+            key={w.code}
+            className="rounded-2xl p-3"
+            style={w.level === 'block'
+              ? { background: 'rgba(255,59,48,0.08)', border: '1px solid rgba(255,59,48,0.3)' }
+              : { background: 'rgba(247,147,26,0.06)', border: '1px solid rgba(247,147,26,0.2)' }}
+          >
+            <p className="text-xs" style={{ color: w.level === 'block' ? '#FF453A' : '#F7931A' }}>
+              {t(WARNING_I18N[w.code])}
+            </p>
+          </div>
+        ))}
+
+        {/* Явный retry при timeout/error симуляции — не тихий пропуск */}
+        {realReview && sim !== null && sim.status !== 'ok' && (
+          <button
+            onClick={() => setSimRetry((n) => n + 1)}
+            className="py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-95"
+            style={{ background: 'rgba(247,147,26,0.1)', border: '1px solid rgba(247,147,26,0.3)', color: '#F7931A' }}
+          >
+            {t('csSimRetry')}
+          </button>
+        )}
+
         {!data.implemented && (
           <div
             className="rounded-2xl p-3"
@@ -527,10 +674,11 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           </button>
           <button
             onClick={() => data.implemented && !isDemo ? setStep('password') : handleConfirmSend()}
-            className="flex-1 py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95"
+            disabled={confirmDisabled}
+            className="flex-1 py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95 disabled:opacity-30"
             style={{ background: '#00FF7F', color: '#080C09', boxShadow: '0 0 20px rgba(0,255,127,0.3)' }}
           >
-            {data.implemented && !isDemo ? t('csEnterPassword') : t('csSendDemo')}
+            {realReview && simLoading ? t('csSimulating') : data.implemented && !isDemo ? t('csEnterPassword') : t('csSendDemo')}
           </button>
         </div>
       </div>
