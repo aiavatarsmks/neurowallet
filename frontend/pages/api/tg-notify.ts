@@ -27,7 +27,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  if (!checkRateLimit(`tg-notify:${auth.user.id}`, 10)) {
+  if (!(await checkRateLimit(`tg-notify:${auth.user.id}`, 10))) {
     return res.status(429).json({ error: 'Rate limit exceeded' });
   }
 

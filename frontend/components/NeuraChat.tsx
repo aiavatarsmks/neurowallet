@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { fetchRealBalances, WalletBalances } from '@/lib/crypto/balances';
 import { supabase } from '@/lib/supabase';
+import { track, newTraceId } from '@/lib/analytics';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 
@@ -27,6 +28,7 @@ async function getResponse(
   history: { from: 'neura' | 'user'; text: string }[],
   lang: 'ru' | 'en',
   walletContext?: WalletBalances & { ethAddr?: string; btcAddr?: string; solAddr?: string; tronAddr?: string; tonAddr?: string },
+  traceId?: string,
 ): Promise<string> {
   try {
     const { data: sessionData } = await supabase.auth.getSession();
@@ -38,6 +40,7 @@ async function getResponse(
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
+        ...(traceId ? { 'x-trace-id': traceId } : {}),
       },
       body: JSON.stringify({
         messages: history.map((m) => ({
@@ -112,7 +115,9 @@ export const NeuraChat: React.FC<NeuraChatProps> = ({ onAvatarState, avatarHeigh
     setIsTyping(true);
     onAvatarState?.('thinking');
 
-    getResponse(historyForApi, lang, walletCtxRef.current).then((response) => {
+    const traceId = newTraceId();
+    track('ai_chat_used', { lang }, traceId);
+    getResponse(historyForApi, lang, walletCtxRef.current, traceId).then((response) => {
       const neuraMsg: Message = { id: (Date.now() + 1).toString(), from: 'neura', text: response, timestamp: now() };
       setMessages((m) => [...m, neuraMsg]);
       setIsTyping(false);

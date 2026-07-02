@@ -1,5 +1,6 @@
 import type { NextApiRequest } from 'next';
 import { createClient, type User } from '@supabase/supabase-js';
+import { Redis } from '@upstash/redis';
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 
@@ -36,14 +37,41 @@ export async function requireSupabaseUser(req: NextApiRequest): Promise<{ user: 
   return { user: data.user, token };
 }
 
+// Upstash Redis client, lazily initialized from env. When the env vars are
+// absent or Redis is unreachable, we fall back to the in-memory limiter
+// (per lambda instance — softer, but the endpoint keeps working).
+let redis: Redis | null | undefined;
+
+function getRedis(): Redis | null {
+  if (redis !== undefined) return redis;
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  redis = url && token ? new Redis({ url, token }) : null;
+  return redis;
+}
+
 /**
- * In-memory sliding-window limiter. On Vercel this state is per lambda
- * instance and resets on cold start, so the real ceiling is (instances ×
- * maxPerMinute) — acceptable for MVP abuse throttling, not a hard quota.
- * Follow-up (IMPLEMENTATION_PLAN.md, Фаза 1): move to a durable store
- * (Upstash Redis / Vercel KV) shared across instances.
+ * Durable fixed-window limiter (Upstash Redis, shared across all lambda
+ * instances) with in-memory fallback. The window is encoded in the key
+ * (minute bucket), so there are no expire races.
  */
-export function checkRateLimit(key: string, maxPerMinute: number): boolean {
+export async function checkRateLimit(key: string, maxPerMinute: number): Promise<boolean> {
+  const r = getRedis();
+  if (r) {
+    try {
+      const bucket = `rl:${key}:${Math.floor(Date.now() / RATE_LIMIT_WINDOW_MS)}`;
+      const count = await r.incr(bucket);
+      if (count === 1) await r.expire(bucket, 90);
+      return count <= maxPerMinute;
+    } catch (err) {
+      console.warn('[rate-limit] Upstash unavailable, in-memory fallback:', err instanceof Error ? err.message : err);
+    }
+  }
+  return checkRateLimitMemory(key, maxPerMinute);
+}
+
+/** In-memory fallback: per lambda instance, resets on cold start. */
+export function checkRateLimitMemory(key: string, maxPerMinute: number): boolean {
   const now = Date.now();
   const current = buckets.get(key);
 
@@ -55,6 +83,14 @@ export function checkRateLimit(key: string, maxPerMinute: number): boolean {
   if (current.count >= maxPerMinute) return false;
   current.count += 1;
   return true;
+}
+
+/** Validated x-trace-id request header (client-generated UUID per flow), or null. */
+export function getTraceId(req: NextApiRequest): string | null {
+  const v = req.headers['x-trace-id'];
+  return typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)
+    ? v.toLowerCase()
+    : null;
 }
 
 export async function writeAuditLog(
@@ -69,10 +105,11 @@ export async function writeAuditLog(
   try {
     const { url } = getSupabaseConfig();
     const supabase = createClient(url, serviceKey);
+    const traceId = getTraceId(req);
     await supabase.from('audit_log').insert({
       user_id: userId,
       action,
-      metadata,
+      metadata: traceId ? { ...metadata, trace_id: traceId } : metadata,
       ip_address: getClientIp(req),
       user_agent: req.headers['user-agent'] ?? null,
     });

@@ -27,7 +27,7 @@ describe('POST /api/csp-report', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedLimit.mockReturnValue(true);
+    mockedLimit.mockResolvedValue(true);
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
@@ -36,7 +36,7 @@ describe('POST /api/csp-report', () => {
   });
 
   it('returns 429 when the per-IP rate limit is exceeded', async () => {
-    mockedLimit.mockReturnValue(false);
+    mockedLimit.mockResolvedValue(false);
     const res = mockRes();
     await handler(report('https://evil.example'), res);
     expect(res.statusCode).toBe(429);

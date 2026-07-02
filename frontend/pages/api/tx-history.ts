@@ -445,7 +445,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  if (!checkRateLimit(`tx-history:${auth.user.id}`, 30)) {
+  if (!(await checkRateLimit(`tx-history:${auth.user.id}`, 30))) {
     return res.status(429).json({ error: 'Rate limit exceeded' });
   }
 

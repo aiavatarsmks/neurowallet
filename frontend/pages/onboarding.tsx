@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { generateMnemonic, importWalletFromMnemonic } from '@/lib/crypto/wallet';
+import { track } from '@/lib/analytics';
 import { PinSetup } from '@/components/PinSetup';
 
 type Step = 'choice' | 'show-mnemonic' | 'verify-mnemonic' | 'import-mnemonic' | 'set-password' | 'generating' | 'pin-setup';
@@ -62,6 +63,8 @@ export default function OnboardingWalletPage() {
   // Verification step state
   const [verifyIndices, setVerifyIndices]   = useState<number[]>([]);
   const [verifyInputs,  setVerifyInputs]    = useState<string[]>(['', '', '']);
+
+  useEffect(() => { track('onboarding_started'); }, []);
 
   // Guard: redirect if already has wallet or not authenticated
   useEffect(() => {
@@ -149,6 +152,7 @@ export default function OnboardingWalletPage() {
         localStorage.setItem('wallet_tron_enc',      wallet.tronEnc);
         localStorage.setItem('wallet_ton_enc',       wallet.tonEnc);
       }
+      track(importMnemonicInput.trim() ? 'wallet_imported' : 'wallet_created');
       setStep('pin-setup');
     } catch (e) {
       setError(e instanceof Error ? e.message : t('onbGenError'));

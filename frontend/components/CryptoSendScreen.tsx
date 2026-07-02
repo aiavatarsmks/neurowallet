@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { sendEth, sendUsdt, sendUsdtTrc20, sendTrx, sendSol, sendBtc, sendTon, sendUsdtTon, isValidEthAddress, isValidSolAddress, isValidBtcAddress, isValidTronAddress, isValidTonAddress } from '@/lib/crypto/transactions';
 import { fetchRealBalances, MARKET_REFRESH_MS } from '@/lib/crypto/balances';
 import { upgradeStoredKeystoreIfWeak } from '@/lib/crypto/keystore-migration';
+import { track, trackOnce, newTraceId } from '@/lib/analytics';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -142,6 +143,11 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
     setPwError('');
     setSendErr('');
 
+    // Сквозной trace id флоу отправки: уходит в analytics_events и —
+    // заголовком x-trace-id — в audit_log сопутствующих API-вызовов.
+    const traceId = newTraceId();
+    track('send_initiated', { coin }, traceId);
+
     try {
       const keystore = localStorage.getItem('wallet_keystore');
       if (!keystore) throw new Error('NO_KEYSTORE');
@@ -186,6 +192,9 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       onAvatarState?.('talking');
       setTimeout(() => onAvatarState?.('idle'), 4000);
 
+      track('send_succeeded', { coin }, traceId);
+      trackOnce('analytics_first_send', 'first_send_succeeded', { coin }, traceId);
+
       // One-time migration: the password is proven correct by the successful
       // send, so re-encrypt a legacy scrypt N=8192 keystore with N=131072.
       // Fire-and-forget — never blocks or breaks the send flow.
@@ -207,12 +216,14 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
             headers: {
               'Content-Type': 'application/json',
               Authorization: `Bearer ${token}`,
+              'x-trace-id': traceId,
             },
-            body: JSON.stringify({ telegramId: parseInt(tgId, 10), message: msg }),
+            body: JSON.stringify({ message: msg }),
           }).catch(() => {/* silent — уведомление не критично */});
         }
       }
     } catch (e: unknown) {
+      track('send_failed', { coin }, traceId);
       const msg = (e instanceof Error ? e.message : String(e)).toLowerCase();
       if (msg.includes('no_keystore')) {
         setSendErr(t('csErrNoWallet'));

@@ -38,7 +38,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     (typeof req.headers['x-forwarded-for'] === 'string'
       ? req.headers['x-forwarded-for'].split(',')[0]?.trim()
       : null) ?? req.socket.remoteAddress ?? 'unknown';
-  if (!checkRateLimit(`csp-report:${ip}`, 10)) {
+  if (!(await checkRateLimit(`csp-report:${ip}`, 10))) {
     return res.status(429).end();
   }
 

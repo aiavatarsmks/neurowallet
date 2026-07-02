@@ -23,7 +23,7 @@ describe('GET /api/tx-history', () => {
     vi.clearAllMocks();
     process.env.ETHERSCAN_API_KEY = 'etherscan-key';
     mockedAuth.mockResolvedValue(USER);
-    mockedLimit.mockReturnValue(true);
+    mockedLimit.mockResolvedValue(true);
   });
 
   it('returns 401 without a valid Supabase JWT', async () => {
@@ -34,7 +34,7 @@ describe('GET /api/tx-history', () => {
   });
 
   it('returns 429 when the per-user rate limit is exceeded', async () => {
-    mockedLimit.mockReturnValue(false);
+    mockedLimit.mockResolvedValue(false);
     const res = mockRes();
     await handler(mockReq({ query: { eth: ETH_ADDR } }), res);
     expect(res.statusCode).toBe(429);

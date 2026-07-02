@@ -135,7 +135,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const message = update?.message;
     if (message?.text) {
       const chatId = message.chat.id;
-      if (checkRateLimit(`tg-webhook:${chatId}`, 20)) {
+      if (await checkRateLimit(`tg-webhook:${chatId}`, 20)) {
         const text = message.text.trim();
         if (text === '/start') {
           await sendWelcome(botToken, chatId);
@@ -147,7 +147,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const callback = update?.callback_query;
       if (callback?.data === 'how_it_works' && callback.message) {
         const chatId = callback.message.chat.id;
-        if (checkRateLimit(`tg-webhook:${chatId}`, 20)) {
+        if (await checkRateLimit(`tg-webhook:${chatId}`, 20)) {
           await tgCall(botToken, 'answerCallbackQuery', { callback_query_id: callback.id });
           await tgCall(botToken, 'sendMessage', {
             chat_id: chatId,

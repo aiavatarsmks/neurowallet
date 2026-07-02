@@ -25,7 +25,7 @@ describe('POST /api/tg-notify', () => {
     vi.clearAllMocks();
     process.env.TELEGRAM_BOT_TOKEN = 'bot-token';
     mockedAuth.mockResolvedValue(authUser(42));
-    mockedLimit.mockReturnValue(true);
+    mockedLimit.mockResolvedValue(true);
   });
 
   it('returns 401 without a valid Supabase JWT', async () => {
@@ -36,7 +36,7 @@ describe('POST /api/tg-notify', () => {
   });
 
   it('returns 429 when the per-user rate limit is exceeded', async () => {
-    mockedLimit.mockReturnValue(false);
+    mockedLimit.mockResolvedValue(false);
     const res = mockRes();
     await handler(mockReq({ method: 'POST', body: { message: 'hi' } }), res);
     expect(res.statusCode).toBe(429);

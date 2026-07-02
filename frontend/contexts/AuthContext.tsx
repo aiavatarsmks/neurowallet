@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User as SupabaseUser } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+import { track } from '@/lib/analytics';
 
 // ─── Telegram helper (safe to call on web) ────────────────────────────────────
 function getTelegramInitData(): string {
@@ -97,10 +98,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setState(prev => prev.isDemo ? prev : { user, isDemo: false, isLoading: false });
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const user = session?.user ? toUser(session.user) : null;
       // Same: preserve isDemo if user explicitly entered demo mode
       setState(s => s.isDemo ? s : { ...s, user, isLoading: false });
+      // Склейка анонимных pre-auth событий с пользователем (раз на вкладку).
+      if (event === 'SIGNED_IN' && session?.user && !sessionStorage.getItem('nw_identified')) {
+        sessionStorage.setItem('nw_identified', '1');
+        track('session_identified');
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -164,6 +170,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (typeof window !== 'undefined') localStorage.setItem(DEMO_KEY, 'true');
     supabase.auth.signOut();
     setState({ user: null, isDemo: true, isLoading: false });
+    track('demo_entered');
   };
 
   return (

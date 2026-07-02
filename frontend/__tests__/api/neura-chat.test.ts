@@ -27,7 +27,7 @@ describe('POST /api/neura-chat', () => {
     vi.clearAllMocks();
     process.env.OPENROUTER_API_KEY = 'test-key';
     mockedAuth.mockResolvedValue(USER);
-    mockedLimit.mockReturnValue(true);
+    mockedLimit.mockResolvedValue(true);
   });
 
   it('returns 401 without a valid Supabase JWT', async () => {
@@ -38,7 +38,7 @@ describe('POST /api/neura-chat', () => {
   });
 
   it('returns 429 when the per-user rate limit is exceeded', async () => {
-    mockedLimit.mockReturnValue(false);
+    mockedLimit.mockResolvedValue(false);
     const res = mockRes();
     await handler(chatReq(), res);
     expect(res.statusCode).toBe(429);

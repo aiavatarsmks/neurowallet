@@ -77,7 +77,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     (typeof req.headers['x-forwarded-for'] === 'string'
       ? req.headers['x-forwarded-for'].split(',')[0]?.trim()
       : null) ?? req.socket.remoteAddress ?? 'unknown';
-  if (!checkRateLimit(`tg-auth:${clientIp}`, 10)) {
+  if (!(await checkRateLimit(`tg-auth:${clientIp}`, 10))) {
     return res.status(429).json({ error: 'Rate limit exceeded' });
   }
 
