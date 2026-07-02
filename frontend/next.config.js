@@ -17,18 +17,20 @@ const connectSrc = [
   'https://api.telegram.org',
 ].join(' ');
 
-// Note: script-src keeps 'unsafe-inline' because Next.js injects inline scripts
-// at build time. Full nonce-based CSP requires middleware (planned for prod).
-// Moving CSP to HTTP headers is already a security improvement over <meta>:
-// - frame-ancestors is respected (meta CSP ignores it)
-// - cannot be overridden by injected DOM content
+// script-src has no 'unsafe-inline': verified against the production build —
+// the only inline <script> Next.js (Pages Router) emits is __NEXT_DATA__ with
+// type="application/json", which is not executable and not subject to
+// script-src. All executable scripts are external (self / telegram.org).
+// style-src keeps 'unsafe-inline' — required by styled-jsx and inline styles.
+// Violations are reported to /api/csp-report (rate-limited, deduplicated).
 const csp = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' https://telegram.org",
+  "script-src 'self' https://telegram.org",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https:",
   `connect-src ${connectSrc}`,
   "font-src 'self'",
+  'report-uri /api/csp-report',
   // frame-ancestors intentionally omitted: Telegram Mini App embeds us in an iframe
 ].join('; ');
 

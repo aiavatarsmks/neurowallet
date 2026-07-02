@@ -35,6 +35,9 @@ export function mockRes(): MockRes {
       res.headers[key] = value;
       return res;
     },
+    end() {
+      return res;
+    },
   };
   return res as unknown as MockRes;
 }
