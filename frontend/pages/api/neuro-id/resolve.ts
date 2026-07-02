@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
-import { checkRateLimit, requireSupabaseUser } from '@/lib/server/api-security';
+import { checkRateLimit, requireSupabaseUser, writeAuditLog } from '@/lib/server/api-security';
 import { getAddressForCoin, normalizeNeuroId, type NeuroCoin, type NeuroDirectoryRow } from '@/lib/neuro-id';
 
 const VALID_COINS = new Set<NeuroCoin>(['BTC', 'ETH', 'SOL', 'USDT', 'TRX', 'TRC20', 'TON', 'USDT_TON']);
@@ -50,6 +50,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const address = getAddressForCoin(data, coin);
   if (!address) return res.status(404).json({ error: 'Recipient has no address for this coin' });
+
+  await writeAuditLog(auth.user.id, 'neuro_id_resolved', { neuro_id: neuroId, coin }, req);
 
   return res.status(200).json({
     neuro_id: data.neuro_id,

@@ -18,6 +18,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
 import { createHmac, timingSafeEqual } from 'crypto';
+import { checkRateLimit, writeAuditLog } from '@/lib/server/api-security';
 
 // ─── HMAC validation ──────────────────────────────────────────────────────────
 
@@ -68,6 +69,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // Login endpoint — no JWT exists yet, so throttle by client IP.
+  const clientIp =
+    (typeof req.headers['x-forwarded-for'] === 'string'
+      ? req.headers['x-forwarded-for'].split(',')[0]?.trim()
+      : null) ?? req.socket.remoteAddress ?? 'unknown';
+  if (!checkRateLimit(`tg-auth:${clientIp}`, 10)) {
+    return res.status(429).json({ error: 'Rate limit exceeded' });
   }
 
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -160,6 +170,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Profile upsert is best-effort — don't fail the auth response
     console.warn('[tg-auth] profile upsert skipped:', err);
   }
+
+  await writeAuditLog(session.user.id, 'tg_auth_login', { telegram_id: tgUser.id }, req);
 
   return res.status(200).json({
     access_token:  session.access_token,

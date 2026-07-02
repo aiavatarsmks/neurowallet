@@ -3,7 +3,11 @@
  * Sends a Telegram message to a user via the bot.
  * Called server-side after a successful transaction.
  *
- * Body: { telegramId: number, message: string }
+ * Body: { message: string }
+ * The recipient is always the authenticated user's own telegram_id taken
+ * from the Supabase session (user_metadata) — never from the request body,
+ * so the endpoint cannot be used to message arbitrary Telegram accounts.
+ * A legacy `telegramId` body field is accepted but ignored.
  * TELEGRAM_BOT_TOKEN is server-only — never NEXT_PUBLIC_.
  */
 
@@ -32,14 +36,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: 'Bot token not configured' });
   }
 
-  const { telegramId, message } = req.body as { telegramId?: number; message?: string };
-  if (!telegramId || !message) {
-    return res.status(400).json({ error: 'telegramId and message required' });
+  const { message } = req.body as { message?: string };
+  if (!message || typeof message !== 'string') {
+    return res.status(400).json({ error: 'message required' });
   }
 
-  const userTelegramId = auth.user.user_metadata?.telegram_id;
-  if (!userTelegramId || Number(userTelegramId) !== Number(telegramId)) {
-    return res.status(403).json({ error: 'Telegram recipient mismatch' });
+  // Recipient comes exclusively from the session — deny if the account
+  // has no linked Telegram id.
+  const telegramId = Number(auth.user.user_metadata?.telegram_id);
+  if (!telegramId || Number.isNaN(telegramId)) {
+    return res.status(403).json({ error: 'No Telegram account linked' });
   }
 
   try {

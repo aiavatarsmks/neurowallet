@@ -36,6 +36,13 @@ export async function requireSupabaseUser(req: NextApiRequest): Promise<{ user: 
   return { user: data.user, token };
 }
 
+/**
+ * In-memory sliding-window limiter. On Vercel this state is per lambda
+ * instance and resets on cold start, so the real ceiling is (instances ×
+ * maxPerMinute) — acceptable for MVP abuse throttling, not a hard quota.
+ * Follow-up (IMPLEMENTATION_PLAN.md, Фаза 1): move to a durable store
+ * (Upstash Redis / Vercel KV) shared across instances.
+ */
 export function checkRateLimit(key: string, maxPerMinute: number): boolean {
   const now = Date.now();
   const current = buckets.get(key);

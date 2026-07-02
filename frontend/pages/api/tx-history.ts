@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import bs58 from 'bs58';
 import { createHash } from 'crypto';
+import { checkRateLimit, requireSupabaseUser, writeAuditLog } from '@/lib/server/api-security';
 
 /**
  * pages/api/tx-history.ts
@@ -420,15 +421,50 @@ async function fetchUsdtTonTxs(address: string): Promise<TxRow[]> {
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
+// Strict per-chain address formats. Addresses are interpolated into upstream
+// API URLs, so anything outside these shapes is rejected up front (also
+// prevents query-parameter injection into explorer requests).
+const ADDRESS_FORMATS: Record<string, RegExp> = {
+  eth:  /^0x[a-fA-F0-9]{40}$/,
+  sol:  /^[1-9A-HJ-NP-Za-km-z]{32,44}$/,
+  btc:  /^(bc1[02-9ac-hj-np-z]{8,87}|[13][1-9A-HJ-NP-Za-km-z]{25,34})$/,
+  tron: /^T[1-9A-HJ-NP-Za-km-z]{33}$/,
+  ton:  /^([A-Za-z0-9_-]{48}|-?\d+:[a-fA-F0-9]{64})$/,
+};
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET');
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  let auth;
+  try {
+    auth = await requireSupabaseUser(req);
+  } catch {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  if (!checkRateLimit(`tx-history:${auth.user.id}`, 30)) {
+    return res.status(429).json({ error: 'Rate limit exceeded' });
+  }
+
   const { eth, sol, btc, tron, ton } = req.query as Record<string, string>;
 
+  for (const [chain, value] of Object.entries({ eth, sol, btc, tron, ton })) {
+    if (value !== undefined && !ADDRESS_FORMATS[chain].test(value)) {
+      return res.status(400).json({ error: `Invalid ${chain} address` });
+    }
+  }
+
   try {
+    await writeAuditLog(
+      auth.user.id,
+      'tx_history_requested',
+      { chains: Object.entries({ eth, sol, btc, tron, ton }).filter(([, v]) => v).map(([k]) => k) },
+      req,
+    );
+
     const [ethTxs, usdtTxs, trxTxs, trc20Txs, solTxs, btcTxs, tonTxs, usdtTonTxs] = await Promise.allSettled([
       eth  ? fetchEthTxs(eth)        : Promise.resolve([]),
       eth  ? fetchUsdtTxs(eth)       : Promise.resolve([]),

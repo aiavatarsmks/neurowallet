@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { supabase } from '@/lib/supabase';
 
 interface TxRow {
   id:      string;
@@ -136,13 +137,25 @@ export const TxHistory: React.FC<TxHistoryProps> = ({ limit = 15 }) => {
     if (tron) params.set('tron', tron);
     if (ton)  params.set('ton',  ton);
 
-    fetch(`/api/tx-history?${params}`)
-      .then((r) => r.json())
-      .then((data) => {
+    (async () => {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) {
+          setLoading(false);
+          return;
+        }
+        const r = await fetch(`/api/tx-history?${params}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await r.json();
         setTxs((data.transactions ?? []).slice(0, limit));
+      } catch {
+        /* ignore — show empty state */
+      } finally {
         setLoading(false);
-      })
-      .catch(() => setLoading(false));
+      }
+    })();
   }, [isDemo, limit]);
 
   if (loading) return <TxSkeleton />;
