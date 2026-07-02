@@ -1,14 +1,18 @@
 import '@/styles/globals.css';
+import { useEffect } from 'react';
 import type { AppProps } from 'next/app';
 import Head from 'next/head';
 import Script from 'next/script';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { LanguageProvider } from '@/contexts/LanguageContext';
 import { useTelegramInit } from '@/hooks/useTelegram';
+import { clearLegacyXorKeys } from '@/lib/crypto/wallet';
 
 // Inner component so useTelegramInit can run inside AuthProvider tree
 function AppInner({ Component, pageProps }: AppProps) {
   useTelegramInit();
+  // Purge stale XOR-era blobs (scheme removed in 4b3704e) from localStorage.
+  useEffect(() => clearLegacyXorKeys(), []);
   return <Component {...pageProps} />;
 }
 

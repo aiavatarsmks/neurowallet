@@ -144,4 +144,16 @@ export function hasWallet(): boolean {
 export function clearWalletFromStorage(): void {
   if (typeof window === 'undefined') return;
   Object.values(LS).forEach((k) => localStorage.removeItem(k));
+  clearLegacyXorKeys();
+}
+
+// Legacy XOR-scheme blobs (scheme removed in commit 4b3704e). No code reads
+// them anymore; test wallets from that era must re-import from mnemonic.
+// Purged on every app start so stale key-derived material doesn't linger
+// in localStorage.
+const LEGACY_XOR_KEYS = ['wallet_sol_xor', 'wallet_btc_xor', 'wallet_tron_xor', 'wallet_ton_xor'];
+
+export function clearLegacyXorKeys(): void {
+  if (typeof window === 'undefined') return;
+  LEGACY_XOR_KEYS.forEach((k) => localStorage.removeItem(k));
 }
