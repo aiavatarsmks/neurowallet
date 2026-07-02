@@ -39,6 +39,8 @@ export type AnalyticsEvent =
   | 'send_failed'
   | 'send_review_shown'
   | 'send_review_blocked'
+  | 'risk_flagged'
+  | 'risk_override'
   | 'first_send_succeeded'
   | 'ai_chat_used'
   | 'demo_entered'

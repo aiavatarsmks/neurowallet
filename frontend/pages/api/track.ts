@@ -28,6 +28,8 @@ const EVENTS: Record<string, readonly string[]> = {
   send_failed: ['coin', 'reason_code'],
   send_review_shown: ['coin'],
   send_review_blocked: ['coin', 'reason_code'],
+  risk_flagged: ['coin', 'level', 'reason_code'],
+  risk_override: ['coin', 'reason_code'],
   first_send_succeeded: ['coin'],
   ai_chat_used: ['lang'],
   demo_entered: [],

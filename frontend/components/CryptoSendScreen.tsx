@@ -4,6 +4,7 @@ import { fetchRealBalances, MARKET_REFRESH_MS } from '@/lib/crypto/balances';
 import { upgradeStoredKeystoreIfWeak } from '@/lib/crypto/keystore-migration';
 import { track, trackOnce, newTraceId } from '@/lib/analytics';
 import { simulateTransfer, isBlocked, type SimulationResult, type SimWarning } from '@/lib/crypto/simulate';
+import { assessRecipient, type RiskAssessment } from '@/lib/risk/engine';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -75,6 +76,11 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   const traceRef   = useRef('');     // сквозной trace id одного send-флоу
   const draftIdRef = useRef('');     // id серверного tx_draft
 
+  // Риск-оценка получателя (задача 1.3)
+  const [risk,           setRisk]           = useState<RiskAssessment | null>(null);
+  const [riskOverridden, setRiskOverridden] = useState(false);
+  const riskEventIdRef = useRef('');
+
   useEffect(() => {
     setCoin(initialCoin);
     setAddress(initialAddress);
@@ -128,17 +134,43 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
 
     (async () => {
       setSim(null);
+      setRisk(null);
+      setRiskOverridden(false);
       setSimLoading(true);
-      const result = await simulateTransfer({
-        coin,
-        toAddress: address.trim(),
-        amount: amountNum,
-        balances,
-        eurRates,
-        fromBtcAddress: localStorage.getItem('wallet_btc_address') ?? undefined,
-      });
+
+      const { data: s } = await supabase.auth.getSession();
+      const token = s.session?.access_token ?? '';
+
+      // История получателей для risk engine — деградирует в [] без миграции.
+      const fetchHistory = async (): Promise<string[]> => {
+        if (!token) return [];
+        try {
+          const r = await fetch(`/api/recipient-history?coin=${coin}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const b = await r.json().catch(() => null);
+          return Array.isArray(b?.addresses) ? b.addresses : [];
+        } catch {
+          return [];
+        }
+      };
+
+      const [result, history] = await Promise.all([
+        simulateTransfer({
+          coin,
+          toAddress: address.trim(),
+          amount: amountNum,
+          balances,
+          eurRates,
+          fromBtcAddress: localStorage.getItem('wallet_btc_address') ?? undefined,
+        }),
+        fetchHistory(),
+      ]);
       if (cancelled) return;
+
+      const assessment = assessRecipient({ coin, toAddress: address.trim(), history });
       setSim(result);
+      setRisk(assessment);
       setSimLoading(false);
 
       track('send_review_shown', { coin }, traceRef.current);
@@ -146,13 +178,14 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         const reason = result.warnings.find((w) => w.level === 'block')?.code ?? 'unknown';
         track('send_review_blocked', { coin, reason_code: reason }, traceRef.current);
       }
+      if (assessment.level !== 'ok') {
+        track('risk_flagged', { coin, level: assessment.level, reason_code: assessment.reasons[0]?.code ?? 'unknown' }, traceRef.current);
+      }
 
       // Серверный драфт (метрики preview-coverage + сырьё для 1.3/1.4).
       // Fire-and-forget: сбой записи никогда не блокирует отправку.
+      if (!token) return;
       try {
-        const { data: s } = await supabase.auth.getSession();
-        const token = s.session?.access_token;
-        if (!token) return;
         const res = await fetch('/api/tx-draft', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'x-trace-id': traceRef.current },
@@ -172,6 +205,24 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         const body = await res.json().catch(() => null);
         if (res.ok && body?.id) draftIdRef.current = body.id;
       } catch { /* драфт не критичен */ }
+
+      // Риск-событие (warning/block) — тоже fire-and-forget.
+      if (assessment.level !== 'ok') {
+        try {
+          const r = await fetch('/api/risk-event', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'x-trace-id': traceRef.current },
+            body: JSON.stringify({
+              coin,
+              level: assessment.level,
+              reasons: assessment.reasons,
+              draft_id: draftIdRef.current || undefined,
+            }),
+          });
+          const b = await r.json().catch(() => null);
+          if (b?.id) riskEventIdRef.current = b.id;
+        } catch { /* не критично */ }
+      }
     })();
 
     return () => { cancelled = true; };
@@ -212,10 +263,32 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
     : coin === 'TON' || coin === 'USDT_TON'     ? isValidTonAddress(address.trim())
     : isValidBtcAddress(address.trim()); // BTC
 
+  /** Осознанный override блокирующего риска — фиксация в БД и audit. */
+  const confirmRiskOverride = () => {
+    track('risk_override', { coin, reason_code: risk?.reasons[0]?.code ?? 'unknown' }, traceRef.current);
+    const id = riskEventIdRef.current;
+    if (!id) return;
+    void (async () => {
+      try {
+        const { data: s } = await supabase.auth.getSession();
+        const token = s.session?.access_token;
+        if (!token) return;
+        await fetch('/api/risk-event', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'x-trace-id': traceRef.current },
+          body: JSON.stringify({ id }),
+        });
+      } catch { /* не критично */ }
+    })();
+  };
+
   const reset = () => {
     traceRef.current = '';
     draftIdRef.current = '';
+    riskEventIdRef.current = '';
     setSim(null);
+    setRisk(null);
+    setRiskOverridden(false);
     setStep('form');
     setAddress('');
     setAmount('');
@@ -571,7 +644,20 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
 
     const realReview = data.implemented && !isDemo;
     const simBlocked = realReview && sim !== null && isBlocked(sim);
-    const confirmDisabled = realReview && (simLoading || simBlocked);
+    const riskBlocked = realReview && risk !== null && risk.level === 'block' && (!risk.overridable || !riskOverridden);
+    const confirmDisabled = realReview && (simLoading || simBlocked || riskBlocked);
+
+    const SHIELD: Record<'ok' | 'warning' | 'block', { icon: string; color: string; bg: string; border: string }> = {
+      ok:      { icon: '🛡', color: '#00FF7F', bg: 'rgba(0,255,127,0.05)',  border: 'rgba(0,255,127,0.2)' },
+      warning: { icon: '🛡', color: '#F7931A', bg: 'rgba(247,147,26,0.06)', border: 'rgba(247,147,26,0.25)' },
+      block:   { icon: '🛡', color: '#FF453A', bg: 'rgba(255,59,48,0.08)',  border: 'rgba(255,59,48,0.35)' },
+    };
+    const RISK_I18N: Record<string, Parameters<typeof t>[0]> = {
+      known_recipient: 'csRiskKnown',
+      first_seen: 'csRiskFirstSeen',
+      poisoning_similarity: 'csRiskPoisoning',
+      blocklisted: 'csRiskBlocklisted',
+    };
 
     const fmtAmount = (v: number) =>
       v >= 1 ? v.toFixed(4).replace(/\.?0+$/, '') : v.toPrecision(3);
@@ -627,6 +713,32 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           </p>
         </div>
 
+        {/* Shield риск-оценки получателя (задача 1.3) */}
+        {realReview && risk !== null && (
+          <div
+            className="rounded-2xl p-3.5"
+            style={{ background: SHIELD[risk.level].bg, border: `1px solid ${SHIELD[risk.level].border}` }}
+          >
+            {risk.reasons.map((r) => (
+              <p key={r.code} className="text-xs leading-relaxed" style={{ color: SHIELD[risk.level].color }}>
+                {SHIELD[risk.level].icon}{' '}
+                {t(RISK_I18N[r.code]).replace('{addr}', r.similarTo ?? '')}
+              </p>
+            ))}
+            {risk.level === 'block' && risk.overridable && (
+              <label className="flex items-start gap-2 mt-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={riskOverridden}
+                  onChange={(e) => setRiskOverridden(e.target.checked)}
+                  className="mt-0.5 accent-[#FF453A]"
+                />
+                <span className="text-xs text-white leading-relaxed">{t('csRiskOverrideLabel')}</span>
+              </label>
+            )}
+          </div>
+        )}
+
         {/* Warnings симуляции: block — красные, warn — оранжевые */}
         {realReview && sim !== null && sim.warnings.map((w) => (
           <div
@@ -673,7 +785,11 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
             {t('csBack')}
           </button>
           <button
-            onClick={() => data.implemented && !isDemo ? setStep('password') : handleConfirmSend()}
+            onClick={() => {
+              if (realReview && risk?.level === 'block' && riskOverridden) confirmRiskOverride();
+              if (data.implemented && !isDemo) setStep('password');
+              else handleConfirmSend();
+            }}
             disabled={confirmDisabled}
             className="flex-1 py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95 disabled:opacity-30"
             style={{ background: '#00FF7F', color: '#080C09', boxShadow: '0 0 20px rgba(0,255,127,0.3)' }}
