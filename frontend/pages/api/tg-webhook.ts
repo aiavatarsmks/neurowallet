@@ -109,12 +109,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: 'Server misconfigured' });
   }
 
+  // Deny by default: the webhook secret is mandatory. If the env var is
+  // missing the endpoint refuses to serve rather than accepting anyone.
   const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
-  if (webhookSecret) {
-    const incoming = req.headers['x-telegram-bot-api-secret-token'];
-    if (incoming !== webhookSecret) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
+  if (!webhookSecret) {
+    console.error('[tg-webhook] TELEGRAM_WEBHOOK_SECRET not set — refusing request');
+    return res.status(500).json({ error: 'Server misconfigured' });
+  }
+  const incoming = req.headers['x-telegram-bot-api-secret-token'];
+  if (incoming !== webhookSecret) {
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   // IMPORTANT: do the Telegram send(s) BEFORE responding to this webhook call.
