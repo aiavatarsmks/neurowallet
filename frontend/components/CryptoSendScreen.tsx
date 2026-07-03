@@ -41,6 +41,15 @@ const FEE_EUR: Record<Coin, string> = {
   TON: '~€0.01', USDT_TON: '~€0.05',
 };
 
+
+/** Клавиатура: скрывать по тапу вне текстового поля (mobile WebView). */
+function blurOnOutsideTap(e: React.PointerEvent) {
+  const target = e.target as HTMLElement;
+  if (!target.closest('input,textarea')) {
+    (document.activeElement as HTMLElement | null)?.blur?.();
+  }
+}
+
 interface CryptoSendScreenProps {
   initialCoin?:  Coin;
   initialAddress?: string;
@@ -560,7 +569,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       : address;
 
     return (
-      <div className="px-6 pt-2 flex flex-col gap-5">
+      <div className="px-6 pt-2 flex flex-col gap-5" onPointerDown={blurOnOutsideTap}>
         <h2 className="text-white text-lg font-bold">{t('csEnterWalletPassword')}</h2>
 
         <div
@@ -606,7 +615,6 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
               onChange={(e) => { setPassword(e.target.value); setPwError(''); }}
               onKeyDown={(e) => e.key === 'Enter' && password && handleConfirmSend()}
               placeholder={t('csPasswordPlaceholder')}
-              autoFocus
               className="w-full bg-transparent text-white text-sm outline-none placeholder:text-[#3A6045]"
               style={{ caretColor: '#00FF7F' }}
             />
@@ -702,7 +710,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           : <span key="f" style={{ color: '#F7931A' }}>{t('csFeeUnknown')}</span>;
 
     return (
-      <div className="px-6 pt-2 flex flex-col gap-4">
+      <div className="px-6 pt-2 flex flex-col gap-4" onPointerDown={blurOnOutsideTap}>
         <h2 className="text-white text-lg font-bold">{t('csConfirmTitle')}</h2>
 
         <div
@@ -851,7 +859,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
 
   // ─── Form step ────────────────────────────────────────────────────────────
   return (
-    <div className="px-6 pt-2 flex flex-col gap-5">
+    <div className="px-6 pt-2 flex flex-col gap-5" onPointerDown={blurOnOutsideTap}>
       <h2 className="text-white text-lg font-bold">{t('csTitle')}</h2>
 
       {/* Coin selector */}

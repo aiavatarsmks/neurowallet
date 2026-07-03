@@ -54,6 +54,14 @@ function isCrypto(currency: TransferCurrency): boolean {
   return CRYPTO_CURRENCIES.has(currency);
 }
 
+/** Клавиатура: скрывать по тапу вне текстового поля (mobile WebView). */
+function blurOnOutsideTap(e: React.PointerEvent) {
+  const target = e.target as HTMLElement;
+  if (!target.closest('input,textarea')) {
+    (document.activeElement as HTMLElement | null)?.blur?.();
+  }
+}
+
 function loadSavedContacts(): Contact[] {
   if (typeof window === 'undefined') return [];
   try {
@@ -394,7 +402,7 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
   }
 
   return (
-    <div className="px-6 pt-2 flex flex-col gap-5">
+    <div className="px-6 pt-2 flex flex-col gap-5" onPointerDown={blurOnOutsideTap}>
       <h2 className="text-white text-lg font-bold">{t('sendTitle')}</h2>
 
       {step === 'contacts' && (
@@ -482,9 +490,9 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
               value={recipientName}
               onChange={(event) => setRecipientName(event.target.value)}
               placeholder={t('sendRecipientNamePlaceholder')}
+              onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLElement).blur()}
               className="w-full rounded-2xl px-4 py-3.5 text-white text-sm bg-transparent outline-none"
               style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.12)', caretColor: '#00FF7F' }}
-              autoFocus
             />
           </div>
 
@@ -616,9 +624,9 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
                 value={amount}
                 onChange={(event) => setAmount(event.target.value)}
                 placeholder="0"
+                onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLElement).blur()}
                 className="text-white text-5xl font-bold bg-transparent outline-none w-40 text-center"
                 style={{ caretColor: '#00FF7F' }}
-                autoFocus
               />
             </div>
             <p className="text-[#3A6045] text-xs mt-2">{selectedMeta.short}</p>
