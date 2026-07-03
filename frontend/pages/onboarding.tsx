@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -66,6 +66,8 @@ export default function OnboardingWalletPage() {
 
   useEffect(() => { track('onboarding_started'); }, []);
 
+  const recoverApplied = useRef(false);
+
   // Guard: redirect if already has wallet or not authenticated
   useEffect(() => {
     if (isLoading || !router.isReady) return;
@@ -78,10 +80,15 @@ export default function OnboardingWalletPage() {
     // the per-chain enc scheme, or the origin move to neurowallet.tech). Force
     // the seed re-import instead of bouncing back to /wallet — otherwise the
     // user is trapped: /wallet won't send them here, and here would send them
-    // back to /wallet.
+    // back to /wallet. Apply ONCE — the ?recover=1 param stays in the URL, so
+    // without the ref a later effect re-run would yank the user out of the
+    // set-password / pin-setup step back to import-mnemonic.
     if (router.query.recover === '1') {
-      setStep('import-mnemonic');
-      setError('');
+      if (!recoverApplied.current) {
+        recoverApplied.current = true;
+        setStep('import-mnemonic');
+        setError('');
+      }
       return;
     }
     if (typeof window !== 'undefined' && localStorage.getItem('wallet_eth_address')) {

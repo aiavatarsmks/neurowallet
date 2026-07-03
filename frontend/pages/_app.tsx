@@ -7,6 +7,7 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { LanguageProvider } from '@/contexts/LanguageContext';
 import { useTelegramInit } from '@/hooks/useTelegram';
 import { clearLegacyXorKeys } from '@/lib/crypto/wallet';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 // Inner component so useTelegramInit can run inside AuthProvider tree
 function AppInner({ Component, pageProps }: AppProps) {
@@ -18,6 +19,7 @@ function AppInner({ Component, pageProps }: AppProps) {
 
 export default function App(props: AppProps) {
   return (
+    <ErrorBoundary>
     <LanguageProvider>
       <AuthProvider>
         <Head>
@@ -41,5 +43,6 @@ export default function App(props: AppProps) {
         <AppInner {...props} />
       </AuthProvider>
     </LanguageProvider>
+    </ErrorBoundary>
   );
 }
