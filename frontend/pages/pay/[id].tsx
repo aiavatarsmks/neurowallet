@@ -8,6 +8,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import QRCode from 'qrcode';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { coinLabel } from '@/lib/coin-labels';
 
 interface PayRequest {
   id: string;
@@ -71,7 +72,7 @@ export default function PayPage() {
           <div className="rounded-2xl p-5 flex flex-col items-center gap-3 w-full max-w-sm" style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.15)' }}>
             <p className="text-[#3A6045] text-xs uppercase tracking-wider">{t('payRequestLabel')}</p>
             <p className="text-white text-2xl font-bold">
-              {req.amount ? `${req.amount} ${req.coin}` : `${req.coin} — ${t('payAnyAmount')}`}
+              {req.amount ? `${req.amount} ${coinLabel(req.coin ?? '')}` : `${coinLabel(req.coin ?? '')} — ${t('payAnyAmount')}`}
             </p>
             {qr && (
               <div className="rounded-2xl p-4" style={{ background: 'white' }}>

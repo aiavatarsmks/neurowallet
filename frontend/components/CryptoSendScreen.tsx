@@ -3,6 +3,7 @@ import { sendEth, sendUsdt, sendUsdtTrc20, sendTrx, sendSol, sendBtc, sendTon, s
 import { fetchRealBalances, MARKET_REFRESH_MS } from '@/lib/crypto/balances';
 import { upgradeStoredKeystoreIfWeak } from '@/lib/crypto/keystore-migration';
 import { track, trackOnce, newTraceId } from '@/lib/analytics';
+import { coinLabel, COIN_PICKER_ORDER } from '@/lib/coin-labels';
 import { simulateTransfer, isBlocked, type SimulationResult, type SimWarning } from '@/lib/crypto/simulate';
 import { assessRecipient, type RiskAssessment } from '@/lib/risk/engine';
 import { txFacts } from '@/lib/neura/facts';
@@ -405,11 +406,10 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       if (tgId) {
         const { data } = await supabase.auth.getSession();
         const token = data.session?.access_token;
-        const coinLabel = coin === 'TRC20' ? 'USDT TRC-20' : coin === 'USDT' ? 'USDT ERC-20' : coin === 'USDT_TON' ? 'USDT TON' : coin;
         const shortAddr = address.trim().slice(0, 6) + '...' + address.trim().slice(-4);
         const msg = lang === 'en'
-          ? `✅ <b>Transaction sent</b>\n\n💸 ${amountNum} ${coinLabel}\n📤 To address: <code>${shortAddr}</code>\n🔗 TX: <code>${hash.slice(0, 16)}...</code>`
-          : `✅ <b>Транзакция отправлена</b>\n\n💸 ${amountNum} ${coinLabel}\n📤 На адрес: <code>${shortAddr}</code>\n🔗 TX: <code>${hash.slice(0, 16)}...</code>`;
+          ? `✅ <b>Transaction sent</b>\n\n💸 ${amountNum} ${coinLabel(coin)}\n📤 To address: <code>${shortAddr}</code>\n🔗 TX: <code>${hash.slice(0, 16)}...</code>`
+          : `✅ <b>Транзакция отправлена</b>\n\n💸 ${amountNum} ${coinLabel(coin)}\n📤 На адрес: <code>${shortAddr}</code>\n🔗 TX: <code>${hash.slice(0, 16)}...</code>`;
         if (token) {
           fetch('/api/tg-notify', {
             method: 'POST',
@@ -477,7 +477,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         </div>
 
         <div>
-          <p className="text-white text-xl font-bold">{t('csSent').replace('{amt}', String(amountNum)).replace('{coin}', coin)}</p>
+          <p className="text-white text-xl font-bold">{t('csSent').replace('{amt}', String(amountNum)).replace('{coin}', coinLabel(coin))}</p>
           <p className="text-[#3A6045] text-sm mt-1">
             {`${recipientName ? `${recipientName} • ` : ''}${t('csTxSentToNetwork')}`}
           </p>
@@ -569,7 +569,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         >
           <div className="flex justify-between text-xs">
             <span className="text-[#3A6045]">{t('csYouSend')}</span>
-            <span className="text-white font-bold">{amountNum} {coin}</span>
+            <span className="text-white font-bold">{amountNum} {coinLabel(coin)}</span>
           </div>
           <div className="flex justify-between text-xs">
             <span className="text-[#3A6045]">{t('csToAddress')}</span>
@@ -710,11 +710,11 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.12)' }}
         >
           {([
-            [t('csCoin'),   <span key="c" className="flex items-center gap-1.5"><span className="font-bold" style={{ color: data.color }}>{data.icon}</span><span className="text-white">{coin}</span></span>],
-            [t('csAmount'),    <span key="a" className="text-white font-bold">{amountNum} {coin}</span>],
+            [t('csCoin'),   <span key="c" className="flex items-center gap-1.5"><span className="font-bold" style={{ color: data.color }}>{data.icon}</span><span className="text-white">{coinLabel(coin)}</span></span>],
+            [t('csAmount'),    <span key="a" className="text-white font-bold">{amountNum} {coinLabel(coin)}</span>],
             [t('csFee'), feeNode],
             ...(realReview && sim?.balanceAfter != null
-              ? [[t('csBalanceAfter'), <span key="ba" className="text-white">{fmtAmount(sim.balanceAfter)} {coin}</span>]] as [string, React.ReactNode][]
+              ? [[t('csBalanceAfter'), <span key="ba" className="text-white">{fmtAmount(sim.balanceAfter)} {coinLabel(coin)}</span>]] as [string, React.ReactNode][]
               : []),
             ...(recipientName ? [[t('csRecipient'), <span key="r" className="text-white font-medium">{recipientName}</span>]] as [string, React.ReactNode][] : []),
             ...(neuroId ? [['NeuroID', <span key="n" className="text-[#00FF7F] font-mono">{neuroId}</span>]] as [string, React.ReactNode][] : []),
@@ -819,7 +819,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
             style={{ background: 'rgba(247,147,26,0.06)', border: '1px solid rgba(247,147,26,0.2)' }}
           >
             <p className="text-xs" style={{ color: '#F7931A' }}>
-              {t('csComingSoonWarning').replace('{coin}', coin)}
+              {t('csComingSoonWarning').replace('{coin}', coinLabel(coin))}
             </p>
           </div>
         )}
@@ -858,7 +858,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       <div>
         <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider mb-2">{t('csCoinLabel')}</p>
         <div className="flex gap-2">
-          {(['ETH', 'BTC', 'SOL', 'USDT', 'TRX', 'TRC20', 'TON', 'USDT_TON'] as Coin[]).map((c) => {
+          {([...COIN_PICKER_ORDER] as Coin[]).map((c) => {
             const d = COINS[c];
             return (
               <button
@@ -889,7 +889,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         <p className="text-[#3A6045] text-xs mt-2">
           {t('csAvailable')}{' '}
           {balReady
-            ? <span className="text-white font-medium">{available.toLocaleString('ru-RU', { maximumFractionDigits: 6 })} {coin}</span>
+            ? <span className="text-white font-medium">{available.toLocaleString('ru-RU', { maximumFractionDigits: 6 })} {coinLabel(coin)}</span>
             : <span className="text-[#3A6045]">{t('csLoadingEllipsis')}</span>
           }
         </p>
@@ -939,13 +939,13 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
               className="text-white text-4xl font-bold bg-transparent outline-none w-32 text-center"
               style={{ caretColor: '#00FF7F' }}
             />
-            <span className="text-[#3A6045] text-lg font-bold">{coin}</span>
+            <span className="text-[#3A6045] text-lg font-bold">{coinLabel(coin)}</span>
           </div>
           {amountNum > 0 && (
             <p className="text-sm mt-1.5">
               {insufficient
                 ? <span style={{ color: '#FF5252' }}>{t('csInsufficientFunds')}</span>
-                : <span className="text-[#3A6045]">{t('csAvailableInline').replace('{amt}', available.toLocaleString('ru-RU', { maximumFractionDigits: 6 })).replace('{coin}', coin)}</span>
+                : <span className="text-[#3A6045]">{t('csAvailableInline').replace('{amt}', available.toLocaleString('ru-RU', { maximumFractionDigits: 6 })).replace('{coin}', coinLabel(coin))}</span>
               }
             </p>
           )}

@@ -28,7 +28,7 @@ const DEMO_CONTACTS: Contact[] = [
   { id: '3', name: 'Mike Ross',  initials: 'MR', trusted: false, currency: 'USDT' },
 ];
 
-const CURRENCY_ORDER: TransferCurrency[] = ['EUR', 'USD', 'USDT', 'ETH', 'BTC', 'SOL', 'TON', 'TRX', 'TRC20', 'USDT_TON'];
+const CURRENCY_ORDER: TransferCurrency[] = ['EUR', 'USD', 'TRC20', 'USDT', 'USDT_TON', 'ETH', 'BTC', 'SOL', 'TON', 'TRX'];
 const CRYPTO_CURRENCIES = new Set<TransferCurrency>(['USDT', 'ETH', 'BTC', 'SOL', 'TON', 'TRX', 'TRC20', 'USDT_TON']);
 
 type SendStep = 'contacts' | 'recipient' | 'amount' | 'confirm' | 'done';
@@ -97,13 +97,13 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
   const CURRENCIES: Record<TransferCurrency, { label: string; short: string; icon: string; placeholder: string }> = {
     EUR:      { label: t('currencyEUR'),  short: 'EUR',      icon: '€', placeholder: t('currencyPlaceholderFiat1') },
     USD:      { label: t('currencyUSD'),  short: 'USD',      icon: '$', placeholder: t('currencyPlaceholderFiat2') },
-    USDT:     { label: 'USDT ERC-20',     short: 'USDT',     icon: '₮', placeholder: '0x…' },
+    USDT:     { label: 'USDT ERC-20',     short: 'USDT ERC-20', icon: '₮', placeholder: '0x…' },
     ETH:      { label: 'Ethereum',        short: 'ETH',      icon: 'Ξ', placeholder: '0x…' },
     BTC:      { label: 'Bitcoin',         short: 'BTC',      icon: '₿', placeholder: `bc1… ${t('authOr')} 1…` },
     SOL:      { label: 'Solana',          short: 'SOL',      icon: '◎', placeholder: 'Solana address' },
     TON:      { label: 'TON',             short: 'TON',      icon: '◆', placeholder: `EQ… ${t('authOr')} UQ…` },
     TRX:      { label: 'TRON',            short: 'TRX',      icon: '◆', placeholder: 'T…' },
-    TRC20:    { label: 'USDT TRC-20',     short: 'TRC20',    icon: '₮', placeholder: 'T…' },
+    TRC20:    { label: 'USDT TRC-20',     short: 'USDT TRC-20', icon: '₮', placeholder: 'T…' },
     USDT_TON: { label: 'USDT TON',        short: 'USDT TON', icon: '₮', placeholder: `EQ… ${t('authOr')} UQ…` },
   };
 

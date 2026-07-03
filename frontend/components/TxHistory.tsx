@@ -20,9 +20,9 @@ const CHAIN_META = {
   ETH:      { icon: 'Ξ',  color: '#627EEA', label: 'ETH',      explorer: (h: string) => `https://etherscan.io/tx/${h}` },
   SOL:      { icon: '◎',  color: '#9945FF', label: 'SOL',      explorer: (h: string) => `https://solscan.io/tx/${h}` },
   BTC:      { icon: '₿',  color: '#F7931A', label: 'BTC',      explorer: (h: string) => `https://blockstream.info/tx/${h}` },
-  USDT:     { icon: '₮',  color: '#26A17B', label: 'ERC-20',   explorer: (h: string) => `https://etherscan.io/tx/${h}` },
+  USDT:     { icon: '₮',  color: '#26A17B', label: 'USDT ERC-20',   explorer: (h: string) => `https://etherscan.io/tx/${h}` },
   TRX:      { icon: '◆',  color: '#EF0027', label: 'TRX',      explorer: (h: string) => `https://tronscan.org/#/transaction/${h}` },
-  TRC20:    { icon: '₮',  color: '#EF0027', label: 'TRC-20',   explorer: (h: string) => `https://tronscan.org/#/transaction/${h}` },
+  TRC20:    { icon: '₮',  color: '#EF0027', label: 'USDT TRC-20',   explorer: (h: string) => `https://tronscan.org/#/transaction/${h}` },
   TON:      { icon: '💎', color: '#0098EA', label: 'TON',      explorer: (h: string) => `https://tonscan.org/tx/${h}` },
   USDT_TON: { icon: '₮',  color: '#0098EA', label: 'USDT TON', explorer: (h: string) => `https://tonscan.org/tx/${h}` },
 };

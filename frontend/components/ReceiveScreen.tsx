@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { COIN_PICKER_ORDER } from '@/lib/coin-labels';
 import QRCode from 'qrcode';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -178,7 +179,7 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
 
       {/* Network selector */}
       <div className="flex gap-2 self-stretch flex-wrap">
-        {(['ETH', 'USDT', 'SOL', 'BTC', 'TRX', 'TRC20', 'TON', 'USDT_TON'] as ReceiveNetwork[]).map((n) => (
+        {([...COIN_PICKER_ORDER] as ReceiveNetwork[]).map((n) => (
           <button
             key={n}
             onClick={() => { setNetwork(n); setCopied(false); }}
@@ -191,7 +192,7 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
             }}
           >
             <span>{ICONS[n]}</span>
-            <span>{n === 'TRC20' ? 'USDT TRC' : n === 'USDT_TON' ? 'USDT TON' : n}</span>
+            <span>{n === 'TRC20' ? 'USDT TRC-20' : n === 'USDT' ? 'USDT ERC-20' : n === 'USDT_TON' ? 'USDT TON' : n}</span>
           </button>
         ))}
       </div>
