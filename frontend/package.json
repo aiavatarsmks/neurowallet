@@ -7,7 +7,7 @@
     "dev:mobile": "next dev -H 0.0.0.0 -p 3000",
     "build": "next build",
     "start": "next start",
-    "lint": "echo \"(placeholder) frontend lint\"",
+    "lint": "eslint pages components lib hooks contexts --ext .ts,.tsx",
     "test": "vitest run"
   },
   "dependencies": {
@@ -42,6 +42,9 @@
     "@types/react": "18.2.18",
     "@types/react-dom": "18.2.7",
     "@types/three": "^0.161.0",
+    "@typescript-eslint/parser": "^8.62.1",
+    "eslint": "^8.57.0",
+    "eslint-plugin-react-hooks": "^4.6.2",
     "jsdom": "22.1.0",
     "typescript": "5.3.3",
     "vitest": "^3.2.0"
