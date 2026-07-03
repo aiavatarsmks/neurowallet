@@ -68,15 +68,26 @@ export default function OnboardingWalletPage() {
 
   // Guard: redirect if already has wallet or not authenticated
   useEffect(() => {
-    if (isLoading) return;
+    if (isLoading || !router.isReady) return;
     if (!user && !isDemo) {
       router.replace('/auth');
+      return;
+    }
+    // Recovery entry (?recover=1): the address may still be in localStorage
+    // while the keys are missing/unverifiable (e.g. legacy wallet from before
+    // the per-chain enc scheme, or the origin move to neurowallet.tech). Force
+    // the seed re-import instead of bouncing back to /wallet — otherwise the
+    // user is trapped: /wallet won't send them here, and here would send them
+    // back to /wallet.
+    if (router.query.recover === '1') {
+      setStep('import-mnemonic');
+      setError('');
       return;
     }
     if (typeof window !== 'undefined' && localStorage.getItem('wallet_eth_address')) {
       router.replace('/wallet');
     }
-  }, [isLoading, user, isDemo, router]);
+  }, [isLoading, user, isDemo, router.isReady, router.query.recover, router]);
 
   const handleCreateNew = useCallback(() => {
     const m = generateMnemonic();

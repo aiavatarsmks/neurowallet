@@ -75,7 +75,21 @@ export async function verifyWalletPassword(password: string): Promise<boolean> {
       return false; // блоб есть, пароль не подошёл
     }
   }
-  return false; // проверять нечем — кошелька нет
+  // Fallback: legacy-кошельки (созданные до per-chain enc-схемы) держат только
+  // ETH-keystore, per-chain блобов нет. Без этой ветки verifyWalletPassword
+  // возвращал бы false на ЛЮБОЙ ввод — юзер не мог установить PIN и думал, что
+  // «забыл пароль». Проверяем против keystore (scrypt, ~1 с).
+  const ks = localStorage.getItem('wallet_keystore');
+  if (ks) {
+    try {
+      const { ethers } = await import('ethers');
+      await ethers.Wallet.fromEncryptedJson(ks, password);
+      return true;
+    } catch {
+      return false; // keystore есть, пароль не подошёл
+    }
+  }
+  return false; // проверять нечем — ключей в этом origin нет
 }
 
 /**

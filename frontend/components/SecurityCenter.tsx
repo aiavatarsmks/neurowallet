@@ -6,6 +6,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
 import { supabase } from '@/lib/supabase';
 import { hasPinSetup, verifyWalletPassword } from '@/lib/pin';
 import { track } from '@/lib/analytics';
@@ -50,6 +51,7 @@ function shortUa(label: string | null): string {
 export const SecurityCenter: React.FC = () => {
   const { isDemo, user } = useAuth();
   const { t } = useLanguage();
+  const router = useRouter();
   const [pinOn, setPinOn] = useState(false);
   const [devices, setDevices] = useState<Device[]>([]);
   const [feed, setFeed] = useState<FeedEvent[]>([]);
@@ -178,6 +180,17 @@ export const SecurityCenter: React.FC = () => {
             </button>
           </div>
           {pwError && <p className="text-xs" style={{ color: '#FF453A' }}>{t('secPinWrongPassword')}</p>}
+          {/* Recovery: если пароль не подходит (или блобов ключей нет —
+              verifyWalletPassword всегда вернёт false), не оставляем тупик.
+              Ведём на переимпорт seed-фразы через ?recover=1 (onboarding не
+              отбросит обратно на /wallet при наличии stale-адреса). */}
+          <button
+            onClick={() => router.push('/onboarding?recover=1')}
+            className="self-start text-xs underline"
+            style={{ color: '#3A6045' }}
+          >
+            {t('secPinForgot')}
+          </button>
         </div>
       )}
 
