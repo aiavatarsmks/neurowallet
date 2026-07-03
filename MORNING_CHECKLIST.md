@@ -9,6 +9,7 @@
 - [ ] `supabase/migrations/0003_tx_drafts.sql` — драфты + симуляция (задача 1.2, уже принято вчера)
 - [ ] `supabase/migrations/0004_risk_events.sql` — risk engine (задача 1.3)
 - [ ] `supabase/migrations/0005_contacts.sql` — адресная книга (задача 1.4)
+- [ ] `supabase/migrations/0006_payment_requests.sql` — платёжные ссылки (задача 1.5)
 
 ## 2. Smoke в Telegram Mini App (после миграций)
 
@@ -22,6 +23,7 @@
 - [ ] `risk_events` — строки с level warning на новые адреса
 - [ ] `analytics_events` — события send_review_shown / risk_flagged
 - [ ] `contacts` — контакт появляется после «Сохранить и продолжить» в Send (1.4)
+- [ ] Receive → «Запросить оплату ссылкой» → создать → открыть ссылку в обычном браузере: карточка с QR/суммой; протухание проверяется автоматически (1.5)
 
 ## 4. Вопросы, требующие твоего решения
 

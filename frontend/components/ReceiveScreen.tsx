@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
 import QRCode from 'qrcode';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -122,6 +123,55 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // ── Платёжная ссылка (задача 1.5) ─────────────────────────────────────────
+  const [reqAmount,  setReqAmount]  = useState('');
+  const [payUrl,     setPayUrl]     = useState('');
+  const [payLoading, setPayLoading] = useState(false);
+  const [payError,   setPayError]   = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  const createPayLink = async () => {
+    if (isDemo || payLoading) return;
+    setPayLoading(true);
+    setPayError(false);
+    setPayUrl('');
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error('no session');
+      const amountNum = parseFloat(reqAmount);
+      const r = await fetch('/api/payment-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          coin: network,
+          address,
+          amount: Number.isFinite(amountNum) && amountNum > 0 ? amountNum : undefined,
+        }),
+      });
+      const body = await r.json().catch(() => null);
+      if (!r.ok || !body?.url) throw new Error('failed');
+      setPayUrl(body.url);
+    } catch {
+      setPayError(true);
+    } finally {
+      setPayLoading(false);
+    }
+  };
+
+  const sharePayLink = async () => {
+    if (!payUrl) return;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'NeuroWallet', url: payUrl });
+      } else {
+        await navigator.clipboard.writeText(payUrl);
+        setLinkCopied(true);
+        setTimeout(() => setLinkCopied(false), 2000);
+      }
+    } catch { /* пользователь отменил share */ }
+  };
+
   return (
     <div className="px-6 pt-2 pb-6 flex flex-col items-center gap-5">
       <h2 className="text-white text-lg font-bold self-start">{t('receiveTitle')}</h2>
@@ -197,6 +247,50 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
       >
         {copied ? t('receiveCopied') : t('receiveCopyAddress')}
       </button>
+
+      {/* Платёжная ссылка (задача 1.5) */}
+      {!isDemo && (
+        <div
+          className="self-stretch rounded-2xl p-4 flex flex-col gap-3"
+          style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.12)' }}
+        >
+          <p className="text-[#3A6045] text-[10px] uppercase tracking-wider">{t('receiveRequestLabel')}</p>
+          <div className="flex gap-2">
+            <input
+              type="number"
+              inputMode="decimal"
+              value={reqAmount}
+              onChange={(e) => { setReqAmount(e.target.value); setPayUrl(''); }}
+              placeholder={t('receiveRequestAmountPh')}
+              className="flex-1 rounded-xl px-3 py-2.5 text-white text-sm bg-transparent outline-none"
+              style={{ background: '#101f14', border: '1px solid rgba(0,255,127,0.1)', caretColor: '#00FF7F' }}
+            />
+            <button
+              onClick={createPayLink}
+              disabled={payLoading}
+              className="px-4 py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-95 disabled:opacity-40"
+              style={{ background: 'rgba(0,255,127,0.1)', border: '1px solid rgba(0,255,127,0.25)', color: '#00FF7F' }}
+            >
+              {payLoading ? '…' : t('receiveCreateLink')}
+            </button>
+          </div>
+          {payUrl && (
+            <div className="flex flex-col gap-2">
+              <p className="text-[#7FBF9A] text-xs font-mono break-all">{payUrl}</p>
+              <button
+                onClick={sharePayLink}
+                className="py-3 rounded-xl text-xs font-semibold transition-all active:scale-95"
+                style={{ background: '#00FF7F', color: '#080C09' }}
+              >
+                {linkCopied ? t('receiveCopied') : t('receiveShareLink')}
+              </button>
+            </div>
+          )}
+          {payError && (
+            <p className="text-xs" style={{ color: '#F7931A' }}>{t('receiveLinkUnavailable')}</p>
+          )}
+        </div>
+      )}
 
       {/* Warning */}
       <div

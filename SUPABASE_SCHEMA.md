@@ -84,6 +84,15 @@ fee_native/fee_currency/fee_eur, warnings JSONB. RLS через принадле
 Метрика приёмки 1.2 «≥95% отправок с preview» считается напрямую:
 `count(tx_drafts)` vs `count(analytics_events where event='send_succeeded')`.
 
+### public.contacts / public.payment_requests (задачи 1.4/1.5)
+`contacts` — адресная книга (имя, монета, адрес, favorite; UNIQUE на
+user+coin+address); `payment_requests` + `payment_events` — платёжные ссылки
+(адрес, сумма, expiry, статусный след). Обе таблицы — та же privacy-категория,
+что tx_drafts (см. блок выше): финансовое поведение, проверять при
+GDPR-ревью. RLS «только своё»; анонимный резолв платёжной ссылки — через
+service role по точному uuid (политик для anon нет), см. NIGHT_DECISIONS
+D-1.5-1. Миграции: 0005, 0006.
+
 ## Конфигурация Auth (задача 0.7)
 
 | Параметр | Значение | Где |

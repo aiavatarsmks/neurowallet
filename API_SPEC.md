@@ -16,6 +16,10 @@
 | `/api/csp-report` | POST | — (шлёт браузер) | 10/мин/IP | — (дедуп-лог) |
 | `/api/track` | POST | JWT опционален (anon = pre-auth) | 60/мин/user, 30/мин/IP | — (пишет в analytics_events) |
 | `/api/tx-draft` | POST, PATCH | Supabase JWT | 30/мин/user | `tx_draft_created`, `tx_draft_updated` (без адресов/сумм) |
+| `/api/recipient-history` | GET | Supabase JWT | 30/мин/user | — (read-only) |
+| `/api/risk-event` | POST, PATCH | Supabase JWT | 30/мин/user | `risk_flagged`, `risk_override_confirmed` |
+| `/api/contacts` | GET, POST, PATCH, DELETE | Supabase JWT | 30/мин/user | `contact_saved/updated/deleted` (только id+монета) |
+| `/api/payment-request` | GET (аноним), POST, PATCH | GET: rate limit по IP; POST/PATCH: JWT | 30/мин/IP; 20/мин/user | `payment_request_created/updated` |
 
 Общие правила:
 - **Auth**: заголовок `Authorization: Bearer <supabase_access_token>`; невалидный/отсутствующий → `401`.
