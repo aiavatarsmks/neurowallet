@@ -45,6 +45,9 @@ export type AnalyticsEvent =
   | 'ai_chat_used'
   | 'ai_explain_used'
   | 'demo_entered'
+  | 'demo_task_completed'
+  | 'demo_funnel_completed'
+  | 'demo_convert_clicked'
   | 'session_identified'
   | 'sessions_revoked';
 

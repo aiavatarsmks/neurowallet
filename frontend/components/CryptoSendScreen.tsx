@@ -6,6 +6,7 @@ import { track, trackOnce, newTraceId } from '@/lib/analytics';
 import { simulateTransfer, isBlocked, type SimulationResult, type SimWarning } from '@/lib/crypto/simulate';
 import { assessRecipient, type RiskAssessment } from '@/lib/risk/engine';
 import { txFacts } from '@/lib/neura/facts';
+import { completeDemoTask } from '@/lib/demo-guide';
 import { fetchExplanation } from '@/lib/neura/explain-client';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -332,6 +333,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       onAvatarState?.('talking');
       setStep('done');
       setTimeout(() => onAvatarState?.('idle'), 3000);
+      if (isDemo) completeDemoTask('demo_send'); // воронка 1.8; chain-действий здесь нет
       return;
     }
 

@@ -6,6 +6,8 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { PinEntry } from '@/components/PinEntry';
 import { hasPinSetup } from '@/lib/pin';
 import { BalanceCard } from '@/components/BalanceCard';
+import { DemoGuide } from '@/components/DemoGuide';
+import { completeDemoTask } from '@/lib/demo-guide';
 import { TxHistory } from '@/components/TxHistory';
 import { TransferButton } from '@/components/TransferButton';
 import { BottomNav } from '@/components/BottomNav';
@@ -118,6 +120,13 @@ export default function WalletPage() {
 
   const isHome = activeTab === 'home';
   const isChat = activeTab === 'add';
+
+  // Demo-воронка (задача 1.8): отметки задач гида при посещении экранов.
+  useEffect(() => {
+    if (!isDemo) return;
+    if (activeTab === 'wallet') completeDemoTask('view_portfolio');
+    if (activeTab === 'receive') completeDemoTask('open_receive');
+  }, [isDemo, activeTab]);
   const showAvatar = isHome || isChat;
   const chatAvatarHeight = chatHasMessages ? 64 : 160;
   const avatarHeight = isHome ? 280 : chatAvatarHeight;
@@ -207,6 +216,7 @@ export default function WalletPage() {
       {/* ── Home ───────────────────────────────────────────── */}
       {activeTab === 'home' && (
         <>
+          <DemoGuide />
           <BalanceCard />
           <TransferButton
             onSend={() => setActiveTab('send')}

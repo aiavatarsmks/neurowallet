@@ -34,6 +34,9 @@ const EVENTS: Record<string, readonly string[]> = {
   ai_chat_used: ['lang'],
   ai_explain_used: ['kind'],
   demo_entered: [],
+  demo_task_completed: ['task'],
+  demo_funnel_completed: [],
+  demo_convert_clicked: [],
   session_identified: [],
   sessions_revoked: [],
 };
