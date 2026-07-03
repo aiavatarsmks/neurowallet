@@ -38,9 +38,9 @@
 
 Текущее решение:
 - Основной деплой перенесён с Netlify на **Vercel**.
-- Домен **neurovalet.tech** управляется через **IONOS**.
+- Домен **neurowallet.tech** управляется через **IONOS**.
 - В IONOS DNS прописаны записи, указывающие на Vercel.
-- Telegram Mini App подгружает приложение с домена **neurovalet.tech**.
+- Telegram Mini App подгружает приложение с домена **neurowallet.tech**.
 
 Контекст: ранее часть обновлений не проявлялась из-за старой привязки/deploy-контура Netlify. При проверке production-поведения сначала смотреть Vercel deployment и DNS IONOS, а не Netlify.
 
@@ -68,52 +68,63 @@
 
 ---
 
-## Блокеры безопасности (Priority 1 — СЕЙЧАС)
+## Блокеры безопасности (Priority 1) — ✅ ЗАКРЫТО
 
-Эти пункты блокируют любую работу с реальными деньгами:
+**Статус: все 7 пунктов Фазы 0 закрыты, Gate Фазы 0 пройден** (см. `IMPLEMENTATION_PLAN.md`, раздел «Фаза 0» и его Gate). CI зелёный, 0 vulnerabilities severity ≥ high. Эти блокеры больше не сдерживают дальнейшую работу.
 
-### 1. XOR-схема мультичейн-ключей — системный дефект
-**Файл:** `frontend/lib/crypto/transactions.ts:308`
-SOL/BTC/TRON/TON ключи восстанавливаются через XOR с ETH private key.
-Если скомпрометирован ETH-keystore — скомпрометированы все сети одновременно.
-**Требуется:** убрать XOR как способ хранения/восстановления ключей. Для non-custodial web допускается только временный переходный вариант с отдельными encrypted per-chain private keys и единой unlock-схемой; целевая архитектура — seed-derived keys через корректные BIP-44/SLIP paths, защищённые полноценным key management (WebCrypto/Secure Enclave/MPC в зависимости от выбранной стратегии).
-**Внимание:** требуется миграция существующих пользователей.
+Файлы и номера строк ниже оставлены как **историческая справка** (где был дефект на момент постановки) — не как открытые задачи.
 
-### 2. Ключи в localStorage — неприемлемо для prod
-**Файл:** `frontend/lib/crypto/wallet.ts:146`
-Keystore + XOR-blob в localStorage доступны через XSS, расширения браузера, devtools.
-**Требуется (минимум для MVP):**
-- scrypt N увеличить с 8192 до 131072 (2^17)
-- Seed-фраза (мнемоника) — никогда в localStorage ✅ уже выполнено
-- При unlock: расшифровать в память → использовать → обнулить переменную
-- Переменную с ключом обнулять явно (V8 GC не гарантирует немедленную очистку)
-**Требуется (для prod):** WebCrypto Secure Enclave или MPC-архитектура
+### 1. XOR-схема мультичейн-ключей — системный дефект ✅ ЗАКРЫТО
+**Файл (историч.):** `frontend/lib/crypto/transactions.ts:308`
+Было: SOL/BTC/TRON/TON ключи восстанавливались через XOR с ETH private key — компрометация ETH-keystore означала компрометацию всех сетей.
+**Закрыто:** XOR как способ хранения/восстановления ключей убран; перешли на отдельные encrypted per-chain private keys с единой unlock-схемой (переходный вариант; целевая seed-derived архитектура — в roadmap). Миграция существующих пользователей выполнена.
 
-### 3. AI endpoints без защиты
-**Файл:** `frontend/pages/api/neura-chat.ts:55`
-`/api/neura-chat` — нет проверки Supabase-сессии, нет rate limit → риск billing drain.
+### 2. Ключи в localStorage ✅ ЗАКРЫТО (минимум для MVP)
+**Файл (историч.):** `frontend/lib/crypto/wallet.ts:146`
+**Закрыто:**
+- scrypt N поднят с 8192 до 131072 (2^17), со старых keystore предусмотрена перешифровка.
+- Seed-фраза (мнемоника) — никогда в localStorage ✅
+- При unlock ключ расшифровывается в память → используется → переменная обнуляется явно.
+**Остаётся на prod (не блокер MVP):** WebCrypto Secure Enclave / MPC-архитектура.
 
-**Файл:** `frontend/pages/api/tg-notify.ts:18`
-`/api/tg-notify` принимает произвольный `telegramId` и `message` без auth → abuse.
+### 3. AI endpoints без защиты ✅ ЗАКРЫТО
+**Файлы (историч.):** `frontend/pages/api/neura-chat.ts:55`, `frontend/pages/api/tg-notify.ts:18`
+**Закрыто:**
+- Проверка Supabase JWT на обоих endpoint (запрос без валидного JWT → 401); `telegramId` берётся из сессии, не из body.
+- Rate limit на пользователя (превышение → 429).
+- Все вызовы AI логируются в audit_log.
 
-**Требуется:**
-- Добавить проверку Supabase JWT на оба endpoint
-- Rate limit: max N запросов/минуту на пользователя
-- Логировать все вызовы AI в audit_log
+### 4. CSP слабый ✅ ЗАКРЫТО
+**Файл (историч.):** `frontend/pages/_app.tsx:26`
+**Закрыто:** CSP перенесён из meta-тега в HTTP headers (`next.config.js`), `unsafe-inline` убран где возможно.
 
-### 4. CSP слабый
-**Файл:** `frontend/pages/_app.tsx:26`
-CSP задан meta-тегом с `unsafe-inline`.
-**Требуется:** CSP через HTTP header (next.config.js) с nonce/hash, убрать `unsafe-inline` где возможно.
+### 5. Уязвимые зависимости ✅ ЗАКРЫТО
+Было: 11 vulnerabilities (1 critical — Vitest RCE, 7 high — Next.js, Fastify, Vite).
+**Закрыто:** зависимости обновлены, 0 vulnerabilities severity ≥ high; CI блокирует merge на severity ≥ high.
 
-### 5. Уязвимые зависимости
-`npm audit` — 11 vulnerabilities: 1 critical (Vitest RCE), 7 high (Next.js, Fastify, Vite).
-**Требуется:** обновить Next.js, Fastify, Vitest. Настроить CI блокировку на severity ≥ high.
+### 6. Тесты не работают ✅ ЗАКРЫТО
+Было: backend `server.ts:8` (PrismaClient падал при пустой schema), frontend `vitest.config.ts` (не настроен alias `@/`).
+**Закрыто:** конфиги починены, тесты запускаются локально и в CI, pipeline зелёный.
 
-### 6. Тесты не работают
-- Backend: `server.ts:8` — PrismaClient падает при пустой schema
-- Frontend: `vitest.config.ts` — не настроен alias `@/`
-**Требуется:** починить конфиги, запустить CI зелёным.
+### 7. Supabase RLS + сессии ✅ ЗАКРЫТО
+**Закрыто:** RLS на всех пользовательских таблицах, `audit_log` append-only (insert только через service role); TTL сессий приведены к норме (access ≤ 15 мин, refresh ≤ 24 ч, инвалидация всех сессий при смене пароля); верификация Telegram `initData` (HMAC + freshness) на backend.
+
+---
+
+## Фаза 1 — Trust Layer — ✅ РЕАЛИЗОВАНА (1.1–1.8)
+
+Полностью реализована (детали и приёмка — в `IMPLEMENTATION_PLAN.md`, «Фаза 1»):
+
+- **1.1 Audit/Analytics spine** — схема доменных событий; каждое критичное действие эмитит событие с **trace id**, связывающим все слои (UI → API → provider → chain tx).
+- **1.2 Send review с симуляцией** — предпросмотр отправки с симуляцией комиссий до подписи.
+- **1.3 Risk engine + anti-poisoning** — проверка адреса/сети, защита от address-poisoning.
+- **1.4 Contacts + NeuroID** — адресная книга и резолв NeuroID.
+- **1.5 Paylinks** — платёжные ссылки.
+- **1.6 Security center (+ PIN flow)** — центр безопасности с настройкой/сменой PIN.
+- **1.7 Neura tx-explainer / recap** — объяснение транзакций и recap; **LLM работает только на validated fields** (никакого прямого доступа к ключам или неверифицированным данным).
+- **1.8 Demo-воронка** — demo mode с конверсионной воронкой.
+
+**Статус:** 114 тестов, CI зелёный.
 
 ---
 
@@ -201,18 +212,11 @@ ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
 
 ---
 
-## Рекомендованный порядок работы
+## Актуальный roadmap
 
-1. **Выбрать и зафиксировать бизнес-стратегию** (non-custodial / custodial / B2B). Это определяет key management, compliance, backend, AI-полномочия и roadmap.
-2. **Остановить real-money rollout.** Только demo/test funds.
-3. **Починить тесты и CI.** npm audit fix, зелёный pipeline.
-4. **Защитить AI endpoints.** Auth + rate limit + audit log.
-5. **Исправить scrypt N** с 8192 до 131072.
-6. **Переработать мультичейн key management.** Убрать XOR, определить временный encrypted per-chain вариант и целевую архитектуру.
-7. **Включить RLS** на все таблицы Supabase.
-8. **Реализовать transaction confirmation layer.** Simulation, адрес, сеть, комиссия, риск.
-9. **Начать Policy Engine для Нейры.**
-10. **Независимый security audit / pentest** перед публичным запуском.
+Актуальный roadmap ведётся в **`IMPLEMENTATION_PLAN.md`**. Читать оба файла вместе: `CLAUDE.md` (инварианты, принципы, «что не делать») + `IMPLEMENTATION_PLAN.md` (фазы, приёмка, порядок работ).
+
+**При конфликте приоритет у инвариантов из `CLAUDE.md`.**
 
 ---
 
