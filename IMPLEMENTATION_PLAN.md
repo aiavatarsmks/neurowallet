@@ -155,6 +155,12 @@
 Цель: снизить фрикшен входа, включить первые revenue lines, retention-механики.
 
 ### 2.1 Layered custody: passkey + embedded seedless (beta)
+- **[Interim, до MPC] Durable key storage — уйти с localStorage на Telegram CloudStorage для `wallet_*_enc` / `wallet_keystore` / `wallet_pin_blob`.**
+  Причина: в Telegram WebView localStorage может вытесняться между полными перезапусками приложения — наблюдался симптом «PIN Не настроен» + «неверный пароль» при уцелевшем `wallet_eth_address` (пропали `pin_blob` и enc-блобы). Пока ключи хранятся в localStorage, кошелёк на устройстве периодически становится нерабочим.
+  **Оценка: ~2.5–3.5 дня** (не ≤1 дня — сознательно откладываем из немедленного фикса; на стабильность сначала просто последим в обычном использовании).
+  **Дизайн:** CloudStorage — источник истины, localStorage — синхронный кэш. Hydration на старте (async-загрузка всех `wallet_*` в кэш, рендер за fail-closed 'checking'); write-through на ~6–8 write-site'ах (`saveWalletToStorage`, 10 setItem в onboarding, `setupPin`/`clearPin`/`clearWalletFromStorage`) — 67 синхронных read-site'ов НЕ трогаем; двусторонняя миграция (upload пока localStorage жив / restore если вытеснен). Вне Telegram (браузерный e-mail путь) остаётся localStorage.
+  **Риски:** (1) атомарность 11 ключей без транзакции — частичная запись + последующее вытеснение localStorage = потеря ключей → писать keystore/enc первыми, verify readback перед пометкой «migrated», localStorage как fallback до подтверждения; (2) зашифрованные блобы уходят на серверы Telegram — остаётся non-custodial (AES-GCM+PBKDF2, Telegram не расшифрует), но это смена threat-model, согласовать как продуктовое решение; (3) async-гонка — все read-пути обязаны уважать hydration-ready (fail-closed гейт уже задаёт паттерн); (4) лимиты CloudStorage — 4096 символов/значение и 1024 ключа: наши блобы (~100 символов enc/pin, keystore ~600–800) и ~11 ключей проходят с запасом; (5) Telegram <6.9 без CloudStorage → degrade на localStorage.
+  **Снимается полностью** при переходе на embedded MPC ниже — тогда локальное хранилище перестаёт быть источником истины для ключей.
 - Default retail path: embedded MPC wallet (провайдер класса Coinbase Embedded / Dynamic / Web3Auth — выбрать по TON+Tron+Solana покрытию, custody-модели, цене; свести в сравнительную таблицу перед интеграцией и согласовать с Максимом).
 - Advanced path: текущий import/create seed (усиленный в Фазе 0), позже hardware.
 - Passkey (WebAuthn) как backup/step-up фактор. Учесть ограничения Telegram WebView → fallback в external browser tab.
