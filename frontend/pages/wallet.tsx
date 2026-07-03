@@ -100,6 +100,17 @@ export default function WalletPage() {
     }
   }, [isDemo, walletPassword, user, isLoading, router]);
 
+  // Demo-воронка (задача 1.8): отметки задач гида при посещении экранов.
+  // ВАЖНО: этот хук ОБЯЗАН объявляться ДО любых ранних return ниже. Иначе
+  // при переходе на PIN-gate (pinRequired: false→true сразу после fresh
+  // import с установленным PIN) render с ранним return вызывает на один хук
+  // меньше предыдущего → React error #300 «Rendered fewer hooks».
+  useEffect(() => {
+    if (!isDemo) return;
+    if (activeTab === 'wallet') completeDemoTask('view_portfolio');
+    if (activeTab === 'receive') completeDemoTask('open_receive');
+  }, [isDemo, activeTab]);
+
   if (isLoading || (!user && !isDemo)) {
     return (
       <div
@@ -126,13 +137,6 @@ export default function WalletPage() {
 
   const isHome = activeTab === 'home';
   const isChat = activeTab === 'add';
-
-  // Demo-воронка (задача 1.8): отметки задач гида при посещении экранов.
-  useEffect(() => {
-    if (!isDemo) return;
-    if (activeTab === 'wallet') completeDemoTask('view_portfolio');
-    if (activeTab === 'receive') completeDemoTask('open_receive');
-  }, [isDemo, activeTab]);
   const showAvatar = isHome || isChat;
   const chatAvatarHeight = chatHasMessages ? 64 : 160;
   const avatarHeight = isHome ? 280 : chatAvatarHeight;
