@@ -5,6 +5,8 @@ import { upgradeStoredKeystoreIfWeak } from '@/lib/crypto/keystore-migration';
 import { track, trackOnce, newTraceId } from '@/lib/analytics';
 import { simulateTransfer, isBlocked, type SimulationResult, type SimWarning } from '@/lib/crypto/simulate';
 import { assessRecipient, type RiskAssessment } from '@/lib/risk/engine';
+import { txFacts } from '@/lib/neura/facts';
+import { fetchExplanation } from '@/lib/neura/explain-client';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -81,6 +83,29 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   const [riskOverridden, setRiskOverridden] = useState(false);
   const riskEventIdRef = useRef('');
 
+  // Neura explainer на review (задача 1.7)
+  const [neuraNote,        setNeuraNote]        = useState('');
+  const [neuraNoteLoading, setNeuraNoteLoading] = useState(false);
+
+  const askNeuraAboutDraft = async () => {
+    if (neuraNoteLoading) return;
+    setNeuraNoteLoading(true);
+    setNeuraNote('');
+    const reply = await fetchExplanation(
+      txFacts({
+        chain: coin,
+        type: 'out',
+        amount: amountNum,
+        address: address.trim(),
+        date: new Date().toISOString(),
+        fee: sim?.feeNative ?? NaN, // NaN → 'unknown' в фактах
+      }),
+      lang,
+    );
+    setNeuraNote(reply ?? t('txExplainFailed'));
+    setNeuraNoteLoading(false);
+  };
+
   useEffect(() => {
     setCoin(initialCoin);
     setAddress(initialAddress);
@@ -136,6 +161,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       setSim(null);
       setRisk(null);
       setRiskOverridden(false);
+      setNeuraNote('');
       setSimLoading(true);
 
       const { data: s } = await supabase.auth.getSession();
@@ -735,6 +761,26 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
                 />
                 <span className="text-xs text-white leading-relaxed">{t('csRiskOverrideLabel')}</span>
               </label>
+            )}
+          </div>
+        )}
+
+        {/* Neura explainer на review-карточке (задача 1.7) */}
+        {realReview && (
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={askNeuraAboutDraft}
+              disabled={neuraNoteLoading}
+              className="py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-95 disabled:opacity-40"
+              style={{ background: 'rgba(0,255,127,0.06)', border: '1px solid rgba(0,255,127,0.18)', color: '#00FF7F' }}
+            >
+              {neuraNoteLoading ? t('txExplainLoading') : t('csAskNeura')}
+            </button>
+            {neuraNote && (
+              <div className="rounded-xl p-3 text-xs leading-relaxed" style={{ background: 'rgba(0,255,127,0.04)', border: '1px solid rgba(0,255,127,0.12)' }}>
+                <span className="text-[#00FF7F] font-semibold">{t('navNeura')}: </span>
+                <span className="text-white">{neuraNote}</span>
+              </div>
             )}
           </div>
         )}

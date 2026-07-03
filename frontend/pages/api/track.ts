@@ -32,6 +32,7 @@ const EVENTS: Record<string, readonly string[]> = {
   risk_override: ['coin', 'reason_code'],
   first_send_succeeded: ['coin'],
   ai_chat_used: ['lang'],
+  ai_explain_used: ['kind'],
   demo_entered: [],
   session_identified: [],
   sessions_revoked: [],

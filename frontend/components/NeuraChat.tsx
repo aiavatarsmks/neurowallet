@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { fetchRealBalances, WalletBalances } from '@/lib/crypto/balances';
 import { supabase } from '@/lib/supabase';
 import { track, newTraceId } from '@/lib/analytics';
+import { recapFacts } from '@/lib/neura/facts';
+import { fetchExplanation } from '@/lib/neura/explain-client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 
@@ -77,6 +79,7 @@ export const NeuraChat: React.FC<NeuraChatProps> = ({ onAvatarState, avatarHeigh
   const [hasUserMessages, setHasUserMessages] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const walletCtxRef = useRef<(WalletBalances & { ethAddr?: string; btcAddr?: string; solAddr?: string; tronAddr?: string; tonAddr?: string }) | undefined>(undefined);
+  const [ctxReady, setCtxReady] = useState(false); // ref не триггерит render — флаг для recap-чипа
 
   // Load wallet balances once for Neira context
   useEffect(() => {
@@ -94,9 +97,26 @@ export const NeuraChat: React.FC<NeuraChatProps> = ({ onAvatarState, avatarHeigh
     fetchRealBalances(ethAddr, solAddr, btcAddr, tronAddr, tonAddr)
       .then((b) => {
         walletCtxRef.current = { ...b, ethAddr, solAddr, btcAddr, tronAddr, tonAddr };
+        setCtxReady(true);
       })
       .catch(() => {/* silent */});
   }, [isDemo]);
+
+  // Portfolio recap (задача 1.7): факты из снапшота балансов → structured card.
+  const sendRecap = async () => {
+    const ctx = walletCtxRef.current;
+    if (isTyping || !ctx) return;
+    setIsTyping(true);
+    onAvatarState?.('thinking');
+    const reply = await fetchExplanation(recapFacts(ctx), lang);
+    setMessages((m) => [
+      ...m,
+      { id: Date.now().toString(), from: 'neura', text: reply ?? fallbackResponse(lang), timestamp: now() },
+    ]);
+    setIsTyping(false);
+    onAvatarState?.('talking');
+    setTimeout(() => onAvatarState?.('idle'), 2500);
+  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -214,6 +234,20 @@ export const NeuraChat: React.FC<NeuraChatProps> = ({ onAvatarState, avatarHeigh
           </button>
         ))}
       </div>
+
+      {/* Portfolio recap chip (задача 1.7) */}
+      {ctxReady && (
+        <div className="px-6 pb-2 flex-shrink-0">
+          <button
+            onClick={sendRecap}
+            disabled={isTyping}
+            className="py-2 px-3 rounded-full text-xs font-semibold transition-all active:scale-95 disabled:opacity-40"
+            style={{ background: 'rgba(0,255,127,0.08)', border: '1px solid rgba(0,255,127,0.2)', color: '#00FF7F' }}
+          >
+            {t('chatRecapChip')}
+          </button>
+        </div>
+      )}
 
       {/* Input */}
       <div className="px-6 pb-2 flex-shrink-0">

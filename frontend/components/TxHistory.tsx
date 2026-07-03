@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { supabase } from '@/lib/supabase';
+import { txFacts } from '@/lib/neura/facts';
+import { fetchExplanation } from '@/lib/neura/explain-client';
 
 interface TxRow {
   id:      string;
@@ -104,10 +106,22 @@ interface TxHistoryProps {
 
 export const TxHistory: React.FC<TxHistoryProps> = ({ limit = 15 }) => {
   const { isDemo } = useAuth();
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [txs,     setTxs]     = useState<TxRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [noWallet, setNoWallet] = useState(false);
+
+  // Neura explainer (задача 1.7)
+  const [explainId,   setExplainId]   = useState('');
+  const [explainText, setExplainText] = useState('');
+
+  const explain = async (tx: TxRow) => {
+    if (explainId === tx.id) { setExplainId(''); return; } // toggle off
+    setExplainId(tx.id);
+    setExplainText('');
+    const reply = await fetchExplanation(txFacts(tx), lang);
+    setExplainText(reply ?? t('txExplainFailed'));
+  };
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -189,7 +203,7 @@ export const TxHistory: React.FC<TxHistoryProps> = ({ limit = 15 }) => {
           return (
             <li
               key={tx.id}
-              className="flex items-center gap-3 py-3.5"
+              className="flex flex-wrap items-center gap-3 py-3.5"
               style={{ borderBottom: '1px solid #0D1A10' }}
             >
               {/* Icon */}
@@ -236,6 +250,27 @@ export const TxHistory: React.FC<TxHistoryProps> = ({ limit = 15 }) => {
                   maximumFractionDigits: tx.chain === 'USDT' || tx.chain === 'TRC20' || tx.chain === 'USDT_TON' ? 2 : 6,
                 })} {tx.chain === 'TRC20' ? 'USDT' : tx.chain === 'USDT_TON' ? 'USDT' : tx.chain}
               </span>
+
+              {/* Neura explainer (задача 1.7): факты → structured объяснение */}
+              {!isDemo && (
+                <button
+                  onClick={() => explain(tx)}
+                  className="flex-shrink-0 text-sm px-1.5 transition-all active:scale-90"
+                  style={{ color: explainId === tx.id ? '#00FF7F' : '#3A6045' }}
+                  aria-label="explain"
+                >
+                  ✨
+                </button>
+              )}
+              {explainId === tx.id && (
+                <div
+                  className="w-full rounded-xl p-3 text-xs leading-relaxed"
+                  style={{ background: 'rgba(0,255,127,0.04)', border: '1px solid rgba(0,255,127,0.12)', color: '#fff' }}
+                >
+                  <span className="text-[#00FF7F] font-semibold">{t('navNeura')}: </span>
+                  {explainText || t('txExplainLoading')}
+                </div>
+              )}
             </li>
           );
         })}

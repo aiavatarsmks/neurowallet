@@ -43,6 +43,7 @@ export type AnalyticsEvent =
   | 'risk_override'
   | 'first_send_succeeded'
   | 'ai_chat_used'
+  | 'ai_explain_used'
   | 'demo_entered'
   | 'session_identified'
   | 'sessions_revoked';
