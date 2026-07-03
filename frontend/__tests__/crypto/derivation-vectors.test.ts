@@ -57,13 +57,17 @@ describe('multi-chain derivation vectors', () => {
     ]);
   });
 
-  it('per-chain encrypted blobs decrypt back to 32-byte keys', async () => {
-    for (const blob of [w.solEnc, w.btcEnc, w.tronEnc, w.tonEnc]) {
-      const key = await decryptBytes(blob, PASSWORD);
-      expect(key.length).toBe(32);
-      key.fill(0);
-    }
-  });
+  it(
+    'per-chain encrypted blobs decrypt back to 32-byte keys',
+    async () => {
+      for (const blob of [w.solEnc, w.btcEnc, w.tronEnc, w.tonEnc]) {
+        const key = await decryptBytes(blob, PASSWORD);
+        expect(key.length).toBe(32);
+        key.fill(0);
+      }
+    },
+    SLOW, // 4×PBKDF2-600k под параллельной нагрузкой полного прогона
+  );
 
   it('wallet object carries no XOR-scheme fields (removed in 4b3704e)', () => {
     expect(Object.keys(w).filter((k) => k.toLowerCase().includes('xor'))).toEqual([]);

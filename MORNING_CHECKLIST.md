@@ -8,6 +8,7 @@
 
 - [ ] `supabase/migrations/0003_tx_drafts.sql` — драфты + симуляция (задача 1.2, уже принято вчера)
 - [ ] `supabase/migrations/0004_risk_events.sql` — risk engine (задача 1.3)
+- [ ] `supabase/migrations/0005_contacts.sql` — адресная книга (задача 1.4)
 
 ## 2. Smoke в Telegram Mini App (после миграций)
 
@@ -20,6 +21,14 @@
 - [ ] `tx_drafts` — появляются строки после каждого review
 - [ ] `risk_events` — строки с level warning на новые адреса
 - [ ] `analytics_events` — события send_review_shown / risk_flagged
+- [ ] `contacts` — контакт появляется после «Сохранить и продолжить» в Send (1.4)
+
+## 4. Вопросы, требующие твоего решения
+
+- [ ] **NeuroID privacy (D-1.4-3):** нужен ли toggle «показывать меня в
+      директории»? Сейчас любой authenticated может отрезолвить любой NeuroID
+      (by design справочника). Если нужен — скажи дефолт (opt-in/opt-out),
+      сделаю колонку is_public + фильтр в resolve.
 
 ---
 *Файл пополняется по ходу ночи — блокеры и шаги задач 1.4–1.8 будут дописаны ниже.*

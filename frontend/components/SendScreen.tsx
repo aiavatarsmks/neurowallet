@@ -15,6 +15,8 @@ interface Contact {
   lastAmount?: string;
   currency?: TransferCurrency;
   address?: string;
+  favorite?: boolean;
+  serverId?: string; // id строки в public.contacts (если синхронизирован)
 }
 
 const STORAGE_KEY = 'nw_recipients_v1';
@@ -111,10 +113,102 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
     setSavedContacts(loadSavedContacts());
   }, []);
 
+  // ── Серверная адресная книга (задача 1.4) ────────────────────────────────
+  // Сервер — источник истины; локальные контакты доталкиваются на сервер
+  // однократно (миграция localStorage → contacts). До миграции 0005 GET
+  // отдаёт пусто, POST — 503: остаёмся на локальной копии, ничего не ломаем.
+  useEffect(() => {
+    if (isDemo || typeof window === 'undefined') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
+        if (!token) return;
+        const headers = { Authorization: `Bearer ${token}` };
+        const r = await fetch('/api/contacts', { headers });
+        const body = await r.json().catch(() => null);
+        if (cancelled || !Array.isArray(body?.contacts)) return;
+
+        const server: Contact[] = body.contacts.map((row: { id: string; name: string; coin: TransferCurrency; address: string; neuro_id: string | null; is_favorite: boolean }) => ({
+          id: `srv-${row.id}`,
+          serverId: row.id,
+          name: row.name,
+          initials: initialsFor(row.name),
+          trusted: Boolean(row.neuro_id),
+          currency: row.coin,
+          address: row.address,
+          favorite: row.is_favorite,
+        }));
+
+        const local = loadSavedContacts();
+        const localOnly = local.filter(
+          (c) => c.address && !server.some((s) => s.currency === c.currency && s.address === c.address),
+        );
+        // Однократный аплоад локальных контактов на сервер (fire-and-forget).
+        for (const c of localOnly) {
+          void fetch('/api/contacts', {
+            method: 'POST',
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: c.name, coin: c.currency, address: c.address, neuro_id: c.id.startsWith('neuro-') ? c.id.slice(6) : undefined }),
+          }).catch(() => {});
+        }
+
+        const merged = [...server, ...localOnly];
+        setSavedContacts(merged);
+        persistSavedContacts(merged);
+      } catch { /* локальная копия остаётся рабочей */ }
+    })();
+    return () => { cancelled = true; };
+  }, [isDemo]);
+
   const contacts = useMemo(() => {
     const base = isDemo ? DEMO_CONTACTS : [];
-    return [...savedContacts, ...base.filter((demo) => !savedContacts.some((c) => c.id === demo.id))];
+    const merged = [...savedContacts, ...base.filter((demo) => !savedContacts.some((c) => c.id === demo.id))];
+    // Favorites первыми, дальше — как были (свежие сверху).
+    return merged.sort((a, b) => Number(b.favorite ?? false) - Number(a.favorite ?? false));
   }, [isDemo, savedContacts]);
+
+  /** Тоггл избранного: локально мгновенно, на сервер fire-and-forget. */
+  const toggleFavorite = (contact: Contact) => {
+    const nextFav = !(contact.favorite ?? false);
+    setSavedContacts((prev) => {
+      const next = prev.map((c) => (c.id === contact.id ? { ...c, favorite: nextFav } : c));
+      persistSavedContacts(next);
+      return next;
+    });
+    if (!contact.serverId || isDemo) return;
+    void (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
+        if (!token) return;
+        await fetch('/api/contacts', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ id: contact.serverId, is_favorite: nextFav }),
+        });
+      } catch { /* не критично */ }
+    })();
+  };
+
+  // Недавние получатели для выбранной криптовалюты (из tx_drafts sent).
+  const [recents, setRecents] = useState<string[]>([]);
+  useEffect(() => {
+    if (step !== 'recipient' || isDemo || !isCrypto(currency)) { setRecents([]); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
+        if (!token) return;
+        const r = await fetch(`/api/recipient-history?coin=${currency}`, { headers: { Authorization: `Bearer ${token}` } });
+        const body = await r.json().catch(() => null);
+        if (!cancelled && Array.isArray(body?.addresses)) setRecents(body.addresses.slice(0, 5));
+      } catch { /* пустые recents */ }
+    })();
+    return () => { cancelled = true; };
+  }, [step, currency, isDemo]);
 
   const selectedCurrency = selected?.currency ?? currency;
   const selectedMeta = CURRENCIES[selectedCurrency];
@@ -168,6 +262,27 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
     persistSavedContacts(next);
     setSelected(contact);
     setStep('amount');
+
+    // Синхронизация в серверную адресную книгу (fire-and-forget).
+    if (!isDemo && isCrypto(currency) && contact.address) {
+      void (async () => {
+        try {
+          const { data } = await supabase.auth.getSession();
+          const token = data.session?.access_token;
+          if (!token) return;
+          await fetch('/api/contacts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              name: contact.name,
+              coin: currency,
+              address: contact.address,
+              neuro_id: resolvedNeuroId || undefined,
+            }),
+          });
+        } catch { /* локальная копия уже сохранена */ }
+      })();
+    }
   };
 
   const handleResolveNeuroId = async () => {
@@ -314,6 +429,15 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
                 >
                   {contact.trusted ? t('sendTrusted') : t('sendVerify')}
                 </span>
+                <span
+                  role="button"
+                  aria-label="favorite"
+                  onClick={(e) => { e.stopPropagation(); toggleFavorite(contact); }}
+                  className="text-lg px-1 select-none"
+                  style={{ color: contact.favorite ? '#F7931A' : '#3A6045' }}
+                >
+                  {contact.favorite ? '★' : '☆'}
+                </span>
               </button>
             );
           })}
@@ -417,6 +541,24 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
             )}
             {lookupError && (
               <p className="text-xs mt-2" style={{ color: '#FF5252' }}>{lookupError}</p>
+            )}
+            {recents.length > 0 && (
+              <div className="mt-3">
+                <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider mb-2">{t('sendRecentLabel')}</p>
+                <div className="flex flex-col gap-1.5">
+                  {recents.map((addr) => (
+                    <button
+                      key={addr}
+                      type="button"
+                      onClick={() => { setRecipientAddress(addr); setResolvedNeuroId(''); setLookupError(''); }}
+                      className="text-left text-xs font-mono px-3 py-2 rounded-xl truncate transition-all active:scale-[0.98]"
+                      style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.08)', color: '#7FBF9A' }}
+                    >
+                      {addr.length > 30 ? `${addr.slice(0, 16)}…${addr.slice(-10)}` : addr}
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
 
