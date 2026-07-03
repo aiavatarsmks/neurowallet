@@ -162,11 +162,20 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
 
   const sharePayLink = async () => {
     if (!payUrl) return;
+    // Человеческий текст вместо голой ссылки; в share sheet он редактируем.
+    const amountNum = parseFloat(reqAmount);
+    const what = Number.isFinite(amountNum) && amountNum > 0
+      ? `${amountNum} ${NET_LABELS[network]}`
+      : '';
+    const text = t('receiveShareText')
+      .replace('{what}', what ? t('receiveShareAmount').replace('{amt}', what) : '')
+      .replace('{url}', payUrl);
     try {
       if (navigator.share) {
-        await navigator.share({ title: 'NeuroWallet', url: payUrl });
+        // text содержит url — отдельное поле url не дублируем.
+        await navigator.share({ text });
       } else {
-        await navigator.clipboard.writeText(payUrl);
+        await navigator.clipboard.writeText(text);
         setLinkCopied(true);
         setTimeout(() => setLinkCopied(false), 2000);
       }
