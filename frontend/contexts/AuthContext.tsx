@@ -106,6 +106,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (event === 'SIGNED_IN' && session?.user && !sessionStorage.getItem('nw_identified')) {
         sessionStorage.setItem('nw_identified', '1');
         track('session_identified');
+        // Регистрация устройства для security center (1.6), fire-and-forget.
+        void fetch('/api/device-ping', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        }).catch(() => {});
       }
     });
 

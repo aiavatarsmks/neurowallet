@@ -44,7 +44,8 @@ export type AnalyticsEvent =
   | 'first_send_succeeded'
   | 'ai_chat_used'
   | 'demo_entered'
-  | 'session_identified';
+  | 'session_identified'
+  | 'sessions_revoked';
 
 export function track(
   event: AnalyticsEvent,

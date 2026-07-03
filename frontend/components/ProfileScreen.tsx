@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '@/contexts/AuthContext';
 import { neuroIdFromUserId, syncMyNeuroDirectory } from '@/lib/neuro-id';
+import SecurityCenter from '@/components/SecurityCenter';
 import { explorerUrlForAsset, SUPPORTED_ASSETS, type AssetAddressKey } from '@/lib/crypto/assets';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
@@ -350,6 +351,9 @@ export const ProfileScreen: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Security center lite (задача 1.6) */}
+      <SecurityCenter />
 
       {/* Neira trust level */}
       <div className="rounded-2xl p-4" style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.1)' }}>

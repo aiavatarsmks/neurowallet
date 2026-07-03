@@ -34,6 +34,7 @@ const EVENTS: Record<string, readonly string[]> = {
   ai_chat_used: ['lang'],
   demo_entered: [],
   session_identified: [],
+  sessions_revoked: [],
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
