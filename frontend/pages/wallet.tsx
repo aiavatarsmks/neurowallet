@@ -69,7 +69,10 @@ export default function WalletPage() {
   const [activeTab, setActiveTab] = useState<Tab>('home');
   const [avatarState, setAvatarState] = useState<'idle' | 'talking' | 'thinking'>('idle');
   const [chatHasMessages, setChatHasMessages] = useState(false);
-  const [pinRequired, setPinRequired] = useState(false);
+  // Fail-closed PIN gate. 'checking' = status not yet resolved → render a
+  // loading placeholder, NEVER wallet content (deny-by-default per CLAUDE.md).
+  // Only ever moves to 'open' after localStorage has been read on the client.
+  const [pinGate, setPinGate] = useState<'checking' | 'locked' | 'open'>('checking');
   const [walletPassword, setWalletPassword] = useState<string | null>(null);
   const [receiveCoin, setReceiveCoin] = useState<ReceiveNetwork>('ETH');
   const [cryptoSendCoin, setCryptoSendCoin] = useState<CryptoSendCoin>('ETH');
@@ -81,23 +84,28 @@ export default function WalletPage() {
     }
   }, [isLoading, user, isDemo, router]);
 
-  // Check if PIN gate is needed (wallet exists + PIN set up + not yet unlocked)
+  // Resolve the PIN gate. Fail-closed: the gate starts 'checking' and access
+  // stays CLOSED until this effect has actually read localStorage. We never
+  // default to 'open' during the async window — that would leak wallet content
+  // before the gate is decided (the observed "PIN не спросил, сразу пустил"
+  // race). localStorage is synchronous, so once we reach the read the status
+  // is definitive.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (isDemo) {
-      setPinRequired(false);
+    if (isDemo) { setPinGate('open'); return; }
+    if (isLoading || !user) return; // wait for auth; stay 'checking' (closed)
+
+    const hasWallet = !!localStorage.getItem('wallet_eth_address');
+    if (!hasWallet) {
+      // Пустой localStorage при живой сессии (смена origin, новое устройство,
+      // очистка данных) — ведём на восстановление. Остаёмся 'checking', чтобы
+      // контент кошелька не мелькнул во время редиректа.
+      router.replace('/onboarding');
       return;
     }
-    const hasWallet = !!localStorage.getItem('wallet_eth_address');
-    if (hasWallet && hasPinSetup() && walletPassword === null) {
-      setPinRequired(true);
-    }
-    // Пустой localStorage при живой сессии (смена origin, новое устройство,
-    // очистка данных) — не молчим с пустыми экранами, а ведём на
-    // восстановление: onboarding предлагает создать или переимпортировать seed.
-    if (!hasWallet && user && !isLoading) {
-      router.replace('/onboarding');
-    }
+    // Wallet present: locked if a PIN is configured and not yet unlocked,
+    // otherwise open. Same key (wallet_pin_blob) that PinEntry/verifyPin read.
+    setPinGate(hasPinSetup() && walletPassword === null ? 'locked' : 'open');
   }, [isDemo, walletPassword, user, isLoading, router]);
 
   // Demo-воронка (задача 1.8): отметки задач гида при посещении экранов.
@@ -111,7 +119,9 @@ export default function WalletPage() {
     if (activeTab === 'receive') completeDemoTask('open_receive');
   }, [isDemo, activeTab]);
 
-  if (isLoading || (!user && !isDemo)) {
+  // Fail-closed loading gate: render the placeholder — never wallet content —
+  // until BOTH auth is resolved AND the PIN gate status is known ('checking').
+  if (isLoading || (!user && !isDemo) || (!isDemo && pinGate === 'checking')) {
     return (
       <div
         className="min-h-screen flex items-center justify-center max-w-[430px] mx-auto"
@@ -123,13 +133,13 @@ export default function WalletPage() {
     );
   }
 
-  // PIN gate — shown when wallet is locked
-  if (!isDemo && pinRequired && walletPassword === null) {
+  // PIN gate — shown when the wallet is locked (PIN configured, not unlocked).
+  if (!isDemo && pinGate === 'locked' && walletPassword === null) {
     return (
       <PinEntry
         onSuccess={(pwd) => {
           setWalletPassword(pwd);
-          setPinRequired(false);
+          setPinGate('open');
         }}
       />
     );
