@@ -57,6 +57,28 @@ export function getRemainingAttempts(): number {
 }
 
 /**
+ * Проверка пароля кошелька без разблокировки UI: пробуем расшифровать любой
+ * per-chain блоб (PBKDF2+AES-GCM, ~1 с). Нужна для флоу «установить/сменить
+ * PIN» из Security center (задача-фикс после переезда домена). Ключ сразу
+ * зануляется. false — неверный пароль ИЛИ в localStorage нет ни одного блоба.
+ */
+export async function verifyWalletPassword(password: string): Promise<boolean> {
+  if (typeof window === 'undefined' || !password) return false;
+  for (const key of ['wallet_sol_enc', 'wallet_btc_enc', 'wallet_tron_enc', 'wallet_ton_enc']) {
+    const blob = localStorage.getItem(key);
+    if (!blob) continue;
+    try {
+      const bytes = await decryptBytes(blob, password);
+      bytes.fill(0);
+      return true;
+    } catch {
+      return false; // блоб есть, пароль не подошёл
+    }
+  }
+  return false; // проверять нечем — кошелька нет
+}
+
+/**
  * Verify PIN and return decrypted wallet password.
  * Throws on wrong PIN or lockout.
  */

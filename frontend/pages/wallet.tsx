@@ -92,7 +92,13 @@ export default function WalletPage() {
     if (hasWallet && hasPinSetup() && walletPassword === null) {
       setPinRequired(true);
     }
-  }, [isDemo, walletPassword]);
+    // Пустой localStorage при живой сессии (смена origin, новое устройство,
+    // очистка данных) — не молчим с пустыми экранами, а ведём на
+    // восстановление: onboarding предлагает создать или переимпортировать seed.
+    if (!hasWallet && user && !isLoading) {
+      router.replace('/onboarding');
+    }
+  }, [isDemo, walletPassword, user, isLoading, router]);
 
   if (isLoading || (!user && !isDemo)) {
     return (
