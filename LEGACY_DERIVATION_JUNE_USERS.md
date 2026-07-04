@@ -1,8 +1,10 @@
-# Legacy BTC/TON derivation — "June users" (OPEN — needs a product decision)
+# Legacy BTC/TON derivation — "June users" (RESOLVED — accept + document)
 
-> Custody-sensitive. Left untouched pending Maksim's decision (per the
-> "don't touch keys/signing/custody without explicit permission" rule).
-> This file is analysis + the open question, not a change.
+> **Decision (2026-07-04, Maksim): accept + document. No code change.**
+> Confirmed that no June tester holds real assets on the old addresses (only
+> empty/test wallets), so no dual-derive and no sweep tool — this is recorded
+> as known, accepted behavior (see `KEY_MANAGEMENT.md`). Derivation/import code
+> was left untouched throughout. The analysis below is kept for the record.
 
 ## TL;DR
 
@@ -80,13 +82,13 @@ tradeoffs and one must be chosen deliberately:
    but record it. (These are mainnet paths — `bitcoin.networks.bitcoin` — so real
    funds are possible, but tester balances are likely negligible.)
 
-## Open question for Maksim
+## Resolution
 
-**How many June testers exist, and do any hold real BTC or TON on the old
-addresses?**
+**2026-07-04 — Maksim confirmed no June tester holds real BTC/TON on the old
+addresses (only empty/test wallets). Chosen: option 4 (accept + document).**
 
-- If effectively none → option 4 (accept + document), maybe option 3 for safety.
-- If some do → decide between option 1 (dual-derive) and option 2 (sweep). Both
-  require your go-ahead to touch derivation/signing.
-
-I've left all derivation/import code unchanged.
+- No dual-derive, no sweep tool, no warning banner — nothing to build.
+- Behavior recorded as known/accepted in `KEY_MANAGEMENT.md`.
+- Derivation/import code left unchanged.
+- If this ever changes (a user reports funds on a legacy address), reopen and
+  revisit options 1–3 above.
