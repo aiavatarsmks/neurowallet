@@ -118,7 +118,7 @@ export async function writeAuditLog(
   }
 }
 
-function getClientIp(req: NextApiRequest): string | null {
+export function getClientIp(req: NextApiRequest): string | null {
   const forwardedFor = req.headers['x-forwarded-for'];
   if (typeof forwardedFor === 'string') return forwardedFor.split(',')[0]?.trim() || null;
   return req.socket.remoteAddress ?? null;

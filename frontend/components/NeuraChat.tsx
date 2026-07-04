@@ -26,6 +26,30 @@ function loginRequiredResponse(lang: 'ru' | 'en'): string {
     : 'Войди в аккаунт, чтобы Нейра могла безопасно отвечать по твоему кошельку.';
 }
 
+const asApiMessages = (history: { from: 'neura' | 'user'; text: string }[]) =>
+  history.map((m) => ({ role: m.from === 'user' ? ('user' as const) : ('assistant' as const), content: m.text }));
+
+// Demo mode: no Supabase session exists, so we hit the public, IP-rate-limited
+// demo endpoint. Neura converses for real (demo prompt) but gets NO wallet
+// context — she redirects personal-data questions to account creation.
+async function getDemoResponse(
+  history: { from: 'neura' | 'user'; text: string }[],
+  lang: 'ru' | 'en',
+): Promise<string> {
+  try {
+    const res = await fetch('/api/neura-demo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: asApiMessages(history), lang }),
+    });
+    const data = await res.json();
+    if (data.error) return data.error;
+    return data.reply ?? fallbackResponse(lang);
+  } catch {
+    return fallbackResponse(lang);
+  }
+}
+
 async function getResponse(
   history: { from: 'neura' | 'user'; text: string }[],
   lang: 'ru' | 'en',
@@ -45,10 +69,7 @@ async function getResponse(
         ...(traceId ? { 'x-trace-id': traceId } : {}),
       },
       body: JSON.stringify({
-        messages: history.map((m) => ({
-          role: m.from === 'user' ? 'user' : 'assistant',
-          content: m.text,
-        })),
+        messages: asApiMessages(history),
         walletContext,
         lang,
       }),
@@ -136,8 +157,11 @@ export const NeuraChat: React.FC<NeuraChatProps> = ({ onAvatarState, avatarHeigh
     onAvatarState?.('thinking');
 
     const traceId = newTraceId();
-    track('ai_chat_used', { lang }, traceId);
-    getResponse(historyForApi, lang, walletCtxRef.current, traceId).then((response) => {
+    track('ai_chat_used', { lang, demo: isDemo }, traceId);
+    const pending = isDemo
+      ? getDemoResponse(historyForApi, lang)
+      : getResponse(historyForApi, lang, walletCtxRef.current, traceId);
+    pending.then((response) => {
       const neuraMsg: Message = { id: (Date.now() + 1).toString(), from: 'neura', text: response, timestamp: now() };
       setMessages((m) => [...m, neuraMsg]);
       setIsTyping(false);
