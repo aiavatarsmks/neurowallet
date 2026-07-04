@@ -1,10 +1,26 @@
-# Embedded / MPC wallet providers — comparison for Phase 2.1 (PREP ONLY)
+# Embedded / MPC wallet providers — Phase 2.1 (DECISION: Web3Auth)
 
-> Sanctioned prep step for Фаза 2.1 ("свести в сравнительную таблицу перед
-> интеграцией и согласовать с Максимом"). **Nothing is integrated.** This is a
-> decision framework + a shortlist + a verification/PoC plan. Numbers marked
-> *(verify)* change frequently and MUST be re-checked against current provider
-> docs before any decision. Compiled 2026-07-04.
+> **Decision (2026-07-04, Maksim): Web3Auth for Phase 2.1.** Rationale and the
+> grounded Turnkey-vs-Web3Auth detail are in the section below. **Nothing is
+> integrated** — real onboarding integration is deferred until the Phase 1 gate
+> passes; the only active work is an isolated signing PoC (see PoC plan).
+> Compiled 2026-07-04.
+
+## Decision — Web3Auth (grounded facts)
+
+Chosen for the Phase 2.1 beta over Turnkey (kept as fallback). Verified facts:
+
+| Axis | **Web3Auth (chosen)** | **Turnkey (fallback)** |
+|---|---|---|
+| **Pricing at our scale** | **Free ≤ 1,000 MAW**, then **$0.02/MAU** (Base/Growth/Scale/Enterprise). Friends-testers = €0. [7][8] | Transaction/signing-based ("affordable", 50–100 ms signing); no public per-MAU figure → quote needed. [9] |
+| **Custody (who holds keys)** | **MPC / Shamir shares.** In a 2/3 setup: user holds a share, Web3Auth's **5/9 node network** holds one, backup/social another. No single party (incl. Web3Auth) can reconstruct; reassembled client-side at sign time. [10] | **TEE, no shares.** Full key lives only inside **AWS Nitro secure enclaves**, enclave-bound encryption; raw key never leaves and no one incl. Turnkey can access it — credential + policy authorize signing. [9] |
+| **Integration w/ our stack** | Lighter: higher-level SDK, social/email login + MPC recovery built in; **custom-JWT verifier lets us keep Supabase auth** (feed our JWT to gate the share); keep `lib/crypto` for all 5 chains via MPC Core Kit (ed25519+secp256k1). ~1–2 wk to beta. | Heavier: low-level signer, we build auth→Turnkey mapping + recovery UX; keeps Supabase auth untouched; chain-agnostic signing fits `lib/crypto`. ~2–4 wk. |
+| **Telegram Mini App** | **Yes — first-party.** Dedicated TMA support + guide + SDKs designed for TMA. [11] | Not found — API works in a TMA WebView but no advertised TMA-specific integration. |
+
+**Custody nuance:** both are non-custodial. Turnkey's TEE is the *cleaner* custody
+story (key never leaves, no share transport) and is a candidate for later prod
+hardening; Web3Auth's MPC is a well-accepted self-custodial model and ships
+faster with first-party TMA support — decisive for the beta.
 
 ## Why we might move (recap)
 
@@ -56,18 +72,16 @@ tx layer. Confirm this in a PoC (below) before committing.
 *Sources are indicative; the "Gaps" cells especially need per-provider doc
 confirmation — chain lists move fast.*
 
-## Shortlist & rationale
+## Shortlist & rationale (historical — decision made above)
 
-1. **Turnkey** — strongest fit on the hard constraint: explicit chain-agnostic
-   raw signing (EVM/Solana/Bitcoin/TRON) + ed25519 for TON, non-custodial, keep
-   our `lib/crypto` tx layer intact. Trade-off: more of a "signing infra" — we
-   build more UX (auth/recovery) ourselves.
-2. **Web3Auth** — strong: multi-curve MPC with social/passkey recovery baked in
-   (less to build), documented Tron, ed25519 for TON/Solana. Trade-off: MPC
-   share model + WebView social-login flow to validate.
-3. **Privy / Dynamic / Coinbase** — nicest consumer UX but EVM+Solana-centric;
-   only viable if their raw-signing escape hatch cleanly covers TON+TRX+BTC.
-   Verify before shortlisting.
+1. **Web3Auth — CHOSEN.** Multi-curve MPC (ed25519 for TON/Solana, secp256k1
+   for ETH/BTC/TRX) with social/passkey recovery baked in, first-party Telegram
+   Mini App support, free ≤1k MAW, and a custom-JWT verifier that keeps our
+   Supabase auth. Fastest path to the beta.
+2. **Turnkey — fallback.** Cleaner TEE custody story; kept in reserve for prod
+   hardening or if the Web3Auth PoC fails.
+3. **Privy / Dynamic / Coinbase** — EVM+Solana-centric; not pursued (TON/TRX/BTC
+   gaps).
 
 ## Telegram WebView caveat
 
@@ -108,3 +122,8 @@ architecture fork, and Phase 2 is gated on the Phase 1 usability run regardless)
 - [4] [Web3Auth blog — Introducing Ed25519 in Web3Auth's MPC](https://blog.web3auth.io/introducing-ed25519-in-web3auths-mpc-secure-signing-for-dapps-and-wallets/)
 - [5] [Openfort — Top 10 Embedded Wallets in 2026 (pricing, auth, smart accounts)](https://www.openfort.io/blog/top-10-embedded-wallets)
 - [6] [Turnkey — Embedded Wallets docs](https://docs.turnkey.com/embedded-wallets/overview)
+- [7] [Web3Auth — Pricing (free ≤1,000 MAW, then $0.02/MAU)](https://web3auth.io/pricing.html)
+- [8] [Web3Auth](https://web3auth.io/)
+- [9] [Turnkey review 2026 — TEE/AWS Nitro, no shares, non-custodial, tx-based pricing](https://cryptoadventure.com/turnkey-review-2026-embedded-wallet-infrastructure-key-control-and-the-real-custody-tradeoff/)
+- [10] [Web3Auth — Multi-Party Computation (Shamir shares, 5/9 network, 2/3 self-custodial)](https://web3auth.io/docs/features/mpc)
+- [11] [Web3Auth — Unlock the Power of Telegram Mini-Apps](https://blog.web3auth.io/unlock-the-power-of-telegram-mini-apps-with-web3auth/)
