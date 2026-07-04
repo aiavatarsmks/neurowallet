@@ -323,11 +323,10 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
   const handleInvite = async () => {
     try {
       if (navigator.share) {
-        await navigator.share({
-          title: 'NeuroWallet',
-          text: INVITE_TEXT,
-          url: INVITE_BOT_URL,
-        });
+        // INVITE_TEXT уже содержит ссылку. Отдельное поле url НЕ передаём:
+        // Telegram share использует url и выбрасывает text → уходит голая
+        // ссылка без пояснения (тот же баг, что чинили для paylink).
+        await navigator.share({ text: INVITE_TEXT });
       } else {
         await navigator.clipboard.writeText(INVITE_TEXT);
       }
@@ -588,7 +587,7 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
 
           <button
             onClick={handleInvite}
-            className="w-full py-3.5 rounded-2xl font-semibold text-sm transition-all active:scale-95"
+            className="w-full py-3.5 mb-8 rounded-2xl font-semibold text-sm transition-all active:scale-95"
             style={{ background: 'transparent', border: '1px solid rgba(0,255,127,0.18)', color: '#00FF7F' }}
           >
             {copiedInvite ? t('sendInviteLinkReady') : t('sendInviteRecipient')}

@@ -303,7 +303,7 @@ export const translations = {
     walletHours24: '24ч',
 
     // ── Send (fiat) (components/SendScreen.tsx) ──────────────────────────────
-    sendInviteText: 'Привет! Приглашаю тебя в NeuroWallet — криптокошелёк нового поколения с AI-агентом внутри.',
+    sendInviteText: 'Привет! Приглашаю тебя в NeuroWallet — AI-кошелёк с помощником Нейрой: подскажет по финансам и поможет с переводами.',
     sendOpenInTelegram: 'Открыть в Telegram:',
     currencyEUR: 'Евро',
     currencyUSD: 'Доллар',
@@ -744,7 +744,7 @@ export const translations = {
     walletHours24: '24h',
 
     // ── Send (fiat) (components/SendScreen.tsx) ──────────────────────────────
-    sendInviteText: "Hi! I'm inviting you to NeuroWallet — a next-gen crypto wallet with an AI agent inside.",
+    sendInviteText: "Hi! I'm inviting you to NeuroWallet — an AI wallet with an assistant named Neura: she helps with your finances and transfers.",
     sendOpenInTelegram: 'Open in Telegram:',
     currencyEUR: 'Euro',
     currencyUSD: 'Dollar',
