@@ -85,6 +85,43 @@ export function checkRateLimitMemory(key: string, maxPerMinute: number): boolean
   return true;
 }
 
+const DAY_MS = 86_400_000;
+const dayBuckets = new Map<string, RateLimitBucket>();
+
+/**
+ * Durable global daily counter (Upstash, day-bucketed key, ~25h TTL) with
+ * in-memory fallback. A hard upper bound on total requests per day for a key,
+ * independent of any per-IP limit — so IP rotation can't run costs unbounded.
+ * Returns true while under budget.
+ */
+export async function checkDailyBudget(key: string, maxPerDay: number): Promise<boolean> {
+  const r = getRedis();
+  if (r) {
+    try {
+      const bucket = `budget:${key}:${Math.floor(Date.now() / DAY_MS)}`;
+      const count = await r.incr(bucket);
+      if (count === 1) await r.expire(bucket, 90_000); // ~25h, past the day edge
+      return count <= maxPerDay;
+    } catch (err) {
+      console.warn('[daily-budget] Upstash unavailable, in-memory fallback:', err instanceof Error ? err.message : err);
+    }
+  }
+  return checkDailyBudgetMemory(key, maxPerDay);
+}
+
+/** In-memory fallback: per lambda instance (softer — each instance gets its own budget). */
+export function checkDailyBudgetMemory(key: string, maxPerDay: number): boolean {
+  const now = Date.now();
+  const current = dayBuckets.get(key);
+  if (!current || current.resetAt <= now) {
+    dayBuckets.set(key, { count: 1, resetAt: now + DAY_MS });
+    return true;
+  }
+  if (current.count >= maxPerDay) return false;
+  current.count += 1;
+  return true;
+}
+
 /** Validated x-trace-id request header (client-generated UUID per flow), or null. */
 export function getTraceId(req: NextApiRequest): string | null {
   const v = req.headers['x-trace-id'];

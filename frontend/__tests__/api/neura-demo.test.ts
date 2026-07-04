@@ -1,15 +1,17 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import handler from '@/pages/api/neura-demo';
-import { checkRateLimit } from '@/lib/server/api-security';
+import { checkRateLimit, checkDailyBudget } from '@/lib/server/api-security';
 import { mockReq, mockRes } from './helpers';
 
-// Keep getClientIp real (reads the mockReq socket), stub only the limiter.
+// Keep getClientIp real (reads the mockReq socket), stub the limiters.
 vi.mock('@/lib/server/api-security', async (orig) => ({
   ...(await orig<typeof import('@/lib/server/api-security')>()),
   checkRateLimit: vi.fn(),
+  checkDailyBudget: vi.fn(),
 }));
 
 const mockedLimit = vi.mocked(checkRateLimit);
+const mockedBudget = vi.mocked(checkDailyBudget);
 
 function demoReq(body?: unknown) {
   return mockReq({
@@ -23,6 +25,7 @@ describe('POST /api/neura-demo', () => {
     vi.clearAllMocks();
     process.env.OPENROUTER_API_KEY = 'test-key';
     mockedLimit.mockResolvedValue(true);
+    mockedBudget.mockResolvedValue(true);
   });
 
   it('serves without a JWT but rate-limits per IP', async () => {
@@ -31,6 +34,18 @@ describe('POST /api/neura-demo', () => {
     await handler(demoReq(), res);
     expect(res.statusCode).toBe(429);
     expect(mockedLimit).toHaveBeenCalledWith('neura-demo:127.0.0.1', 8);
+  });
+
+  it('enforces a global daily budget even when the per-IP limit passes', async () => {
+    mockedBudget.mockResolvedValue(false); // budget exhausted
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const res = mockRes();
+    await handler(demoReq(), res);
+    expect(res.statusCode).toBe(429);
+    expect(mockedBudget).toHaveBeenCalledWith('neura-demo', 2000);
+    expect(fetchMock).not.toHaveBeenCalled(); // no upstream spend once capped
+    vi.unstubAllGlobals();
   });
 
   it('uses the demo prompt, caps tokens, and forwards NO wallet context', async () => {

@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { checkRateLimit, getClientIp } from '@/lib/server/api-security';
+import { checkRateLimit, checkDailyBudget, getClientIp } from '@/lib/server/api-security';
 
 /**
  * pages/api/neura-demo.ts
@@ -18,6 +18,9 @@ import { checkRateLimit, getClientIp } from '@/lib/server/api-security';
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MODEL = 'openai/gpt-4o-mini';
 const MAX_PER_MINUTE_PER_IP = 8;
+// Hard global ceiling per day (override via env). Independent of the per-IP
+// limit: even if an attacker rotates IPs, total demo LLM spend is capped.
+const MAX_PER_DAY_GLOBAL = Number(process.env.NEURA_DEMO_DAILY_MAX) || 2000;
 const MAX_TOKENS = 300;
 
 type Lang = 'ru' | 'en';
@@ -36,9 +39,10 @@ Reply in English, kindly and to the point, usually 2–4 sentences.
 IMPORTANT — demo boundary: you have NO access to personal data (a specific user's balance, transactions, addresses, prices) — it doesn't exist in the demo. If asked about personal data ("my balance", "my transactions", "how much X do I have") — do NOT invent amounts, prices, or addresses. Gently explain that personal data needs a real wallet, and suggest creating a wallet or signing in.
 Do not give individual investment advice (what specifically to buy/sell).`;
 
-const ERRORS: Record<Lang, { rateLimited: string; noApiKey: string; noMessages: string; unavailable: string; noReply: string }> = {
+const ERRORS: Record<Lang, { rateLimited: string; budgetExhausted: string; noApiKey: string; noMessages: string; unavailable: string; noReply: string }> = {
   ru: {
     rateLimited: 'Слишком много запросов к Нейре. Попробуй через минуту.',
+    budgetExhausted: 'Демо-Нейра сегодня уже наобщалась 🙂 Загляни завтра или создай аккаунт.',
     noApiKey: 'AI временно не настроен на сервере (нет ключа).',
     noMessages: 'Нет сообщений.',
     unavailable: 'AI временно недоступен, попробуй чуть позже.',
@@ -46,6 +50,7 @@ const ERRORS: Record<Lang, { rateLimited: string; noApiKey: string; noMessages: 
   },
   en: {
     rateLimited: 'Too many requests to Neura. Try again in a minute.',
+    budgetExhausted: "Demo Neura has hit today's limit 🙂 Come back tomorrow or create an account.",
     noApiKey: 'AI is temporarily not configured on the server (missing key).',
     noMessages: 'No messages.',
     unavailable: 'AI is temporarily unavailable, try again later.',
@@ -68,10 +73,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const lang: Lang = body.lang === 'en' ? 'en' : 'ru';
   const errors = ERRORS[lang];
 
-  // Strict per-IP rate limit — the only gate for this unauthenticated path.
+  // Per-IP rate limit (checked first, so IP-rejected traffic never eats the
+  // global budget).
   const ip = getClientIp(req) ?? 'noip';
   if (!(await checkRateLimit(`neura-demo:${ip}`, MAX_PER_MINUTE_PER_IP))) {
     return res.status(429).json({ error: errors.rateLimited });
+  }
+  // Global daily ceiling — hard cap on total spend even under IP rotation.
+  if (!(await checkDailyBudget('neura-demo', MAX_PER_DAY_GLOBAL))) {
+    return res.status(429).json({ error: errors.budgetExhausted });
   }
 
   const apiKey = process.env.OPENROUTER_API_KEY;
