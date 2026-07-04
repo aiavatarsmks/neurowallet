@@ -1,6 +1,7 @@
 # NeuroWallet — Архитектура
 
-> Актуально на 2026-07-02, после закрытия Фазы 0 (security-блокеры).
+> Актуально на 2026-07-04, после закрытия Фазы 0 (security-блокеры) и
+> реализации Фазы 1 (trust layer).
 > Стратегия зафиксирована: **non-custodial wallet** — все ключи у пользователя,
 > сервер не может восстановить кошелёк ни при каких условиях.
 
@@ -60,7 +61,15 @@ NeuroWallet — мультичейн крипто-кошелёк (ETH, BTC, SOL,
    только через service role; webhook — fail-closed по секрету.
 5. **Граница demo ↔ real**: demo-режим работает на локальных мок-данных
    (`DEMO_TXS` и т.п.) и не выполняет ни одного chain-действия и ни одного
-   вызова wallet-API.
+   вызова wallet-API. Живой AI в demo идёт через публичный `/api/neura-demo`
+   (без JWT), но **без walletContext** и без доступа к реальным данным —
+   защита: per-IP rate limit + глобальный дневной бюджет.
+6. **Клиентская устойчивость (fail-closed)**: PIN-гейт `wallet.tsx` держит
+   контент кошелька закрытым, пока статус PIN не прочитан из localStorage
+   (deny-by-default, состояние `'checking' → loading`). Любой render-throw
+   ловится верхнеуровневым `ErrorBoundary` — вместо белого экрана
+   recoverable-экран с safe reset (переимпорт seed), никогда не молчаливый
+   доступ.
 
 ## Компоненты
 
@@ -70,7 +79,7 @@ NeuroWallet — мультичейн крипто-кошелёк (ETH, BTC, SOL,
 | `frontend/pages/api/*` | Next.js API routes | BFF-слой: auth, rate limit, audit, прокси к внешним API. Спецификация — `API_SPEC.md` |
 | Supabase | Auth + Postgres | Идентичность (email-пароль и Telegram initData), RLS-таблицы, append-only audit. Схема — `SUPABASE_SCHEMA.md` |
 | `backend/` | Fastify 5 + Prisma | **Вестигиальный**: один мок-роут `GET /api/tx/mock`, не участвует в реальных потоках, ключей не касается. Кандидат на удаление |
-| CI | GitHub Actions | 3 джобы: security-audit (блокирует merge при `npm audit ≥ high`), frontend build+test+tsc, backend test |
+| CI | GitHub Actions | 3 джобы: security-audit (блокирует merge при `npm audit ≥ high`), frontend lint (`react-hooks/rules-of-hooks` — error) + tsc + test, backend test |
 
 ## Аутентификация
 
@@ -98,7 +107,13 @@ NeuroWallet — мультичейн крипто-кошелёк (ETH, BTC, SOL,
 
 ## Что дальше (укрупнённо, см. IMPLEMENTATION_PLAN.md)
 
-- Фаза 1: trust layer — audit/analytics spine, send review + симуляция,
-  risk engine, security center. Rate limiter переезжает на durable store.
+- **Фаза 1 (trust layer) — реализована** (1.1–1.8): audit/analytics spine с
+  trace id, send review + симуляция, risk engine + anti-poisoning, contacts +
+  NeuroID, paylinks, security center (+ PIN), Neura tx-explainer, demo-воронка.
+  Rate limiter — durable (Upstash). Gate Фазы 1 (usability-прогон) ещё не пройден
+  → Фазу 2 не начинать.
+- **Фаза 2.1 (подготовка):** durable key storage (Telegram CloudStorage до MPC)
+  и сравнение embedded-wallet провайдеров. Открытый custody-вопрос по legacy
+  BTC/TON-деривации (`LEGACY_DERIVATION_JUNE_USERS.md`).
 - Фаза 2+: layered custody (passkey/MPC), swap/ramp, policy engine для Нейры.
 - Перед любыми реальными деньгами — независимый security-аудит (gate Фазы 3).

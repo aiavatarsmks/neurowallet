@@ -2,7 +2,7 @@
  * lib/crypto/ton-tx.ts
  * TON native + USDT Jetton (TRC-like on TON network).
  *
- * Key derivation: SLIP-0010 ed25519 at m/44'/607'/0'/0/0
+ * Key derivation: SLIP-0010 ed25519 at m/44'/607'/0'/0' (all segments hardened)
  * Wallet:         WalletContractV4 (V4R2 in TON ecosystem)
  * USDT master:    EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs (6 decimals)
  * Transport:      TonCenter public API (free, 1 req/s)
