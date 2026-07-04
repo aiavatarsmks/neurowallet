@@ -34,6 +34,7 @@ export type AnalyticsEvent =
   | 'onboarding_started'
   | 'wallet_created'
   | 'wallet_imported'
+  | 'onboarding_completed'
   | 'send_initiated'
   | 'send_succeeded'
   | 'send_failed'
