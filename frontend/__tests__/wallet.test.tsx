@@ -26,6 +26,16 @@ vi.mock('@/contexts/LanguageContext', () => ({
   }),
 }));
 
+vi.mock('@/contexts/DisplayCurrencyContext', () => ({
+  useDisplayCurrency: () => ({
+    currency: 'EUR',
+    setCurrency: vi.fn(),
+    symbol: '€',
+    convertFromEur: (value: number) => value,
+    formatFiat: (value: number) => `€${value.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+  }),
+}));
+
 describe('BalanceCard component', () => {
   it('renders a balance label', () => {
     render(<BalanceCard />);

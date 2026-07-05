@@ -3,6 +3,8 @@ import { fetchRealBalances, MARKET_REFRESH_MS, WalletBalances } from '@/lib/cryp
 import { SUPPORTED_ASSETS, type AssetSymbol } from '@/lib/crypto/assets';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useDisplayCurrency } from '@/contexts/DisplayCurrencyContext';
+import { formatCryptoAmount, formatPercent } from '@/lib/display-format';
 
 // ─── Demo data (shown when no real wallet is set up) ──────────────────────
 
@@ -44,6 +46,7 @@ interface WalletScreenProps {
 export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onReceiveCrypto }) => {
   const { isDemo } = useAuth();
   const { t } = useLanguage();
+  const { currency, symbol, formatFiat, convertFromEur } = useDisplayCurrency();
   const [assets,  setAssets]  = useState<AssetRow[]>(DEMO_ASSETS);
   const [loading, setLoading] = useState(false);
   const [isReal,  setIsReal]  = useState(false);
@@ -141,7 +144,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
           </div>
         ) : (
           <p className="text-white text-3xl font-bold tracking-tight">
-            €{cryptoTotal.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {formatFiat(cryptoTotal)}
           </p>
         )}
 
@@ -173,16 +176,16 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
               className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
               style={{ background: 'rgba(0,255,127,0.12)', color: '#00FF7F', border: '1px solid rgba(0,255,127,0.2)' }}
             >
-              €
+              {symbol}
             </div>
             <div>
-              <p className="text-white text-sm font-medium">{t('walletEuroFiat')}</p>
+              <p className="text-white text-sm font-medium">{currency === 'USD' ? 'US Dollar USD' : t('walletEuroFiat')}</p>
               <p className="text-[#3A6045] text-xs">{t('walletCurrentAccountDemo')}</p>
             </div>
           </div>
           <div className="text-right">
             <p className="text-white text-sm font-semibold">
-              €{FIAT.toLocaleString('ru-RU', { minimumFractionDigits: 2 })}
+              {formatFiat(FIAT)}
             </p>
             <p className="text-[#3A6045] text-xs">{t('walletStable')}</p>
           </div>
@@ -211,19 +214,19 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
                   <p className="text-[#3A6045] text-xs">
                     {loading
                       ? '...'
-                      : `${asset.amount.toLocaleString('ru-RU', { maximumFractionDigits: 6 })} ${asset.unit} · 1 ${asset.unit} ≈ €${asset.priceEUR.toLocaleString('ru-RU', { maximumFractionDigits: asset.priceEUR < 1 ? 4 : 2 })}`}
+                      : `${formatCryptoAmount(asset.amount)} ${asset.unit} · 1 ${asset.unit} ≈ ${symbol}${convertFromEur(asset.priceEUR).toLocaleString('ru-RU', { maximumFractionDigits: asset.priceEUR < 1 ? 4 : 2 })}`}
                   </p>
                 </div>
                 <div className="text-right flex-shrink-0">
                   <p className="text-white text-sm font-semibold">
-                    {loading ? '—' : `€${asset.valueEUR.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}`}
+                    {loading ? '—' : formatFiat(asset.valueEUR, { maximumFractionDigits: 2 })}
                   </p>
                   {asset.change24h !== 0 && (
                     <p
                       className="text-xs font-semibold"
                       style={{ color: asset.change24h > 0 ? '#00FF7F' : '#FF5252' }}
                     >
-                      {asset.change24h > 0 ? '+' : ''}{asset.change24h}% {t('walletHours24')}
+                      {formatPercent(asset.change24h)} {t('walletHours24')}
                     </p>
                   )}
                 </div>
@@ -258,7 +261,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
         <div>
           <p className="text-[#3A6045] text-xs">{isReal ? t('walletTotalCryptoPortfolio') : t('walletTotalNetWorth')}</p>
           <p className="text-white text-xl font-bold mt-0.5">
-            €{(cryptoTotal + (isReal ? 0 : FIAT)).toLocaleString('ru-RU', { minimumFractionDigits: 2 })}
+            {formatFiat(cryptoTotal + (isReal ? 0 : FIAT))}
           </p>
         </div>
         {!isReal && (

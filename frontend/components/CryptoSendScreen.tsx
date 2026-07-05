@@ -12,6 +12,7 @@ import { fetchExplanation } from '@/lib/neura/explain-client';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useDisplayCurrency } from '@/contexts/DisplayCurrencyContext';
 
 type Coin = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TRX' | 'TRC20' | 'TON' | 'USDT_TON';
 type Step = 'form' | 'confirm' | 'password' | 'sending' | 'done';
@@ -35,12 +36,23 @@ const COINS: Record<Coin, CoinMeta> = {
   USDT_TON: { icon: '₮', color: '#0098EA', bgColor: 'rgba(0,152,234,0.12)', placeholder: 'EQ…',  implemented: true },
 };
 
-// Estimated fees shown in UI (ETH fee is fetched from chain later)
-const FEE_EUR: Record<Coin, string> = {
-  ETH: '~€0.30–1.50', BTC: '~€0.50–2.00', SOL: '< €0.01', USDT: '~€0.30', TRX: '< €0.01', TRC20: '< €0.50',
-  TON: '~€0.01', USDT_TON: '~€0.05',
+const FEE_ESTIMATE_EUR: Record<Coin, { type: 'range'; min: number; max: number } | { type: 'less'; value: number } | { type: 'about'; value: number }> = {
+  ETH: { type: 'range', min: 0.30, max: 1.50 },
+  BTC: { type: 'range', min: 0.50, max: 2.00 },
+  SOL: { type: 'less', value: 0.01 },
+  USDT: { type: 'about', value: 0.30 },
+  TRX: { type: 'less', value: 0.01 },
+  TRC20: { type: 'less', value: 0.50 },
+  TON: { type: 'about', value: 0.01 },
+  USDT_TON: { type: 'about', value: 0.05 },
 };
 
+function formatFeeEstimate(coin: Coin, formatFiat: (eurValue: number, options?: Intl.NumberFormatOptions) => string): string {
+  const fee = FEE_ESTIMATE_EUR[coin];
+  if (fee.type === 'range') return `~${formatFiat(fee.min)}–${formatFiat(fee.max)}`;
+  if (fee.type === 'less') return `< ${formatFiat(fee.value)}`;
+  return `~${formatFiat(fee.value)}`;
+}
 
 /** Клавиатура: скрывать по тапу вне текстового поля (mobile WebView). */
 function blurOnOutsideTap(e: React.PointerEvent) {
@@ -69,6 +81,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
 }) => {
   const { isDemo } = useAuth();
   const { t, lang } = useLanguage();
+  const { formatFiat } = useDisplayCurrency();
   const [coin,     setCoin]     = useState<Coin>(initialCoin);
   const [address,  setAddress]  = useState('');
   const [amount,   setAmount]   = useState('');
@@ -699,13 +712,13 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       v >= 1 ? v.toFixed(4).replace(/\.?0+$/, '') : v.toPrecision(3);
 
     const feeNode = !realReview
-      ? <span key="f" className="text-[#3A6045]">{FEE_EUR[coin]}</span>
+      ? <span key="f" className="text-[#3A6045]">{formatFeeEstimate(coin, formatFiat)}</span>
       : simLoading
         ? <span key="f" className="text-[#3A6045] animate-pulse">{t('csSimulating')}</span>
         : sim?.feeNative != null
           ? <span key="f" className="text-white">
               ≈ {fmtAmount(sim.feeNative)} {sim.feeCurrency}
-              {sim.feeEur != null ? ` (€${sim.feeEur.toFixed(2)})` : ''}
+              {sim.feeEur != null ? ` (${formatFiat(sim.feeEur)})` : ''}
             </span>
           : <span key="f" style={{ color: '#F7931A' }}>{t('csFeeUnknown')}</span>;
 

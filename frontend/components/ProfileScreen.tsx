@@ -6,6 +6,7 @@ import SecurityCenter from '@/components/SecurityCenter';
 import { explorerUrlForAsset, SUPPORTED_ASSETS, type AssetAddressKey } from '@/lib/crypto/assets';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
+import { useDisplayCurrency, type DisplayCurrency } from '@/contexts/DisplayCurrencyContext';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -135,6 +136,7 @@ export const ProfileScreen: React.FC = () => {
   const router = useRouter();
   const { user, isDemo, signOut } = useAuth();
   const { t } = useLanguage();
+  const { currency, setCurrency } = useDisplayCurrency();
 
   const [ethAddr,  setEthAddr]  = useState('');
   const [solAddr,  setSolAddr]  = useState('');
@@ -376,6 +378,26 @@ export const ProfileScreen: React.FC = () => {
       <div className="rounded-2xl p-4 flex items-center justify-between" style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.1)' }}>
         <p className="text-white text-sm font-semibold">{t('profileLanguage')}</p>
         <LanguageSwitcher />
+      </div>
+
+      {/* Display currency */}
+      <div className="rounded-2xl p-4 flex items-center justify-between" style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.1)' }}>
+        <p className="text-white text-sm font-semibold">{t('profileDisplayCurrency')}</p>
+        <div className="flex rounded-2xl p-1" style={{ background: '#08120B', border: '1px solid rgba(0,255,127,0.12)' }}>
+          {(['EUR', 'USD'] as DisplayCurrency[]).map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => setCurrency(item)}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95"
+              style={currency === item
+                ? { background: 'rgba(0,255,127,0.16)', color: '#00FF7F' }
+                : { background: 'transparent', color: '#3A6045' }}
+            >
+              {item === 'USD' ? '$ USD' : '€ EUR'}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Sign out */}

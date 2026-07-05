@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useDisplayCurrency } from '@/contexts/DisplayCurrencyContext';
 
 const DEMO_CARD = {
   holder: 'МАКС ИВАНОВ',
@@ -17,13 +18,10 @@ const DEMO_CARD = {
   ],
 };
 
-function fmt(n: number): string {
-  return Math.abs(n).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 export const CardsScreen: React.FC = () => {
   const { isDemo } = useAuth();
   const { t } = useLanguage();
+  const { formatFiat } = useDisplayCurrency();
 
   if (!isDemo) {
     return (
@@ -165,7 +163,7 @@ export const CardsScreen: React.FC = () => {
       <div className="rounded-2xl p-4" style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.1)' }}>
         <div className="flex justify-between mb-2">
           <span className="text-[#3A6045] text-xs">{t('cardsLimit')}</span>
-          <span className="text-white text-xs font-semibold">€{fmt(DEMO_CARD.spent)} / €{fmt(DEMO_CARD.limit)}</span>
+          <span className="text-white text-xs font-semibold">{formatFiat(DEMO_CARD.spent)} / {formatFiat(DEMO_CARD.limit)}</span>
         </div>
         <div className="h-1.5 rounded-full" style={{ background: 'rgba(0,255,127,0.1)' }}>
           <div
@@ -210,7 +208,7 @@ export const CardsScreen: React.FC = () => {
                 <p className="text-[#3A6045] text-xs">{tx.date}</p>
               </div>
               <span className="text-sm font-semibold" style={{ color: '#FF5252' }}>
-                −€{fmt(tx.amount)}
+                −{formatFiat(Math.abs(tx.amount))}
               </span>
             </div>
           ))}

@@ -289,6 +289,7 @@ export const translations = {
     profileSignOutReal: 'Выйти из аккаунта',
     profileDefaultUser: 'Пользователь',
     profileLanguage: 'Язык',
+    profileDisplayCurrency: 'Валюта отображения',
 
     // ── Wallet / crypto assets (components/WalletScreen.tsx) ────────────────
     walletRealPortfolio: 'Реальный крипто-портфель',
@@ -735,6 +736,7 @@ export const translations = {
     profileSignOutReal: 'Sign Out',
     profileDefaultUser: 'User',
     profileLanguage: 'Language',
+    profileDisplayCurrency: 'Display currency',
 
     // ── Wallet / crypto assets (components/WalletScreen.tsx) ────────────────
     walletRealPortfolio: 'Real Crypto Portfolio',

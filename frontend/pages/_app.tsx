@@ -5,6 +5,7 @@ import Head from 'next/head';
 import Script from 'next/script';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { LanguageProvider } from '@/contexts/LanguageContext';
+import { DisplayCurrencyProvider } from '@/contexts/DisplayCurrencyContext';
 import { useTelegramInit } from '@/hooks/useTelegram';
 import { clearLegacyXorKeys } from '@/lib/crypto/wallet';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -21,6 +22,7 @@ export default function App(props: AppProps) {
   return (
     <ErrorBoundary>
     <LanguageProvider>
+      <DisplayCurrencyProvider>
       <AuthProvider>
         <Head>
           {/*
@@ -42,6 +44,7 @@ export default function App(props: AppProps) {
 
         <AppInner {...props} />
       </AuthProvider>
+      </DisplayCurrencyProvider>
     </LanguageProvider>
     </ErrorBoundary>
   );

@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useDisplayCurrency } from '@/contexts/DisplayCurrencyContext';
 import { fetchRealBalances, MARKET_REFRESH_MS, WalletBalances } from '@/lib/crypto/balances';
 import { SUPPORTED_ASSETS, type AssetSymbol } from '@/lib/crypto/assets';
+import { formatPercent } from '@/lib/display-format';
 
 // ── Demo data (shown in demo mode only) ──────────────────────────────────────
 const DEMO_FIAT_TOTAL  = 5157.00;
@@ -19,10 +21,6 @@ const DEMO_FIAT_ROWS = [
 ];
 
 type View = 'total' | 'fiat' | 'crypto';
-
-function fmt(n: number): string {
-  return n.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 function getGreeting(t: (k: any) => string): string {
   const h = new Date().getHours();
@@ -43,6 +41,7 @@ function calcCryptoTotal(b: WalletBalances): number {
 export const BalanceCard: React.FC = () => {
   const { user, isDemo } = useAuth();
   const { t } = useLanguage();
+  const { formatFiat } = useDisplayCurrency();
   const [view,         setView]         = useState<View>('total');
   const [isReal,       setIsReal]       = useState(false);
   const [loading,      setLoading]      = useState(false);
@@ -184,7 +183,7 @@ export const BalanceCard: React.FC = () => {
           className="text-4xl font-bold text-white tracking-tight"
           style={{ textShadow: '0 0 24px rgba(0,255,127,0.25)' }}
         >
-          €{fmt(balance)}
+          {formatFiat(balance)}
         </p>
       )}
 
@@ -194,13 +193,13 @@ export const BalanceCard: React.FC = () => {
           {cryptoRows.map((a) => (
             <div key={a.symbol} className="flex items-center gap-1.5">
               <span className="text-[#3A6045] text-xs">{a.symbol}</span>
-              <span className="text-white text-xs font-medium">€{a.valueEUR.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}</span>
+              <span className="text-white text-xs font-medium">{formatFiat(a.valueEUR, { maximumFractionDigits: 2 })}</span>
               {a.change !== 0 && (
                 <span
                   className="text-[10px] font-semibold"
                   style={{ color: a.change > 0 ? '#00FF7F' : '#FF5252' }}
                 >
-                  {a.change > 0 ? '+' : ''}{a.change}%
+                  {formatPercent(a.change)}
                 </span>
               )}
             </div>
@@ -215,7 +214,7 @@ export const BalanceCard: React.FC = () => {
             {DEMO_FIAT_ROWS.map((r) => (
               <div key={r.label} className="flex flex-col gap-0.5">
                 <span className="text-[#3A6045] text-[10px]">{r.label}</span>
-                <span className="text-white text-xs font-semibold">€{fmt(r.valueEUR)}</span>
+                <span className="text-white text-xs font-semibold">{formatFiat(r.valueEUR)}</span>
               </div>
             ))}
           </div>
