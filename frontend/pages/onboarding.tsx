@@ -38,7 +38,7 @@ function useTgSafeTop(): number {
 
 export default function OnboardingWalletPage() {
   const router = useRouter();
-  const { user, isDemo, isLoading } = useAuth();
+  const { user, isDemo, isLoading, enterDemo } = useAuth();
   const { t } = useLanguage();
   const safeTop = useTgSafeTop();
 
@@ -107,6 +107,11 @@ export default function OnboardingWalletPage() {
   const handleImport = () => {
     setStep('import-mnemonic');
     setError('');
+  };
+
+  const handleDemo = () => {
+    enterDemo();
+    router.push('/wallet');
   };
 
   const handleImportContinue = () => {
@@ -243,9 +248,24 @@ export default function OnboardingWalletPage() {
               <span className="text-base font-bold">{t('onbImportTitle')}</span>
               <span className="text-[#3A6045] text-xs font-normal">{t('onbImportSubtitle')}</span>
             </button>
+
+            <button
+              onClick={handleDemo}
+              className="w-full py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95"
+              style={{
+                background: 'transparent',
+                border: '1.5px solid rgba(0,255,127,0.28)',
+                color: '#00FF7F',
+              }}
+            >
+              {t('landingDemoMode')}
+            </button>
           </div>
 
           <p className="text-center text-[#3A6045] text-xs mt-6">
+            {t('authDemoHint')}
+          </p>
+          <p className="text-center text-[#3A6045] text-xs mt-2">
             {t('onbChoiceFooter')}
           </p>
         </div>
