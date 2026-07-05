@@ -158,6 +158,11 @@ export const translations = {
     pinRepeatHint: 'Введите PIN ещё раз для подтверждения',
     pinSkip: 'Пропустить →',
     pinSkipHint: 'Можно настроить позже в настройках',
+    pinSetupRequiredTitle: 'Защити кошелёк',
+    pinSetupRequiredText: 'На этом устройстве есть реальный кошелёк, но PIN не настроен. Доступ закрыт, пока ты не подтвердишь пароль кошелька и не создашь PIN.',
+    pinSetupRequiredCta: 'Подтвердить пароль и создать PIN',
+    pinSetupRecoverCta: 'Восстановить по seed-фразе',
+    pinSetupResetCta: 'Сбросить локальный кошелёк и создать заново',
 
     // ── Cards (components/CardsScreen.tsx) ───────────────────────────────────
     cardsTitle: 'Мои карты',
@@ -599,6 +604,11 @@ export const translations = {
     pinRepeatHint: 'Enter the PIN again to confirm',
     pinSkip: 'Skip →',
     pinSkipHint: 'You can set this up later in settings',
+    pinSetupRequiredTitle: 'Protect your wallet',
+    pinSetupRequiredText: 'A real wallet exists on this device, but PIN is not configured. Access stays locked until you confirm the wallet password and create a PIN.',
+    pinSetupRequiredCta: 'Confirm password and create PIN',
+    pinSetupRecoverCta: 'Restore via seed phrase',
+    pinSetupResetCta: 'Reset local wallet and start over',
 
     // ── Cards (components/CardsScreen.tsx) ───────────────────────────────────
     cardsTitle: 'My Cards',

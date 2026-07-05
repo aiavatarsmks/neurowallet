@@ -5,12 +5,13 @@ import { useLanguage } from '@/contexts/LanguageContext';
 interface PinSetupProps {
   walletPassword: string;
   onComplete: () => void;
-  onSkip: () => void;
+  onSkip?: () => void;
+  allowSkip?: boolean;
 }
 
 const DIGITS = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
 
-export const PinSetup: React.FC<PinSetupProps> = ({ walletPassword, onComplete, onSkip }) => {
+export const PinSetup: React.FC<PinSetupProps> = ({ walletPassword, onComplete, onSkip, allowSkip = true }) => {
   const { t } = useLanguage();
   const [step,    setStep]    = useState<'enter' | 'confirm'>('enter');
   const [pin,     setPin]     = useState('');
@@ -57,7 +58,7 @@ export const PinSetup: React.FC<PinSetupProps> = ({ walletPassword, onComplete, 
         setStep('enter');
         setFirst('');
       });
-  }, [pin, step, first, walletPassword, onComplete]);
+  }, [pin, step, first, walletPassword, onComplete, t]);
 
   const dots = Array.from({ length: 4 }, (_, i) => i < pin.length);
 
@@ -128,17 +129,20 @@ export const PinSetup: React.FC<PinSetupProps> = ({ walletPassword, onComplete, 
         ))}
       </div>
 
-      {/* Skip */}
-      <button
-        onClick={onSkip}
-        className="mt-8 text-[#3A6045] text-sm"
-        disabled={loading}
-      >
-        {t('pinSkip')}
-      </button>
-      <p className="text-[#3A6045] text-xs mt-2 text-center opacity-60">
-        {t('pinSkipHint')}
-      </p>
+      {allowSkip && onSkip && (
+        <>
+          <button
+            onClick={onSkip}
+            className="mt-8 text-[#3A6045] text-sm"
+            disabled={loading}
+          >
+            {t('pinSkip')}
+          </button>
+          <p className="text-[#3A6045] text-xs mt-2 text-center opacity-60">
+            {t('pinSkipHint')}
+          </p>
+        </>
+      )}
     </div>
   );
 };

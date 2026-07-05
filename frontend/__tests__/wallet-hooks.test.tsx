@@ -37,6 +37,7 @@ vi.mock('@/lib/supabase', () => ({ supabase: { auth: {}, from: () => ({}) } }));
 // PinEntry + BottomNav get testids; BottomNav renders ONLY in the wallet
 // content branch, so it marks "content is showing". Everything else is stubbed.
 vi.mock('@/components/PinEntry', () => ({ PinEntry: () => <div data-testid="pin-entry" /> }));
+vi.mock('@/components/PinSetup', () => ({ PinSetup: () => <div data-testid="pin-setup" /> }));
 vi.mock('@/components/BottomNav', () => ({ BottomNav: () => <div data-testid="wallet-content" /> }));
 vi.mock('@/components/BalanceCard', () => ({ BalanceCard: () => null }));
 vi.mock('@/components/DemoGuide', () => ({ DemoGuide: () => null }));
@@ -80,6 +81,16 @@ describe('WalletPage PIN gate', () => {
     expect(screen.queryByTestId('wallet-content')).not.toBeInTheDocument();
     expect(screen.queryByTestId('pin-entry')).not.toBeInTheDocument();
     expect(H.replace).toHaveBeenCalledWith('/onboarding');
+  });
+
+  it('fail-closed: wallet without PIN forces PIN setup before content', () => {
+    localStorage.setItem('wallet_eth_address', '0xabc');
+
+    render(<WalletPage />);
+
+    expect(screen.getByTestId('pin-setup-required')).toBeInTheDocument();
+    expect(screen.queryByTestId('wallet-content')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('pin-entry')).not.toBeInTheDocument();
   });
 
   it('fail-closed: while auth is still loading, no wallet content leaks', () => {

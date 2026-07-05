@@ -4,7 +4,8 @@ import { useRouter } from 'next/router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { PinEntry } from '@/components/PinEntry';
-import { hasPinSetup } from '@/lib/pin';
+import { PinSetup } from '@/components/PinSetup';
+import { hasPinSetup, verifyWalletPassword } from '@/lib/pin';
 import { BalanceCard } from '@/components/BalanceCard';
 import { DemoGuide } from '@/components/DemoGuide';
 import { completeDemoTask } from '@/lib/demo-guide';
@@ -28,6 +29,7 @@ const NeuraAvatar = dynamic(
 type NavTab = 'home' | 'send' | 'add' | 'cards' | 'wallet';
 type Tab = NavTab | 'profile' | 'receive' | 'crypto-send';
 type CryptoSendCoin = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TON' | 'TRX' | 'TRC20' | 'USDT_TON';
+type PinGate = 'checking' | 'locked' | 'setup-required' | 'open';
 
 interface CryptoSendDraft {
   coin: CryptoSendCoin;
@@ -52,6 +54,115 @@ const BackIcon = () => (
   </svg>
 );
 
+const WALLET_RESET_KEYS = [
+  'wallet_eth_address', 'wallet_sol_address', 'wallet_btc_address',
+  'wallet_tron_address', 'wallet_ton_address', 'wallet_keystore',
+  'wallet_sol_enc', 'wallet_btc_enc', 'wallet_tron_enc', 'wallet_ton_enc',
+  'wallet_pin_blob', 'wallet_pin_attempts', 'wallet_pin_lockout_until',
+  'wallet_sol_xor', 'wallet_btc_xor', 'wallet_tron_xor', 'wallet_ton_xor',
+];
+
+const RequiredPinSetupGate: React.FC<{ onReady: (walletPassword: string) => void }> = ({ onReady }) => {
+  const router = useRouter();
+  const { t } = useLanguage();
+  const [password, setPassword] = useState('');
+  const [verifiedPassword, setVerifiedPassword] = useState('');
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState(false);
+
+  const submit = async () => {
+    if (!password || checking) return;
+    setChecking(true);
+    setError(false);
+    const ok = await verifyWalletPassword(password);
+    setChecking(false);
+    if (!ok) { setError(true); return; }
+    setVerifiedPassword(password);
+    setPassword('');
+  };
+
+  const resetLocalWallet = () => {
+    for (const key of WALLET_RESET_KEYS) localStorage.removeItem(key);
+    router.push('/onboarding');
+  };
+
+  if (verifiedPassword) {
+    return (
+      <PinSetup
+        walletPassword={verifiedPassword}
+        allowSkip={false}
+        onComplete={() => onReady(verifiedPassword)}
+      />
+    );
+  }
+
+  return (
+    <main
+      data-testid="pin-setup-required"
+      className="min-h-screen flex flex-col justify-center max-w-[430px] mx-auto px-6"
+      style={{ backgroundColor: '#080C09' }}
+    >
+      <div className="flex flex-col gap-6">
+        <div
+          className="w-16 h-16 rounded-2xl flex items-center justify-center"
+          style={{ background: 'rgba(0,255,127,0.1)', border: '1px solid rgba(0,255,127,0.25)' }}
+        >
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#00FF7F" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+        </div>
+
+        <div>
+          <h1 className="text-white text-2xl font-bold leading-tight">{t('pinSetupRequiredTitle')}</h1>
+          <p className="text-[#3A6045] text-sm leading-relaxed mt-2">{t('pinSetupRequiredText')}</p>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => { setPassword(e.target.value); setError(false); }}
+            onKeyDown={(e) => e.key === 'Enter' && submit()}
+            placeholder={t('secPinPasswordPh')}
+            className="w-full rounded-2xl px-4 py-4 text-white text-sm bg-transparent outline-none placeholder:text-[#3A6045]"
+            style={{
+              background: '#0D1A10',
+              border: `1px solid ${error ? 'rgba(255,59,48,0.5)' : 'rgba(0,255,127,0.16)'}`,
+              caretColor: '#00FF7F',
+            }}
+          />
+          {error && <p className="text-xs" style={{ color: '#FF453A' }}>{t('secPinWrongPassword')}</p>}
+
+          <button
+            onClick={submit}
+            disabled={checking || !password}
+            className="w-full py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95 disabled:opacity-40"
+            style={{ background: '#00FF7F', color: '#080C09', boxShadow: '0 0 24px rgba(0,255,127,0.28)' }}
+          >
+            {checking ? '…' : t('pinSetupRequiredCta')}
+          </button>
+
+          <button
+            onClick={() => router.push('/onboarding?recover=1')}
+            className="w-full py-3.5 rounded-2xl font-semibold text-sm transition-all active:scale-95"
+            style={{ background: 'transparent', border: '1px solid rgba(0,255,127,0.18)', color: '#00FF7F' }}
+          >
+            {t('pinSetupRecoverCta')}
+          </button>
+
+          <button
+            onClick={resetLocalWallet}
+            className="w-full py-3 text-xs font-semibold"
+            style={{ color: '#F7931A' }}
+          >
+            {t('pinSetupResetCta')}
+          </button>
+        </div>
+      </div>
+    </main>
+  );
+};
+
 export default function WalletPage() {
   const router = useRouter();
   const { t } = useLanguage();
@@ -72,7 +183,7 @@ export default function WalletPage() {
   // Fail-closed PIN gate. 'checking' = status not yet resolved → render a
   // loading placeholder, NEVER wallet content (deny-by-default per CLAUDE.md).
   // Only ever moves to 'open' after localStorage has been read on the client.
-  const [pinGate, setPinGate] = useState<'checking' | 'locked' | 'open'>('checking');
+  const [pinGate, setPinGate] = useState<PinGate>('checking');
   const [walletPassword, setWalletPassword] = useState<string | null>(null);
   const [receiveCoin, setReceiveCoin] = useState<ReceiveNetwork>('ETH');
   const [cryptoSendCoin, setCryptoSendCoin] = useState<CryptoSendCoin>('ETH');
@@ -103,9 +214,13 @@ export default function WalletPage() {
       router.replace('/onboarding');
       return;
     }
-    // Wallet present: locked if a PIN is configured and not yet unlocked,
-    // otherwise open. Same key (wallet_pin_blob) that PinEntry/verifyPin read.
-    setPinGate(hasPinSetup() && walletPassword === null ? 'locked' : 'open');
+    // Wallet present: never open an unprotected real wallet. If PIN is missing,
+    // force setup/recovery before any wallet content is rendered.
+    if (!hasPinSetup()) {
+      setPinGate('setup-required');
+      return;
+    }
+    setPinGate(walletPassword === null ? 'locked' : 'open');
   }, [isDemo, walletPassword, user, isLoading, router]);
 
   // Demo-воронка (задача 1.8): отметки задач гида при посещении экранов.
@@ -138,6 +253,17 @@ export default function WalletPage() {
     return (
       <PinEntry
         onSuccess={(pwd) => {
+          setWalletPassword(pwd);
+          setPinGate('open');
+        }}
+      />
+    );
+  }
+
+  if (!isDemo && pinGate === 'setup-required') {
+    return (
+      <RequiredPinSetupGate
+        onReady={(pwd) => {
           setWalletPassword(pwd);
           setPinGate('open');
         }}
