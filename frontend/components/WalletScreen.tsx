@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { fetchRealBalances, MARKET_REFRESH_MS, WalletBalances } from '@/lib/crypto/balances';
-import { SUPPORTED_ASSETS, type AssetSymbol } from '@/lib/crypto/assets';
+import { SUPPORTED_ASSETS, type AssetSymbol, type CryptoAssetMeta } from '@/lib/crypto/assets';
+import { DEMO_HOLDINGS, demoValueEUR, DEMO_CHART_BARS, DEMO_FIAT_TOTAL_EUR } from '@/lib/demo-data';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useDisplayCurrency } from '@/contexts/DisplayCurrencyContext';
@@ -8,18 +9,21 @@ import { formatCryptoAmount, formatPercent } from '@/lib/display-format';
 
 // ─── Demo data (shown when no real wallet is set up) ──────────────────────
 
-const DEMO_ASSETS = [
-  { ...SUPPORTED_ASSETS[0], amount: 0.042, valueEUR: 2310, change24h: +4.2, priceEUR: 55000 },
-  { ...SUPPORTED_ASSETS[1], amount: 1.24,  valueEUR: 2542, change24h: +1.8, priceEUR: 2050 },
-  { ...SUPPORTED_ASSETS[2], amount: 12.5,  valueEUR: 1500, change24h: +3.4, priceEUR: 120 },
-  { ...SUPPORTED_ASSETS[3], amount: 110,   valueEUR: 110,  change24h: 0,    priceEUR: 1 },
-  { ...SUPPORTED_ASSETS[4], amount: 0,     valueEUR: 0,    change24h: 0,    priceEUR: 0.22 },
-  { ...SUPPORTED_ASSETS[5], amount: 0,     valueEUR: 0,    change24h: 0,    priceEUR: 1 },
-  { ...SUPPORTED_ASSETS[6], amount: 0,     valueEUR: 0,    change24h: 0,    priceEUR: 3.5 },
-  { ...SUPPORTED_ASSETS[7], amount: 0,     valueEUR: 0,    change24h: 0,    priceEUR: 1 },
-];
+// Demo assets derive from the shared demo dataset (lib/demo-data) so the
+// portfolio, home card and send screen never diverge.
+const ASSET_META: Record<AssetSymbol, CryptoAssetMeta> = Object.fromEntries(
+  SUPPORTED_ASSETS.map((a) => [a.symbol, a]),
+) as Record<AssetSymbol, CryptoAssetMeta>;
 
-const CHART_BARS = [35, 48, 40, 58, 44, 66, 60, 72, 55, 78, 68, 82, 88, 78, 92];
+const DEMO_ASSETS = DEMO_HOLDINGS.map((h) => ({
+  ...ASSET_META[h.symbol],
+  amount: h.amount,
+  valueEUR: demoValueEUR(h),
+  change24h: h.change24h,
+  priceEUR: h.priceEUR,
+}));
+
+const CHART_BARS = DEMO_CHART_BARS;
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -120,7 +124,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
   const visibleAssets = assets;
 
   const cryptoTotal = visibleAssets.reduce((s, a) => s + a.valueEUR, 0);
-  const FIAT        = isReal ? 0 : 2847.50;
+  const FIAT        = isReal ? 0 : DEMO_FIAT_TOTAL_EUR;
 
   return (
     <div className="px-6 pt-2 pb-6 flex flex-col gap-5">

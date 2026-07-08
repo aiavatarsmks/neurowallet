@@ -5,20 +5,21 @@ import { useDisplayCurrency } from '@/contexts/DisplayCurrencyContext';
 import { fetchRealBalances, MARKET_REFRESH_MS, WalletBalances } from '@/lib/crypto/balances';
 import { SUPPORTED_ASSETS, type AssetSymbol } from '@/lib/crypto/assets';
 import { formatPercent } from '@/lib/display-format';
+import {
+  DEMO_HOLDINGS, demoValueEUR, DEMO_CRYPTO_TOTAL_EUR, DEMO_FIAT_TOTAL_EUR,
+  DEMO_TOTAL_EUR, DEMO_FIAT_ACCOUNTS,
+} from '@/lib/demo-data';
 
 // ── Demo data (shown in demo mode only) ──────────────────────────────────────
-const DEMO_FIAT_TOTAL  = 5157.00;
-const DEMO_CRYPTO_TOTAL = 2652.50;
-const DEMO_TOTAL        = DEMO_FIAT_TOTAL + DEMO_CRYPTO_TOTAL;
-const DEMO_CRYPTO_ROWS  = [
-  { symbol: 'BTC',  valueEUR: 2310, change: +4.2 },
-  { symbol: 'ETH',  valueEUR: 2542, change: +1.8 },  // wait, these don't add to 2652 but keeping original demo values
-  { symbol: 'USDT', valueEUR: 110,  change: 0    },
-];
-const DEMO_FIAT_ROWS = [
-  { label: 'Основной счёт', valueEUR: 3847.50 },
-  { label: 'Накопительный', valueEUR: 1309.50 },
-];
+// All demo figures come from the shared dataset; totals are computed there,
+// so home / portfolio / send can't disagree.
+const DEMO_FIAT_TOTAL   = DEMO_FIAT_TOTAL_EUR;
+const DEMO_CRYPTO_TOTAL = DEMO_CRYPTO_TOTAL_EUR;
+const DEMO_TOTAL        = DEMO_TOTAL_EUR;
+const DEMO_CRYPTO_ROWS  = DEMO_HOLDINGS
+  .map((h) => ({ symbol: h.symbol, valueEUR: demoValueEUR(h), change: h.change24h }))
+  .filter((r) => r.valueEUR > 0);
+const DEMO_FIAT_ROWS = DEMO_FIAT_ACCOUNTS;
 
 type View = 'total' | 'fiat' | 'crypto';
 

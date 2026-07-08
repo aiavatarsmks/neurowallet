@@ -4,6 +4,7 @@ import { fetchRealBalances, MARKET_REFRESH_MS } from '@/lib/crypto/balances';
 import { upgradeStoredKeystoreIfWeak } from '@/lib/crypto/keystore-migration';
 import { track, trackOnce, newTraceId } from '@/lib/analytics';
 import { coinLabel, COIN_PICKER_ORDER } from '@/lib/coin-labels';
+import { DEMO_HOLDING } from '@/lib/demo-data';
 import { simulateTransfer, isBlocked, type SimulationResult, type SimWarning } from '@/lib/crypto/simulate';
 import { assessRecipient, type RiskAssessment } from '@/lib/risk/engine';
 import { txFacts } from '@/lib/neura/facts';
@@ -145,7 +146,12 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (isDemo) {
-      setBalances({ ETH: 1.24, BTC: 0.042, SOL: 12.5, USDT: 110, TRX: 250, TRC20: 85, TON: 32, USDT_TON: 45 });
+      // Shared demo dataset — keeps send balances in sync with the portfolio.
+      setBalances({
+        ETH: DEMO_HOLDING.ETH.amount, BTC: DEMO_HOLDING.BTC.amount, SOL: DEMO_HOLDING.SOL.amount,
+        USDT: DEMO_HOLDING.USDT.amount, TRX: DEMO_HOLDING.TRX.amount, TRC20: DEMO_HOLDING.USDT_TRC.amount,
+        TON: DEMO_HOLDING.TON.amount, USDT_TON: DEMO_HOLDING.USDT_TON.amount,
+      });
       setBalReady(true);
       return;
     }
@@ -893,7 +899,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
               >
                 <span className="text-lg font-bold" style={{ color: d.color }}>{d.icon}</span>
                 <span className="text-[10px] font-semibold leading-tight text-center" style={{ color: coin === c ? d.color : '#3A6045' }}>
-                  {c === 'USDT' ? 'USDT\nERC' : c === 'TRC20' ? 'USDT\nTRC' : c === 'USDT_TON' ? 'USDT\nTON' : c}
+                  {c === 'USDT' ? 'USDT\nERC-20' : c === 'TRC20' ? 'USDT\nTRC-20' : c === 'USDT_TON' ? 'USDT\nTON' : c}
                 </span>
                 {!d.implemented && (
                   <span
