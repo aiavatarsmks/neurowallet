@@ -11,6 +11,19 @@ export function formatPercent(value: number): string {
   })}%`;
 }
 
+/**
+ * Sanitize a free-typed amount: digits + a single decimal point only (comma is
+ * converted to dot for RU keyboards). Pair with type="text" inputMode="decimal"
+ * — type="number" gives an unreliable mobile keypad (locale comma/dot, no
+ * decimal key on some Android/Telegram WebViews, spinner arrows, 'e'/+/-).
+ */
+export function sanitizeAmountInput(raw: string): string {
+  let v = raw.replace(',', '.').replace(/[^0-9.]/g, '');
+  const dot = v.indexOf('.');
+  if (dot !== -1) v = v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, '');
+  return v;
+}
+
 export function formatCryptoAmount(value: number): string {
   if (!Number.isFinite(value) || value === 0) return '0';
 

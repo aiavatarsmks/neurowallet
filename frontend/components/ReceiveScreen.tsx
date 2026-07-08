@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { sanitizeAmountInput } from '@/lib/display-format';
 import { COIN_PICKER_ORDER } from '@/lib/coin-labels';
 import QRCode from 'qrcode';
 import { useAuth } from '@/contexts/AuthContext';
@@ -267,10 +268,10 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
           <p className="text-[#3A6045] text-[10px] uppercase tracking-wider">{t('receiveRequestLabel')}</p>
           <div className="flex gap-2">
             <input
-              type="number"
+              type="text"
               inputMode="decimal"
               value={reqAmount}
-              onChange={(e) => { setReqAmount(e.target.value); setPayUrl(''); }}
+              onChange={(e) => { setReqAmount(sanitizeAmountInput(e.target.value)); setPayUrl(''); }}
               placeholder={t('receiveRequestAmountPh')}
               className="flex-1 rounded-xl px-3 py-2.5 text-white text-sm bg-transparent outline-none"
               style={{ background: '#101f14', border: '1px solid rgba(0,255,127,0.1)', caretColor: '#00FF7F' }}

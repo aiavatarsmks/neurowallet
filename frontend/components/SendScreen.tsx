@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { sanitizeAmountInput } from '@/lib/display-format';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { supabase } from '@/lib/supabase';
 import { isNeuroId, normalizeNeuroId } from '@/lib/neuro-id';
@@ -619,9 +620,10 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
             <div className="flex items-center justify-center gap-2">
               <span className="text-[#00FF7F] text-5xl font-bold">{currencySymbol(selectedCurrency)}</span>
               <input
-                type="number"
+                type="text"
+                inputMode="decimal"
                 value={amount}
-                onChange={(event) => setAmount(event.target.value)}
+                onChange={(event) => setAmount(sanitizeAmountInput(event.target.value))}
                 placeholder="0"
                 onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLElement).blur()}
                 className="text-white text-5xl font-bold bg-transparent outline-none w-40 text-center"

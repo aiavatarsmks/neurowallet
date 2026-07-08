@@ -5,6 +5,7 @@ import { upgradeStoredKeystoreIfWeak } from '@/lib/crypto/keystore-migration';
 import { track, trackOnce, newTraceId } from '@/lib/analytics';
 import { coinLabel, COIN_PICKER_ORDER } from '@/lib/coin-labels';
 import { DEMO_HOLDING } from '@/lib/demo-data';
+import { sanitizeAmountInput } from '@/lib/display-format';
 import { simulateTransfer, isBlocked, type SimulationResult, type SimWarning } from '@/lib/crypto/simulate';
 import { assessRecipient, type RiskAssessment } from '@/lib/risk/engine';
 import { txFacts } from '@/lib/neura/facts';
@@ -959,9 +960,10 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           <div className="flex items-center justify-center gap-2">
             <span className="text-2xl font-bold" style={{ color: data.color }}>{data.icon}</span>
             <input
-              type="number"
+              type="text"
+              inputMode="decimal"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => setAmount(sanitizeAmountInput(e.target.value))}
               placeholder="0"
               className="text-white text-4xl font-bold bg-transparent outline-none w-32 text-center"
               style={{ caretColor: '#00FF7F' }}
