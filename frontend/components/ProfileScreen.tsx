@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { useAuth } from '@/contexts/AuthContext';
 import { neuroIdFromUserId, syncMyNeuroDirectory } from '@/lib/neuro-id';
 import SecurityCenter from '@/components/SecurityCenter';
+import NotificationsInbox from '@/components/NotificationsInbox';
 import { explorerUrlForAsset, SUPPORTED_ASSETS, type AssetAddressKey } from '@/lib/crypto/assets';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
@@ -353,6 +354,9 @@ export const ProfileScreen: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* In-app inbox (задача 2.4) — renders nothing when empty/demo */}
+      <NotificationsInbox />
 
       {/* Security center lite (задача 1.6) */}
       <SecurityCenter />

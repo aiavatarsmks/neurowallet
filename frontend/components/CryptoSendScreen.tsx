@@ -6,6 +6,7 @@ import { track, trackOnce, newTraceId } from '@/lib/analytics';
 import { coinLabel, COIN_PICKER_ORDER } from '@/lib/coin-labels';
 import { DEMO_HOLDING } from '@/lib/demo-data';
 import { sanitizeAmountInput } from '@/lib/display-format';
+import { emitNotification } from '@/lib/notifications-client';
 import { simulateTransfer, isBlocked, type SimulationResult, type SimWarning } from '@/lib/crypto/simulate';
 import { assessRecipient, type RiskAssessment } from '@/lib/risk/engine';
 import { txFacts } from '@/lib/neura/facts';
@@ -424,6 +425,10 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       track('send_succeeded', { coin }, traceId);
       trackOnce('analytics_first_send', 'first_send_succeeded', { coin }, traceId);
       finalizeDraft('sent', hash);
+
+      // In-app inbox (2.4) — best-effort, never blocks the send. Not in demo
+      // (isDemo returns earlier). Server composes the text; only coin is sent.
+      void emitNotification('tx_sent', { coin, lang, traceId });
 
       // One-time migration: the password is proven correct by the successful
       // send, so re-encrypt a legacy scrypt N=8192 keystore with N=131072.
