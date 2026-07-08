@@ -7,7 +7,7 @@ import { coinLabel, COIN_PICKER_ORDER } from '@/lib/coin-labels';
 import { DEMO_HOLDING } from '@/lib/demo-data';
 import { sanitizeAmountInput } from '@/lib/display-format';
 import { emitNotification } from '@/lib/notifications-client';
-import { looksLikeEnsName, looksLikeTonDnsName, resolveName, type ResolvableChain } from '@/lib/name-resolvers';
+import { looksLikeTonDnsName, resolveName, type ResolvableChain } from '@/lib/name-resolvers';
 import { simulateTransfer, isBlocked, type SimulationResult, type SimWarning } from '@/lib/crypto/simulate';
 import { assessRecipient, type RiskAssessment } from '@/lib/risk/engine';
 import { txFacts } from '@/lib/neura/facts';
@@ -325,17 +325,15 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
     : coin === 'TON' || coin === 'USDT_TON'     ? isValidTonAddress(address.trim())
     : isValidBtcAddress(address.trim()); // BTC
 
-  // Name resolution (2.6): ENS for ETH-family, TON DNS for TON-family. Only the
-  // matching name type is resolvable; everything else falls back to literal
-  // address validation.
+  // Name resolution (2.6): TON DNS for TON-family coins (verified working).
+  // ENS (.eth) is temporarily gated off — ethers resolveName fails against the
+  // public cloudflare-eth RPC in the browser bundle; needs a reliable ETH RPC
+  // or a raw-eth_call implementation. The resolveEns lib stays (tested) for then.
   const resolvableChain: ResolvableChain | null =
-    coin === 'ETH' || coin === 'USDT' ? 'eth'
-    : coin === 'TON' || coin === 'USDT_TON' ? 'ton'
+    coin === 'TON' || coin === 'USDT_TON' ? 'ton'
     : null;
   const addressIsName =
-    resolvableChain === 'eth' ? looksLikeEnsName(address.trim())
-    : resolvableChain === 'ton' ? looksLikeTonDnsName(address.trim())
-    : false;
+    resolvableChain === 'ton' ? looksLikeTonDnsName(address.trim()) : false;
 
   /**
    * Continue to review. If the input is a resolvable name, resolve it FIRST and
@@ -987,7 +985,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
             type="text"
             value={address}
             onChange={(e) => { setAddress(e.target.value); setResolvedAlias(''); setResolveErr(''); }}
-            placeholder={resolvableChain === 'eth' ? `${data.placeholder} ${t('csOrEnsName')}` : resolvableChain === 'ton' ? `${data.placeholder} ${t('csOrTonName')}` : data.placeholder}
+            placeholder={resolvableChain === 'ton' ? `${data.placeholder} ${t('csOrTonName')}` : data.placeholder}
             className="w-full bg-transparent text-white text-sm outline-none placeholder:text-[#3A6045] font-mono"
             style={{ caretColor: '#00FF7F' }}
           />
