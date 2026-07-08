@@ -7,6 +7,7 @@ import { coinLabel, COIN_PICKER_ORDER } from '@/lib/coin-labels';
 import { DEMO_HOLDING } from '@/lib/demo-data';
 import { sanitizeAmountInput } from '@/lib/display-format';
 import { emitNotification } from '@/lib/notifications-client';
+import { looksLikeEnsName, looksLikeTonDnsName, resolveName, type ResolvableChain } from '@/lib/name-resolvers';
 import { simulateTransfer, isBlocked, type SimulationResult, type SimWarning } from '@/lib/crypto/simulate';
 import { assessRecipient, type RiskAssessment } from '@/lib/risk/engine';
 import { txFacts } from '@/lib/neura/facts';
@@ -87,6 +88,9 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   const { formatFiat } = useDisplayCurrency();
   const [coin,     setCoin]     = useState<Coin>(initialCoin);
   const [address,  setAddress]  = useState('');
+  const [resolving,     setResolving]     = useState(false); // ENS/.ton resolve (2.6)
+  const [resolvedAlias, setResolvedAlias] = useState('');    // name the address was resolved from
+  const [resolveErr,    setResolveErr]    = useState('');
   const [amount,   setAmount]   = useState('');
   const [step,     setStep]     = useState<Step>('form');
   const [password, setPassword] = useState('');
@@ -321,6 +325,38 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
     : coin === 'TON' || coin === 'USDT_TON'     ? isValidTonAddress(address.trim())
     : isValidBtcAddress(address.trim()); // BTC
 
+  // Name resolution (2.6): ENS for ETH-family, TON DNS for TON-family. Only the
+  // matching name type is resolvable; everything else falls back to literal
+  // address validation.
+  const resolvableChain: ResolvableChain | null =
+    coin === 'ETH' || coin === 'USDT' ? 'eth'
+    : coin === 'TON' || coin === 'USDT_TON' ? 'ton'
+    : null;
+  const addressIsName =
+    resolvableChain === 'eth' ? looksLikeEnsName(address.trim())
+    : resolvableChain === 'ton' ? looksLikeTonDnsName(address.trim())
+    : false;
+
+  /**
+   * Continue to review. If the input is a resolvable name, resolve it FIRST and
+   * put the resolved ADDRESS into state — so the review card shows the address
+   * (not the alias) and the same simulation + risk engine run on it. Fail-closed:
+   * a null resolution shows an error and stays on the form.
+   */
+  const handleContinue = async () => {
+    setResolveErr('');
+    if (addressValid) { setResolvedAlias(''); setStep('confirm'); return; }
+    if (addressIsName && resolvableChain) {
+      setResolving(true);
+      const resolved = await resolveName(address.trim(), resolvableChain);
+      setResolving(false);
+      if (!resolved) { setResolveErr(t('csResolveFailed')); return; }
+      setResolvedAlias(address.trim());
+      setAddress(resolved); // review + risk + simulation run on the resolved address
+      setStep('confirm');
+    }
+  };
+
   /** Осознанный override блокирующего риска — фиксация в БД и audit. */
   const confirmRiskOverride = () => {
     track('risk_override', { coin, reason_code: risk?.reasons[0]?.code ?? 'unknown' }, traceRef.current);
@@ -349,6 +385,9 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
     setRiskOverridden(false);
     setStep('form');
     setAddress('');
+    setResolvedAlias('');
+    setResolveErr('');
+    setResolving(false);
     setAmount('');
     setPassword('');
     setPwError('');
@@ -762,6 +801,9 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           ))}
           <div style={{ borderTop: '1px solid rgba(0,255,127,0.08)', paddingTop: '12px' }}>
             <p className="text-[#3A6045] text-xs mb-1">{t('csRecipientAddressLabel')}</p>
+            {resolvedAlias && (
+              <p className="text-[#00FF7F] text-[10px] mb-0.5">{resolvedAlias} → {t('csResolvedTo')}</p>
+            )}
             <p className="text-white text-xs font-mono break-all">{address}</p>
           </div>
         </div>
@@ -944,14 +986,21 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           <input
             type="text"
             value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            placeholder={data.placeholder}
+            onChange={(e) => { setAddress(e.target.value); setResolvedAlias(''); setResolveErr(''); }}
+            placeholder={resolvableChain === 'eth' ? `${data.placeholder} ${t('csOrEnsName')}` : resolvableChain === 'ton' ? `${data.placeholder} ${t('csOrTonName')}` : data.placeholder}
             className="w-full bg-transparent text-white text-sm outline-none placeholder:text-[#3A6045] font-mono"
             style={{ caretColor: '#00FF7F' }}
           />
         </div>
-        {address && !addressValid && (
+        {/* Invalid only when it's neither a valid address NOR a resolvable name. */}
+        {address && !addressValid && !addressIsName && !resolveErr && (
           <p className="text-xs mt-1" style={{ color: '#FF5252' }}>{t('csInvalidAddress')}</p>
+        )}
+        {addressIsName && !resolveErr && (
+          <p className="text-xs mt-1" style={{ color: '#3A6045' }}>{t('csNameWillResolve')}</p>
+        )}
+        {resolveErr && (
+          <p className="text-xs mt-1" style={{ color: '#FF5252' }}>{resolveErr}</p>
         )}
       </div>
 
@@ -1000,12 +1049,12 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       </div>
 
       <button
-        onClick={() => setStep('confirm')}
-        disabled={!addressValid || !amountNum || insufficient}
+        onClick={handleContinue}
+        disabled={(!addressValid && !addressIsName) || !amountNum || insufficient || resolving}
         className="w-full py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95 disabled:opacity-30"
         style={{ background: '#00FF7F', color: '#080C09' }}
       >
-        {t('csContinue')}
+        {resolving ? t('csResolving') : t('csContinue')}
       </button>
     </div>
   );
