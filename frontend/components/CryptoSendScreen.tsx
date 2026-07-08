@@ -508,7 +508,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         <div>
           <p className="text-white text-xl font-bold">{t('csSent').replace('{amt}', String(amountNum)).replace('{coin}', coinLabel(coin))}</p>
           <p className="text-[#3A6045] text-sm mt-1">
-            {`${recipientName ? `${recipientName} • ` : ''}${t('csTxSentToNetwork')}`}
+            {`${recipientName ? `${recipientName} • ` : ''}${isDemo ? t('csTxSentDemo') : t('csTxSentToNetwork')}`}
           </p>
         </div>
 
@@ -519,29 +519,32 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           >
             <p className="text-[#3A6045] text-xs mb-1">TX Hash</p>
             <p className="text-white text-xs font-mono break-all">{shortHash}</p>
-            <a
-              href={
-                coin === 'SOL'
-                  ? `https://solscan.io/tx/${txHash}`
-                  : coin === 'BTC'
-                  ? `https://blockstream.info/tx/${txHash}`
-                  : coin === 'TRX' || coin === 'TRC20'
-                  ? `https://tronscan.org/#/transaction/${txHash}`
-                  : coin === 'TON' || coin === 'USDT_TON'
-                  ? `https://tonscan.org/tx/${txHash}`
-                  : `https://etherscan.io/tx/${txHash}`
-              }
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-2 inline-block text-xs font-semibold"
-              style={{ color: '#00FF7F' }}
-            >
-              {coin === 'SOL'                        ? t('csViewOnSolscan')
-               : coin === 'BTC'                      ? t('csViewOnBlockstream')
-               : coin === 'TRX' || coin === 'TRC20'    ? t('csViewOnTronscan')
-               : coin === 'TON' || coin === 'USDT_TON' ? t('csViewOnTonscan')
-               : t('csViewOnEtherscan')}
-            </a>
+            {/* Demo tx hashes are fake — an explorer link would 404, so hide it. */}
+            {!isDemo && (
+              <a
+                href={
+                  coin === 'SOL'
+                    ? `https://solscan.io/tx/${txHash}`
+                    : coin === 'BTC'
+                    ? `https://blockstream.info/tx/${txHash}`
+                    : coin === 'TRX' || coin === 'TRC20'
+                    ? `https://tronscan.org/#/transaction/${txHash}`
+                    : coin === 'TON' || coin === 'USDT_TON'
+                    ? `https://tonscan.org/tx/${txHash}`
+                    : `https://etherscan.io/tx/${txHash}`
+                }
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-2 inline-block text-xs font-semibold"
+                style={{ color: '#00FF7F' }}
+              >
+                {coin === 'SOL'                        ? t('csViewOnSolscan')
+                 : coin === 'BTC'                      ? t('csViewOnBlockstream')
+                 : coin === 'TRX' || coin === 'TRC20'    ? t('csViewOnTronscan')
+                 : coin === 'TON' || coin === 'USDT_TON' ? t('csViewOnTonscan')
+                 : t('csViewOnEtherscan')}
+              </a>
+            )}
           </div>
         )}
 
