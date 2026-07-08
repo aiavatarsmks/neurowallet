@@ -198,3 +198,21 @@ type="number" → на мобиле/Telegram WebView ненадёжная кла
 **Проверено в браузере (demo на проде):** landing → демо → портфель (task1) →
 крипто-send с review + Нейра anti-poisoning (task3) прошли; demo-задачи трекаются
 (view_portfolio, demo_send отмечены). Real-режим не затронут.
+
+## Задача 2.6 (ENS/TON resolvers) — Ночь #2
+
+### D-N2-5: TON DNS работает, ENS временно выключен
+**Сделано:** `lib/name-resolvers.ts` (детерминированный, fail-closed, 12 тестов).
+Вживлён в CryptoSendScreen с гардами (п.2): резолв ПЕРЕД review → в review показан
+итоговый адрес + строка «alias → адрес:» (пользователь подтверждает адрес);
+тот же risk engine + симуляция бегут на резолвнутом адресе; при null — ошибка,
+остаёмся на форме.
+**TON DNS (.ton) — проверено на проде:** foundation.ton → EQCD39VS… ✓ (это TON-first
+приоритет).
+**ENS (.eth) — выключен в UI:** ethers `resolveName` падает против публичного
+cloudflare-eth RPC в браузерном бандле («failed to detect network», не лечится
+staticNetwork/Network.from(1)). fail-closed → риска нет. Резолвер-lib оставлен
+(с тестами) до появления надёжного ETH RPC / raw-eth_call реализации.
+**Развилка для Максима:** (а) оставить ENS выключенным (TON-first и так приоритет),
+(б) подключить платный/надёжный ETH RPC для ENS, (в) реализовать ENS через
+raw eth_call к ENS UniversalResolver (без ethers-детекции сети).
