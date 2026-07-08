@@ -31,10 +31,11 @@ export async function resolveEns(name: string): Promise<string | null> {
   const n = name.trim().toLowerCase();
   if (!looksLikeEnsName(n)) return null;
   try {
-    // Static mainnet network (skip auto-detection) + batchMaxCount:1 — the
-    // cloudflare-eth public RPC rejects batched JSON-RPC arrays, which otherwise
-    // makes ethers fail with "failed to detect network".
-    const provider = new ethers.JsonRpcProvider(ETH_RPC, 1, { staticNetwork: true, batchMaxCount: 1 });
+    // Pass an explicit mainnet Network object as staticNetwork so ethers never
+    // runs its own network-detection step (which was failing against the public
+    // cloudflare-eth RPC). batchMaxCount:1 for broad RPC compatibility.
+    const mainnet = ethers.Network.from(1);
+    const provider = new ethers.JsonRpcProvider(ETH_RPC, mainnet, { staticNetwork: mainnet, batchMaxCount: 1 });
     const addr = await provider.resolveName(n);
     if (!addr || !ethers.isAddress(addr)) return null;
     return ethers.getAddress(addr); // checksummed
