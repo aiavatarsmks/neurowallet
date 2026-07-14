@@ -40,6 +40,13 @@ const EVENTS: Record<string, readonly string[]> = {
   demo_convert_clicked: [],
   session_identified: [],
   sessions_revoked: [],
+  // 2.8 claim-links — asset/network only, no amounts/addresses (anti-PII)
+  claim_link_created: ['asset', 'network', 'demo'],
+  claim_link_opened: ['asset', 'network', 'demo'],
+  claim_wallet_created: ['demo'],
+  claim_completed: ['asset', 'network', 'demo'],
+  claim_link_expired: ['demo'],
+  claim_link_returned: ['demo'],
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

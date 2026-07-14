@@ -50,7 +50,14 @@ export type AnalyticsEvent =
   | 'demo_funnel_completed'
   | 'demo_convert_clicked'
   | 'session_identified'
-  | 'sessions_revoked';
+  | 'sessions_revoked'
+  // 2.8 claim-links viral loop (link → open → onboard → claim)
+  | 'claim_link_created'
+  | 'claim_link_opened'
+  | 'claim_wallet_created'
+  | 'claim_completed'
+  | 'claim_link_expired'
+  | 'claim_link_returned';
 
 export function track(
   event: AnalyticsEvent,
