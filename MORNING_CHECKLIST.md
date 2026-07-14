@@ -127,3 +127,33 @@
 Задачи 2.x начаты по твоему указанию, хотя **Gate Фазы 1 (usability-прогон) не пройден**.
 Инварианты безопасности CLAUDE.md соблюдены строго. Реальную интеграцию Web3Auth в
 онбординг НЕ начинал (ждёт Gate Фазы 1 + твоего PoC).
+
+---
+
+# 🔗 2.8 Claim-links v1 (demo) — статус приёмки + активация
+
+## Приёмка v1 (код готов, CI зелёный — 181 тест, lint/tsc чисто)
+- [x] Полный demo-цикл claim реализован end-to-end (sender create → ссылка →
+      recipient open → онбординг → «зачисление» demo). Код готов.
+- [x] Ровно одна неистёкшая ссылка на перевод — backend (uniq active-dedupe index
+      + идемпотентный create).
+- [x] Expiry 7 дней + lazy-expiry; возврат отправителю (demo — авто-release).
+- [x] Из demo НЕТ реального chain-действия — структурный инвариант-тест
+      (`claim-no-chain.test.ts`: 7 модулей claim не трогают chain-send).
+- [x] Conversion-события пишутся (created/opened/wallet_created/completed/expired/
+      returned), allowlist на сервере.
+- [x] Feature flag `NEXT_PUBLIC_CLAIM_LINKS_ENABLED` (по умолчанию OFF → фича инертна).
+- **Прод-проверка:** home 200, `/claim` 200, `/api/claim/*` 403 (flag off, роуты живы).
+
+## ⏳ Активация (нужно применить — я не смог: браузер отключился mid-session)
+1. [ ] **Применить миграцию `supabase/migrations/0009_claim_links.sql`** в SQL Editor
+       (main PRODUCTION). Идемпотентная, аддитивная (2 таблицы + RLS). Я применю,
+       когда браузер-расширение переподключится, либо примени сам.
+2. [ ] **Включить флаг** в Vercel env: `NEXT_PUBLIC_CLAIM_LINKS_ENABLED=true`
+       (+ опц. `CLAIM_MAX_ACTIVE`, `CLAIM_MAX_PER_DAY`, `NEXT_PUBLIC_CLAIM_EXPIRY_DAYS`
+       — дефолты 20/20/7). Redeploy.
+3. [ ] **Live-verify** demo-цикла: demo → «Отправить по ссылке» → создать →
+       открыть ссылку в др. вкладке → онбординг → «Забрано (демо)»; проверить в
+       `claim_links`/`claim_events` и `analytics_events` события воронки.
+
+⚠️ **Real-money (v2 testnet / v3 escrow) НЕ трогал** — только v1 demo, per DECISION_2.8.
