@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { generateMnemonic, importWalletFromMnemonic } from '@/lib/crypto/wallet';
 import { track } from '@/lib/analytics';
+import { getPendingClaim, completeClaim, clearPendingClaim } from '@/lib/claim-client';
 import { PinSetup } from '@/components/PinSetup';
 
 type Step = 'choice' | 'show-mnemonic' | 'verify-mnemonic' | 'import-mnemonic' | 'set-password' | 'generating' | 'pin-setup';
@@ -176,6 +177,15 @@ export default function OnboardingWalletPage() {
         localStorage.setItem('wallet_ton_enc',       wallet.tonEnc);
       }
       track(importMnemonicInput.trim() ? 'wallet_imported' : 'wallet_created');
+
+      // Claim-link handoff (2.8): if this wallet was created to claim a link,
+      // record the activation and complete the (demo) claim. Fire-and-forget.
+      const pending = getPendingClaim();
+      if (pending) {
+        track('claim_wallet_created', { demo: true });
+        void completeClaim(pending.ref, pending.secret).finally(() => clearPendingClaim());
+      }
+
       setStep('pin-setup');
     } catch (e) {
       setError(e instanceof Error ? e.message : t('onbGenError'));

@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { sanitizeAmountInput } from '@/lib/display-format';
+import { ClaimCreate } from '@/components/ClaimCreate';
+import { claimLinksEnabled } from '@/lib/claim-config';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { supabase } from '@/lib/supabase';
 import { isNeuroId, normalizeNeuroId } from '@/lib/neuro-id';
@@ -92,6 +94,7 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [copiedInvite, setCopiedInvite] = useState(false);
+  const [showClaim, setShowClaim] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupError, setLookupError] = useState('');
   const [resolvedNeuroId, setResolvedNeuroId] = useState('');
@@ -588,13 +591,26 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
 
           <button
             onClick={handleInvite}
-            className="w-full py-3.5 mb-8 rounded-2xl font-semibold text-sm transition-all active:scale-95"
+            className="w-full py-3.5 rounded-2xl font-semibold text-sm transition-all active:scale-95"
             style={{ background: 'transparent', border: '1px solid rgba(0,255,127,0.18)', color: '#00FF7F' }}
           >
             {copiedInvite ? t('sendInviteLinkReady') : t('sendInviteRecipient')}
           </button>
+
+          {/* Claim links (2.8) — demo only, flag-gated */}
+          {isDemo && claimLinksEnabled() && (
+            <button
+              onClick={() => setShowClaim(true)}
+              className="w-full py-3.5 mb-8 rounded-2xl font-semibold text-sm transition-all active:scale-95"
+              style={{ background: 'rgba(0,255,127,0.06)', border: '1px solid rgba(0,255,127,0.25)', color: '#00FF7F' }}
+            >
+              {t('claimEntry')}
+            </button>
+          )}
         </div>
       )}
+
+      {showClaim && <ClaimCreate onClose={() => setShowClaim(false)} />}
 
       {step === 'amount' && selected && (
         <div className="flex flex-col gap-4">
