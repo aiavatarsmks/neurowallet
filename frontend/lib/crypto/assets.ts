@@ -95,6 +95,25 @@ export const SUPPORTED_ASSETS: CryptoAssetMeta[] = [
   },
 ];
 
+/**
+ * 2.10 TON-native positioning: TON assets must not rank below others on the
+ * portfolio/home surface (Telegram Blockchain Guidelines — «TON-native
+ * multichain wallet»). These are the TON-chain symbols.
+ */
+export const TON_NATIVE_SYMBOLS: ReadonlySet<string> = new Set(['TON', 'USDT_TON']);
+
+/**
+ * Stable sort that hoists TON-native assets to the front while preserving the
+ * relative order of everything else. Display-only (home/portfolio); it does NOT
+ * touch the send picker order (COIN_PICKER_ORDER stays USDT TRC-20 first). Array
+ * sort is stable (ES2019+), so non-TON assets keep their incoming order.
+ */
+export function tonNativeFirst<T extends { symbol: string }>(rows: readonly T[]): T[] {
+  return [...rows].sort(
+    (a, b) => Number(!TON_NATIVE_SYMBOLS.has(a.symbol)) - Number(!TON_NATIVE_SYMBOLS.has(b.symbol)),
+  );
+}
+
 export function explorerUrlForAsset(asset: CryptoAssetMeta, address: string): string | undefined {
   if (!address) return undefined;
   if (asset.addressKey === 'btc') return `https://blockstream.info/address/${address}`;

@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useDisplayCurrency } from '@/contexts/DisplayCurrencyContext';
 import { fetchRealBalances, MARKET_REFRESH_MS, WalletBalances } from '@/lib/crypto/balances';
-import { SUPPORTED_ASSETS, type AssetSymbol } from '@/lib/crypto/assets';
+import { SUPPORTED_ASSETS, tonNativeFirst, type AssetSymbol } from '@/lib/crypto/assets';
 import { formatPercent } from '@/lib/display-format';
 import {
   DEMO_HOLDINGS, demoValueEUR, DEMO_CRYPTO_TOTAL_EUR, DEMO_FIAT_TOTAL_EUR,
@@ -145,6 +145,10 @@ export const BalanceCard: React.FC = () => {
         })
       : [];
 
+  // 2.10 TON-native positioning: TON assets rank first in the home asset row
+  // (does not affect the send picker). Non-TON assets keep their relative order.
+  const orderedCryptoRows = tonNativeFirst(cryptoRows);
+
   const visibleViews: View[] = isDemo ? ['total', 'fiat', 'crypto'] : ['total', 'crypto'];
 
   return (
@@ -191,7 +195,7 @@ export const BalanceCard: React.FC = () => {
       {/* Total / Crypto view — asset mini row */}
       {(view === 'total' || view === 'crypto') && !loading && (
         <div className="flex gap-3 mt-3 flex-wrap">
-          {cryptoRows.map((a) => (
+          {orderedCryptoRows.map((a) => (
             <div key={a.symbol} className="flex items-center gap-1.5">
               <span className="text-[#3A6045] text-xs">{a.symbol}</span>
               <span className="text-white text-xs font-medium">{formatFiat(a.valueEUR, { maximumFractionDigits: 2 })}</span>
