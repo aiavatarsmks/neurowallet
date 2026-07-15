@@ -56,7 +56,7 @@ interface ReceiveScreenProps {
   initialNetwork?: ReceiveNetwork;
 }
 
-export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = 'ETH' }) => {
+export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = 'TON' }) => {
   const { isDemo } = useAuth();
   const { t } = useLanguage();
   const [network, setNetwork] = useState<ReceiveNetwork>(initialNetwork);

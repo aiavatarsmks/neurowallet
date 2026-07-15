@@ -185,7 +185,8 @@ export default function WalletPage() {
   // Only ever moves to 'open' after localStorage has been read on the client.
   const [pinGate, setPinGate] = useState<PinGate>('checking');
   const [walletPassword, setWalletPassword] = useState<string | null>(null);
-  const [receiveCoin, setReceiveCoin] = useState<ReceiveNetwork>('ETH');
+  // 2.10 TON-native positioning: Receive defaults to TON (per-coin taps override).
+  const [receiveCoin, setReceiveCoin] = useState<ReceiveNetwork>('TON');
   const [cryptoSendCoin, setCryptoSendCoin] = useState<CryptoSendCoin>('ETH');
   const [cryptoSendDraft, setCryptoSendDraft] = useState<CryptoSendDraft | null>(null);
 
