@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { neuroIdFromUserId, syncMyNeuroDirectory } from '@/lib/neuro-id';
 import SecurityCenter from '@/components/SecurityCenter';
 import NotificationsInbox from '@/components/NotificationsInbox';
+import NotificationSettings from '@/components/NotificationSettings';
 import { explorerUrlForAsset, SUPPORTED_ASSETS, type AssetAddressKey } from '@/lib/crypto/assets';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
@@ -357,6 +358,9 @@ export const ProfileScreen: React.FC = () => {
 
       {/* In-app inbox (задача 2.4) — renders nothing when empty/demo */}
       <NotificationsInbox />
+
+      {/* Preference center (задача 2.4) — renders nothing when flag off/demo */}
+      <NotificationSettings />
 
       {/* Security center lite (задача 1.6) */}
       <SecurityCenter />

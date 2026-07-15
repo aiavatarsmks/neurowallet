@@ -23,7 +23,7 @@ describe('POST /api/claim/complete', () => {
     process.env.NEXT_PUBLIC_CLAIM_LINKS_ENABLED = 'true';
     mAuth.mockResolvedValue(USER);
     mLimit.mockResolvedValue(true);
-    mComplete.mockResolvedValue({ ok: true, asset: 'USDT_TON', network: 'ton', amount: 5, isDemo: true });
+    mComplete.mockResolvedValue({ ok: true, asset: 'USDT_TON', network: 'ton', amount: 5, isDemo: true, senderUserId: null });
   });
 
   it('403 when the flag is off', async () => {

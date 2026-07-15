@@ -2,6 +2,8 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { requireSupabaseUser, checkRateLimit, writeAuditLog } from '@/lib/server/api-security';
 import { completeClaim } from '@/lib/server/claim';
 import { claimLinksEnabled } from '@/lib/claim-config';
+import { dispatchNotification } from '@/lib/server/notification-engine';
+import { notificationsEngineEnabled } from '@/lib/notifications-config';
 
 /**
  * POST /api/claim/complete — recipient claims a link. Auth REQUIRED (they must
@@ -33,5 +35,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if ('error' in result) return res.status(STATUS[result.error] ?? 400).json({ error: result.error });
 
   await writeAuditLog(auth.user.id, 'claim_claimed', { asset: result.asset, network: result.network, is_demo: result.isDemo }, req);
+
+  // Notify the sender that their link was claimed (transactional). Best-effort,
+  // engine-gated; inbox-only (we don't hold the sender's Telegram id here).
+  if (notificationsEngineEnabled() && result.senderUserId && result.senderUserId !== auth.user.id) {
+    const meta: Record<string, string> = /^[A-Z0-9_]{2,10}$/.test(result.asset) ? { coin: result.asset } : {};
+    await dispatchNotification({
+      userId: result.senderUserId,
+      kind: 'claim_received',
+      meta,
+      dedupeKey: `claim_received:${body.ref}`,
+      req,
+    }).catch(() => {});
+  }
+
   return res.status(200).json({ ok: true, asset: result.asset, network: result.network, amount: result.amount, is_demo: result.isDemo });
 }

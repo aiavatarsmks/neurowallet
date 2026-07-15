@@ -19,6 +19,8 @@ const USER = { user: { id: 'u1' }, token: 'jwt' } as Awaited<ReturnType<typeof r
 describe('POST /api/notifications/emit', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Legacy path (engine flag off): emit → writeNotification directly.
+    process.env.NEXT_PUBLIC_NOTIFICATIONS_ENGINE_ENABLED = '';
     mockedAuth.mockResolvedValue(USER);
     mockedLimit.mockResolvedValue(true);
   });
@@ -56,5 +58,23 @@ describe('POST /api/notifications/emit', () => {
     await handler(mockReq({ method: 'POST', body: { kind: 'tx_sent', coin: 'USDT ERC-20' } }), res);
     expect(res.statusCode).toBe(204);
     expect(mockedWrite).toHaveBeenCalledWith('u1', 'tx_sent', 'ru', {}, undefined);
+  });
+
+  it('accepts the new tx_failed / price_alert kinds', async () => {
+    for (const kind of ['tx_failed', 'price_alert'] as const) {
+      mockedWrite.mockClear();
+      const res = mockRes();
+      await handler(mockReq({ method: 'POST', body: { kind } }), res);
+      expect(res.statusCode).toBe(204);
+      expect(mockedWrite).toHaveBeenCalledWith('u1', kind, 'ru', {}, undefined);
+    }
+  });
+
+  it('still rejects server-only kinds (weekly_recap, claim_received)', async () => {
+    for (const kind of ['weekly_recap', 'claim_received']) {
+      const res = mockRes();
+      await handler(mockReq({ method: 'POST', body: { kind } }), res);
+      expect(res.statusCode).toBe(400);
+    }
   });
 });

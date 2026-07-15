@@ -125,7 +125,7 @@ export async function getClaimStatus(ref: string): Promise<ClaimStatus | null> {
 }
 
 export type CompleteClaimResult =
-  | { ok: true; asset: string; network: string; amount: number; isDemo: boolean }
+  | { ok: true; asset: string; network: string; amount: number; isDemo: boolean; senderUserId: string | null }
   | { error: string };
 
 /** Verify secret + atomically claim (funded → claimed). Compare-and-set: no double-claim. */
@@ -135,7 +135,7 @@ export async function completeClaim(
   const db = svc();
   if (!db) return { error: 'unavailable' };
   const { data: row } = await db.from('claim_links')
-    .select('id, asset, network, amount, status, expires_at, is_demo, secret_hash, target_tg_id, require_auth')
+    .select('id, asset, network, amount, status, expires_at, is_demo, secret_hash, target_tg_id, require_auth, sender_user_id')
     .eq('id', ref).maybeSingle();
   if (!row) return { error: 'not_found' };
   if (new Date(row.expires_at).getTime() < Date.now()) {
@@ -153,5 +153,5 @@ export async function completeClaim(
   if (!upd.data) return { error: 'already_claimed' };
 
   await writeEvent(db, ref, 'claimed', claimerUserId, sessionId, { is_demo: row.is_demo });
-  return { ok: true, asset: row.asset, network: row.network, amount: Number(row.amount), isDemo: row.is_demo };
+  return { ok: true, asset: row.asset, network: row.network, amount: Number(row.amount), isDemo: row.is_demo, senderUserId: row.sender_user_id ?? null };
 }

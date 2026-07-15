@@ -1,14 +1,23 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { requireSupabaseUser, checkRateLimit, getTraceId } from '@/lib/server/api-security';
-import { writeNotification, type NotificationKind, type Lang } from '@/lib/server/notifications';
+import { writeNotification, type Lang } from '@/lib/server/notifications';
+import { dispatchNotification } from '@/lib/server/notification-engine';
+import { notificationsEngineEnabled, type NotificationKind } from '@/lib/notifications-config';
 
 /**
- * POST /api/notifications/emit — record an in-app notification for the caller.
+ * POST /api/notifications/emit — record a notification for the caller.
  * Auth required. The client only names an allowlisted kind (+ validated coin);
  * the server composes the text. No free text, no amounts/addresses. Rate limited.
+ *
+ * When NEXT_PUBLIC_NOTIFICATIONS_ENGINE_ENABLED is on, the request is routed
+ * through the rule engine (preferences, quiet hours, dedup, Telegram channel).
+ * When off, it degrades to the original inbox-only insert — so the flag is a
+ * clean, inert rollback.
  */
 
-const ALLOWED_KINDS: NotificationKind[] = ['tx_sent', 'security_alert'];
+// Client-triggerable kinds. security_alert/price_alert stay allowlisted; recap
+// & claim_received are emitted server-to-server only, not from this endpoint.
+const ALLOWED_KINDS: NotificationKind[] = ['tx_sent', 'tx_failed', 'security_alert', 'price_alert'];
 const COIN_RE = /^[A-Z0-9_]{2,10}$/;
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -43,6 +52,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // One notification per event: dedupe on kind+trace when a trace id is present.
   const dedupe = traceId ? `${kind}:${traceId}` : undefined;
 
-  await writeNotification(auth.user.id, kind, lang, meta, dedupe);
+  if (notificationsEngineEnabled()) {
+    const telegramId = Number(auth.user.user_metadata?.telegram_id);
+    await dispatchNotification({
+      userId: auth.user.id,
+      kind,
+      lang,
+      meta,
+      dedupeKey: dedupe,
+      telegramId: Number.isFinite(telegramId) && telegramId ? telegramId : null,
+      req,
+    });
+  } else {
+    await writeNotification(auth.user.id, kind, lang, meta, dedupe);
+  }
   return res.status(204).end();
 }
