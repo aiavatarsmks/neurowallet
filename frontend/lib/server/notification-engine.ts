@@ -64,20 +64,29 @@ export async function loadRules(db: SupabaseClient, userId: string): Promise<Not
   }
 }
 
-/** promotional deliveries actually SENT in the trailing window (retention cap). */
+/** promotional deliveries actually SENT in the trailing window (retention cap).
+ * Best-effort: on a query error returns 0 (fail-open) so a transient DB hiccup
+ * never throws out of dispatch — the caller (a real tx/claim) must not break. */
 async function promoSentInWindow(db: SupabaseClient, userId: string): Promise<number> {
-  const since = new Date(Date.now() - PROMO_WINDOW_MS).toISOString();
-  const { count } = await db
-    .from('notification_deliveries')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .eq('category', 'promotional')
-    .eq('status', 'sent')
-    .gte('created_at', since);
-  return count ?? 0;
+  try {
+    const since = new Date(Date.now() - PROMO_WINDOW_MS).toISOString();
+    const { count } = await db
+      .from('notification_deliveries')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('category', 'promotional')
+      .eq('status', 'sent')
+      .gte('created_at', since);
+    return count ?? 0;
+  } catch {
+    return 0;
+  }
 }
 
-/** Was this exact event already SENT to this channel? (idempotent dedup) */
+/** Was this exact event already SENT to this channel? (idempotent dedup)
+ * Best-effort: on a query error returns false — the DB unique index on
+ * (user, channel, dedupe_key) WHERE status='sent' is the real dedup guarantee,
+ * so a failed pre-check can never produce an actual duplicate row. */
 async function alreadySent(
   db: SupabaseClient,
   userId: string,
@@ -85,14 +94,18 @@ async function alreadySent(
   dedupeKey: string | null,
 ): Promise<boolean> {
   if (!dedupeKey) return false;
-  const { count } = await db
-    .from('notification_deliveries')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .eq('channel', channel)
-    .eq('dedupe_key', dedupeKey)
-    .eq('status', 'sent');
-  return (count ?? 0) > 0;
+  try {
+    const { count } = await db
+      .from('notification_deliveries')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('channel', channel)
+      .eq('dedupe_key', dedupeKey)
+      .eq('status', 'sent');
+    return (count ?? 0) > 0;
+  } catch {
+    return false;
+  }
 }
 
 async function recordDelivery(
@@ -209,12 +222,16 @@ export async function dispatchNotification(input: DispatchInput): Promise<Dispat
 
   // ── Audit critical kinds that were actually delivered somewhere ──────────────
   if (input.req && CRITICAL_KINDS.has(input.kind) && (result.inbox === 'sent' || result.telegram === 'sent')) {
-    await writeAuditLog(
-      input.userId,
-      'notification_delivered',
-      { kind: input.kind, category, inbox: result.inbox, telegram: result.telegram },
-      input.req,
-    );
+    try {
+      await writeAuditLog(
+        input.userId,
+        'notification_delivered',
+        { kind: input.kind, category, inbox: result.inbox, telegram: result.telegram },
+        input.req,
+      );
+    } catch {
+      /* audit is best-effort — never break the caller over a log write */
+    }
   }
 
   return result;
