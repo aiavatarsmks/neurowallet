@@ -32,6 +32,30 @@ export async function emitNotification(
   }
 }
 
+const RECAP_THROTTLE_KEY = 'nw_recap_requested_week';
+
+/**
+ * Ask the server to build/deliver this week's AI recap (задача 2.7). Client-side
+ * throttle (one call per ISO week) is a courtesy — the server is authoritative
+ * via per-week dedup, so extra calls are cheap no-ops. Best-effort, never throws.
+ */
+export async function requestWeeklyRecap(weekKey: string, lang: 'ru' | 'en' = 'ru'): Promise<void> {
+  try {
+    if (typeof window !== 'undefined' && localStorage.getItem(RECAP_THROTTLE_KEY) === weekKey) return;
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return; // demo / signed out — no recap
+    await fetch('/api/notifications/recap', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ lang }),
+    });
+    if (typeof window !== 'undefined') localStorage.setItem(RECAP_THROTTLE_KEY, weekKey);
+  } catch {
+    /* best-effort */
+  }
+}
+
 /** Shape returned/accepted by /api/notifications/prefs (snake_case, matches DB). */
 export interface NotificationPrefs {
   telegram_enabled: boolean;

@@ -57,7 +57,9 @@ export type AnalyticsEvent =
   | 'claim_wallet_created'
   | 'claim_completed'
   | 'claim_link_expired'
-  | 'claim_link_returned';
+  | 'claim_link_returned'
+  // 2.7 weekly AI recap — open-rate
+  | 'weekly_recap_opened';
 
 export function track(
   event: AnalyticsEvent,

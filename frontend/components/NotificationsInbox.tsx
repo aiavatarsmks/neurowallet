@@ -8,6 +8,9 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { requestWeeklyRecap } from '@/lib/notifications-client';
+import { isoWeekKey, weeklyRecapEnabled } from '@/lib/recap-content';
+import { track } from '@/lib/analytics';
 
 interface Notif {
   id: string;
@@ -18,9 +21,33 @@ interface Notif {
   created_at: string;
 }
 
+const RECAP_OPENED_KEY = 'nw_recap_opened_ids';
+
+/** Track a weekly_recap card as "opened" at most once per notification id. */
+function trackRecapOpens(items: Notif[]): void {
+  if (typeof window === 'undefined') return;
+  const recaps = items.filter((i) => i.kind === 'weekly_recap');
+  if (recaps.length === 0) return;
+  let seen: string[] = [];
+  try {
+    seen = JSON.parse(localStorage.getItem(RECAP_OPENED_KEY) ?? '[]');
+  } catch {
+    seen = [];
+  }
+  let changed = false;
+  for (const r of recaps) {
+    if (!seen.includes(r.id)) {
+      track('weekly_recap_opened');
+      seen.push(r.id);
+      changed = true;
+    }
+  }
+  if (changed) localStorage.setItem(RECAP_OPENED_KEY, JSON.stringify(seen.slice(-100)));
+}
+
 export const NotificationsInbox: React.FC = () => {
   const { isDemo, user } = useAuth();
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [items, setItems] = useState<Notif[]>([]);
 
   const load = async () => {
@@ -30,14 +57,23 @@ export const NotificationsInbox: React.FC = () => {
         .select('id, kind, title, body, read_at, created_at')
         .order('created_at', { ascending: false })
         .limit(20);
-      if (Array.isArray(data)) setItems(data as Notif[]);
+      if (Array.isArray(data)) {
+        setItems(data as Notif[]);
+        trackRecapOpens(data as Notif[]);
+      }
     } catch {
       /* table may not exist yet / offline — render nothing */
     }
   };
 
   useEffect(() => {
-    if (!isDemo && user) load();
+    if (isDemo || !user) return;
+    // 2.7: ask the server to build this week's recap (throttled + server-deduped),
+    // then load the inbox so a freshly-inserted recap shows the same session.
+    (async () => {
+      if (weeklyRecapEnabled()) await requestWeeklyRecap(isoWeekKey(Date.now()), lang);
+      await load();
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDemo, user]);
 

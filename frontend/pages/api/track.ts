@@ -47,6 +47,8 @@ const EVENTS: Record<string, readonly string[]> = {
   claim_completed: ['asset', 'network', 'demo'],
   claim_link_expired: ['demo'],
   claim_link_returned: ['demo'],
+  // 2.7 weekly AI recap — open-rate tracking (denominator = deliveries sent)
+  weekly_recap_opened: [],
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
