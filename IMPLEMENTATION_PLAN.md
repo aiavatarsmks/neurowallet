@@ -214,9 +214,26 @@
 - Telegram contacts linking (privacy-first, opt-in), ENS/TON username резолв в recipient picker.
 - **Приёмка:** «отправить по @username» работает; privacy-настройки уважаются.
 
-### 2.7 Weekly AI recap v1
+### 2.7 Weekly AI recap v1 — ✅ РЕАЛИЗОВАНА (v1)
 - Нейра-дайджест «что произошло с деньгами за неделю» из snapshot/событий → карточка in-app inbox + Telegram (по opt-in).
 - **Приёмка:** recap собирается только из фактических данных; open rate трекается.
+- **Сделано:**
+  - `lib/recap-content.ts` — чистая сборка safe-текста из фактических счётчиков
+    (`send_succeeded`, `risk_flagged`, `claim_link_created`, `claim_completed`,
+    `ai_chat_used`/`ai_explain_used`); пустая неделя → рекап не шлётся; только
+    счётчики и нейтральные формулировки (ни сумм, ни адресов, ни тикеров).
+  - `lib/server/recap.ts` — агрегирует `analytics_events` за 7 дней (service role)
+    и диспатчит `weekly_recap` (promotional) через движок 2.4: opt-in Telegram,
+    quiet hours, promo-кап ≤ 2/нед, дедуп по ISO-неделе (`weekly_recap:YYYY-Www`).
+  - `POST /api/notifications/recap` — auth + rate-limit, флаг-гейт
+    `NEXT_PUBLIC_WEEKLY_RECAP_ENABLED` (OFF ⇒ 403, инертно). Клиент дёргает на
+    открытии приложения (throttle 1×/нед; сервер авторитетен через дедуп).
+  - Open-rate: событие `weekly_recap_opened` (track allowlist), трекается из inbox
+    один раз на id рекапа; знаменатель — `notification_deliveries` (kind=weekly_recap).
+  - Инвариант соблюдён: LLM-текст здесь не генерится вовсе — это детерминированный
+    шаблон поверх validated-счётчиков; ключей/seed не касается.
+  - Тесты: `recap-content` (9), `recap-engine` (3), `notifications-recap` (5). CI зелёный (224).
+- **Новый env:** `NEXT_PUBLIC_WEEKLY_RECAP_ENABLED=true` (Vercel Production+Preview) для активации. **Новых миграций нет** — рекап переиспользует таблицы 0008/0010.
 
 ### 2.8 Claim-ссылки «отправил тебе X USDT — забери» (главная виральная петля)
 
