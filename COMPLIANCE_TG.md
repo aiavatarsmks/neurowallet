@@ -69,7 +69,7 @@ NeuroWallet — a TON wallet with AI safety. TON at the core; manage BTC, ETH, S
 - [x] Гигиена-аудит внешних ссылок (только block explorers).
 - [x] Receive: дефолтная сеть → TON. (wallet.tsx `receiveCoin` init + ReceiveScreen `initialNetwork` fallback = 'TON'; per-coin «Получить» тапы override.)
 - [x] Главная: TON-активы не ниже остальных (порядок ассетов). (`tonNativeFirst` в `lib/crypto/assets.ts` хойстит TON/USDT_TON в начало home-строки `BalanceCard`, стабильно; Send-пикер `COIN_PICKER_ORDER` не тронут.)
-- [ ] Онбординг / privacy / лендинг: TON-native копирайт.
+- [x] Онбординг / privacy / лендинг: TON-native копирайт. (Лендинг-слайды `i18n.ts` → identity «TON-кошелёк с AI-защитой»; убран overclaim про «автопилот/policy engine»; заодно privacy-фикс: AI-провайдер = OpenRouter/OpenAI GPT-4o mini, не Anthropic. Онбординг/privacy-тело — функциональны и уже non-custodial-точны, не трогали.)
 - [ ] BotFather: применить тексты (Максим).
 - [ ] TON Connect — **отложено** (пред-условие экосистемных интеграций, не сейчас).
 - [ ] (Опц.) Перечитать первоисточник целиком перед масштабированием; при
