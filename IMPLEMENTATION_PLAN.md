@@ -293,6 +293,14 @@
 - Safety: prompt-injection фильтры, tool schema validation, jailbreak detection, red-team набор промптов в CI.
 - Таблицы: `ai_intents`, `tool_calls`, `confirmations`, `executions`.
 - **Приёмка:** каждое денежное действие имеет deterministic tool call + auditable confirm; ambiguous intent («какому Максу?») → уточнение, не угадывание.
+- **✅ Tool Firewall построен (2026-07-18, safety-ядро):** `lib/tool-firewall.ts` —
+  чистый `validateToolCall(name, args, registry)`, deny-by-default: unknown tool /
+  missing required / bad type / smuggled param → reject. Стартовый registry —
+  ТОЛЬКО read/prepare тулы (`prepare_send` возвращает НЕподписанный draft);
+  **execute/sign-тула для AI не существует** (инвариант `registryIsReadPrepareOnly`).
+  Поток остаётся: intent → tool firewall → [[policy-engine]] → confirm → signer.
+  8 тестов. **Осталось (нужно ревью/решение):** intent parser, набор команд,
+  red-team-промпты в CI, wiring в реальный путь.
 
 ### 3.3 Token approvals scanner + WalletConnect/domain risk
 - Скан активных approvals с revoke; domain warnings; WalletConnect session list в Security center.
