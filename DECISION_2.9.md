@@ -36,7 +36,20 @@
 - **Self-referral / same-device / same-payment-instrument** blocks.
 - **Manual review queue** for spikes (append-only, service-role).
 
-## Safe scaffolding I can build now (behind a flag, no rewards) — needs your OK
+## ✅ Pure guard core shipped (2026-07-18, flag OFF — no schema, no payout)
+
+`lib/referral.ts` (+ 9 tests): the decision-neutral anti-fraud + compliance logic
+that's required under ANY reward design —
+- `checkReferralEligibility()` runs deny-by-default guards: self-referral,
+  same-device (empty≠match), Telegram account-too-new (≥14d), velocity (≤10/wk);
+- **`canReward(status)` = the compliance gate: rewards ONLY a `funded` referral**
+  (never signup/connect — CLAUDE.md + guidelines);
+- code format validation; flag `NEXT_PUBLIC_REFERRAL_ENABLED` (OFF).
+
+No schema, no reward path, no fingerprint provider wired (those are your
+decisions). This is only the reusable gating core.
+
+## Remaining scaffolding (needs your OK — depends on reward decisions)
 
 Provider-agnostic, reversible (flag OFF, additive migration like 0010):
 

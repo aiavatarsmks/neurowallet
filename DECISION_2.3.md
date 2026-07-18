@@ -49,7 +49,20 @@ Single provider for v1 (like swap → 1inch): one hosted flow, one webhook
 reconciler, `region capability flags` gating availability. Add a second provider
 only if region/asset gaps demand it.
 
-## Safe scaffolding I can build now (no account, behind a flag) — needs your OK
+## ✅ Region/asset gate core shipped (2026-07-18, flag OFF — no provider)
+
+`lib/onramp-config.ts` (+ 6 tests): the provider-agnostic gating core —
+- `onrampAvailableForRegion()` — EU-first allowlist (16 regions, `ONRAMP_REGIONS`
+  override), **deny by default**: unknown/unsupported region refused BEFORE any
+  KYC/redirect (acceptance "честный отказ до KYC");
+- `isOnrampAsset()` — TON-first v1 assets (TON, USDT_TON);
+- ramp order status + terminal-state helper (for the later webhook reconciler);
+- flag `NEXT_PUBLIC_ONRAMP_ENABLED` (OFF).
+
+The provider (undecided), its hosted flow, `ramp_orders` schema and webhook
+reconciler are NOT built — they depend on the provider choice below.
+
+## Remaining scaffolding (needs your OK — depends on provider choice)
 
 If you want me to start before the provider is chosen, the **provider-agnostic**
 parts are safe and reversible (flag OFF, additive migration like 0010):
