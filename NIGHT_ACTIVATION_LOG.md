@@ -39,23 +39,37 @@ go-ahead. All are reversible. Recorded here for review.
    claim link → open → claim), then run the queries in `CLAIM_LINKS_VERIFY.md`
    with that ref. RLS half of that verify is already ✅ (above).
 
-## Remaining Phase 2 (2.1 / 2.3 / 2.2 / 2.9) — all blocked on YOUR decisions
+## ✅ Safe cores BUILT this session (flags OFF, tested — activate later)
 
-None can be implemented autonomously — each needs a **provider account / API key
-(I'm not allowed to create accounts)** and/or a **product/pricing decision**:
+After your go-ahead I built the decision-neutral core of every remaining task
+that has one. All ship dark (flag OFF), need no account, move no money:
 
-- **2.1** (Web3Auth) — needs Web3Auth account + Supabase JWT verifier + a device
-  Telegram PoC. See `DECISION_2.1.md` / `POC_WEB3AUTH.md`.
-- **2.2** (1inch swap) — needs 1inch API key + fee-% decision + scope (EVM+SOL+TON
-  vs BTC). See `DECISION_2.2.md`.
-- **2.3** (on-ramp) — decision framework drafted tonight: **`DECISION_2.3.md`**.
-- **2.9** (referral) — decision framework drafted tonight: **`DECISION_2.9.md`**.
+- **2.2 swap** — `lib/swap-quote.ts` (BigInt fee/slippage + `/api/swap/quote`
+  proxy, 1inch adapter stubbed). Activate: add `ONEINCH_API_KEY` + confirm markup %.
+- **2.3 on-ramp** — `lib/onramp-config.ts` (EU-first region gate + TON-first assets).
+  Activate: pick provider + create account.
+- **2.9 referral** — `lib/referral.ts` (anti-fraud guards + funded-only `canReward`).
+  Activate: decide reward medium/amounts.
+- **3.1 Policy Engine** — `lib/policy-engine.ts` (deterministic, deny-by-default;
+  acceptance proven) + migration `0011_policies.sql` **(NOT yet applied)**.
+- **3.2 Tool Firewall + Action Proposals + Explainability** — `lib/tool-firewall.ts`,
+  `lib/action-proposal.ts`. Full AI-safety moat assembled up to the signer.
 
-I did NOT write speculative code for these (would presuppose vendor choices and
-risk throwaway/vendor-locked code, and 2.1 touches key custody = fund-loss risk).
-Each decision doc lists the safe, flag-gated scaffolding I *can* build on your OK.
+## ⏭️ Still needs YOU (nothing else is safely autonomous)
 
-## Also this session (already pushed earlier)
-Closed & pushed: 2.4 notification engine (+ never-throw hardening), 2.7 weekly AI
-recap, all 2.10 code items (Receive→TON, TON-first home, TON-native copy, privacy
-provider fix), aes/pin tests. Test suite 207 → 248, tsc clean, `origin/main` synced.
+1. **BotFather texts** — Telegram not logged in here. Texts finalized in
+   `COMPLIANCE_TG.md`. ~2 min.
+2. **Claim event-cycle verify** — tables empty; do a Mini App smoke then run
+   `CLAIM_LINKS_VERIFY.md`.
+3. **Apply migration `0011_policies.sql`** (SQL Editor, like 0010) — or I can, on
+   your OK.
+4. **Wire the moat / features into the real send+AI path** — gates money, so only
+   under your supervision. Needs your "go".
+5. **Provider accounts/keys** (1inch, on-ramp, Web3Auth) + **product decisions**
+   (swap markup %, referral reward, AI command set, premium pricing).
+6. **2.1 key-custody migration** (CloudStorage) — fund-loss risk; supervised only.
+
+## Also this session (all pushed)
+Closed: 2.4 notification engine (+ never-throw hardening), 2.7 weekly AI recap,
+all 2.10 code items. Cores: 2.2/2.3/2.9/3.1/3.2. Docs: SUPABASE_SCHEMA (0001–0011),
+DECISION_2.2/2.3/2.9. **Test suite 207 → 309, tsc clean, `origin/main` synced.**
