@@ -10,6 +10,9 @@ import { emitNotification } from '@/lib/notifications-client';
 import { looksLikeTonDnsName, resolveName, type ResolvableChain } from '@/lib/name-resolvers';
 import { simulateTransfer, isBlocked, type SimulationResult, type SimWarning } from '@/lib/crypto/simulate';
 import { assessRecipient, type RiskAssessment } from '@/lib/risk/engine';
+import { policyEngineEnabled, type PolicyDecision } from '@/lib/policy-engine';
+import { evaluateSend } from '@/lib/policy-check';
+import { fetchPolicies } from '@/lib/policies-client';
 import { txFacts } from '@/lib/neura/facts';
 import { completeDemoTask } from '@/lib/demo-guide';
 import { fetchExplanation } from '@/lib/neura/explain-client';
@@ -114,6 +117,10 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   const [riskOverridden, setRiskOverridden] = useState(false);
   const riskEventIdRef = useRef('');
 
+  // Policy Engine gate on review (задача 3.1) — active only behind the flag.
+  const [policyDecision, setPolicyDecision] = useState<PolicyDecision | null>(null);
+  const [policyConfirmed, setPolicyConfirmed] = useState(false);
+
   // Neura explainer на review (задача 1.7)
   const [neuraNote,        setNeuraNote]        = useState('');
   const [neuraNoteLoading, setNeuraNoteLoading] = useState(false);
@@ -197,6 +204,8 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       setSim(null);
       setRisk(null);
       setRiskOverridden(false);
+      setPolicyDecision(null);
+      setPolicyConfirmed(false);
       setNeuraNote('');
       setSimLoading(true);
 
@@ -234,6 +243,28 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       setSim(result);
       setRisk(assessment);
       setSimLoading(false);
+
+      // Policy Engine (задача 3.1) — evaluate the send against the user's
+      // policies. Behind the flag: when off, policyDecision stays null and the
+      // send flow is unchanged. Best-effort: never blocks on an error.
+      if (policyEngineEnabled()) {
+        try {
+          const pols = await fetchPolicies();
+          if (!cancelled) {
+            setPolicyDecision(
+              evaluateSend(pols, {
+                coin,
+                displayAmount: amountNum,
+                recipient: address.trim(),
+                network: coin,
+                recipientIsFirstTime: !history.includes(address.trim()),
+              }),
+            );
+          }
+        } catch {
+          /* best-effort — no policy gate on error */
+        }
+      }
 
       track('send_review_shown', { coin }, traceRef.current);
       if (isBlocked(result)) {
@@ -403,6 +434,19 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       setTimeout(() => onAvatarState?.('idle'), 3000);
       if (isDemo) completeDemoTask('demo_send'); // воронка 1.8; chain-действий здесь нет
       return;
+    }
+
+    // Policy Engine gate (задача 3.1, flag-gated). Chokepoint defense: a denied
+    // action can never proceed; a confirm-required action needs the checkbox.
+    if (policyEngineEnabled() && policyDecision) {
+      if (policyDecision.effect === 'deny') {
+        setSendErr(policyDecision.reasons[0]?.message ?? 'Blocked by your policies.');
+        return;
+      }
+      if (policyDecision.effect === 'confirm' && !policyConfirmed) {
+        setSendErr(policyDecision.reasons[0]?.message ?? 'Please confirm the policy notice.');
+        return;
+      }
     }
 
     // ETH — require password
@@ -746,7 +790,10 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
     const realReview = data.implemented && !isDemo;
     const simBlocked = realReview && sim !== null && isBlocked(sim);
     const riskBlocked = realReview && risk !== null && risk.level === 'block' && (!risk.overridable || !riskOverridden);
-    const confirmDisabled = realReview && (simLoading || simBlocked || riskBlocked);
+    const policyActive = realReview && policyEngineEnabled() && policyDecision !== null;
+    const policyBlocked = policyActive && policyDecision!.effect === 'deny';
+    const policyNeedsConfirm = policyActive && policyDecision!.effect === 'confirm' && !policyConfirmed;
+    const confirmDisabled = realReview && (simLoading || simBlocked || riskBlocked || policyBlocked || policyNeedsConfirm);
 
     const SHIELD: Record<'ok' | 'warning' | 'block', { icon: string; color: string; bg: string; border: string }> = {
       ok:      { icon: '🛡', color: '#00FF7F', bg: 'rgba(0,255,127,0.05)',  border: 'rgba(0,255,127,0.2)' },
@@ -838,6 +885,31 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
                   className="mt-0.5 accent-[#FF453A]"
                 />
                 <span className="text-xs text-white leading-relaxed">{t('csRiskOverrideLabel')}</span>
+              </label>
+            )}
+          </div>
+        )}
+
+        {/* Policy Engine banner (задача 3.1) — only when the flag is on */}
+        {policyActive && policyDecision!.effect !== 'allow' && (
+          <div
+            className="rounded-xl p-3 flex flex-col gap-1.5"
+            style={{
+              background: policyBlocked ? 'rgba(255,59,48,0.08)' : 'rgba(247,147,26,0.06)',
+              border: `1px solid ${policyBlocked ? 'rgba(255,59,48,0.35)' : 'rgba(247,147,26,0.25)'}`,
+            }}
+          >
+            <span className="text-xs font-semibold" style={{ color: policyBlocked ? '#FF453A' : '#F7931A' }}>
+              {policyBlocked ? '⛔ ' : '⚠️ '}
+              {lang === 'en' ? 'Security policy' : 'Политика безопасности'}
+            </span>
+            {policyDecision!.reasons.map((r, i) => (
+              <span key={i} className="text-xs text-white leading-relaxed">{r.message}</span>
+            ))}
+            {policyNeedsConfirm && (
+              <label className="flex items-start gap-2 mt-1 cursor-pointer">
+                <input type="checkbox" checked={policyConfirmed} onChange={(e) => setPolicyConfirmed(e.target.checked)} className="mt-0.5 accent-[#F7931A]" />
+                <span className="text-xs text-white leading-relaxed">{lang === 'en' ? 'I understand, proceed' : 'Понимаю, продолжить'}</span>
               </label>
             )}
           </div>

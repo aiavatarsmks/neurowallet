@@ -5,6 +5,7 @@ import { neuroIdFromUserId, syncMyNeuroDirectory } from '@/lib/neuro-id';
 import SecurityCenter from '@/components/SecurityCenter';
 import NotificationsInbox from '@/components/NotificationsInbox';
 import NotificationSettings from '@/components/NotificationSettings';
+import PolicySettings from '@/components/PolicySettings';
 import { explorerUrlForAsset, SUPPORTED_ASSETS, type AssetAddressKey } from '@/lib/crypto/assets';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
@@ -361,6 +362,9 @@ export const ProfileScreen: React.FC = () => {
 
       {/* Preference center (задача 2.4) — renders nothing when flag off/demo */}
       <NotificationSettings />
+
+      {/* Policy Engine permissions (задача 3.1) — renders nothing when flag off/demo */}
+      <PolicySettings />
 
       {/* Security center lite (задача 1.6) */}
       <SecurityCenter />

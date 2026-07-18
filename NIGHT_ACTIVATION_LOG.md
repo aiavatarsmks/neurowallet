@@ -51,7 +51,10 @@ that has one. All ship dark (flag OFF), need no account, move no money:
 - **2.9 referral** — `lib/referral.ts` (anti-fraud guards + funded-only `canReward`).
   Activate: decide reward medium/amounts.
 - **3.1 Policy Engine** — `lib/policy-engine.ts` (deterministic, deny-by-default;
-  acceptance proven) + migration `0011_policies.sql` **(NOT yet applied)**.
+  acceptance proven) + migration `0011_policies.sql` **APPLIED to prod** + CRUD
+  API + permissions UI (ProfileScreen) + **wired into send-review behind flag
+  `NEXT_PUBLIC_POLICY_ENGINE_ENABLED` (OFF)**. Flip that flag (Vercel) to activate;
+  send flow is unchanged while OFF.
 - **3.2 Tool Firewall + Action Proposals + Explainability** — `lib/tool-firewall.ts`,
   `lib/action-proposal.ts`. Full AI-safety moat assembled up to the signer.
 
@@ -61,10 +64,10 @@ that has one. All ship dark (flag OFF), need no account, move no money:
    `COMPLIANCE_TG.md`. ~2 min.
 2. **Claim event-cycle verify** — tables empty; do a Mini App smoke then run
    `CLAIM_LINKS_VERIFY.md`.
-3. **Apply migration `0011_policies.sql`** (SQL Editor, like 0010) — or I can, on
-   your OK.
-4. **Wire the moat / features into the real send+AI path** — gates money, so only
-   under your supervision. Needs your "go".
+3. ~~Apply migration 0011~~ — **DONE (applied to prod 2026-07-18)**.
+4. **Enable the Policy Engine when ready:** set `NEXT_PUBLIC_POLICY_ENGINE_ENABLED=true`
+   in Vercel + redeploy → the permissions screen appears (Profile) and sends are
+   checked against your policies. Review the flow first; flag OFF = no change.
 5. **Provider accounts/keys** (1inch, on-ramp, Web3Auth) + **product decisions**
    (swap markup %, referral reward, AI command set, premium pricing).
 6. **2.1 key-custody migration** (CloudStorage) — fund-loss risk; supervised only.

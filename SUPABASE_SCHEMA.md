@@ -218,10 +218,11 @@ freshness `auth_date` ≤ 15 минут (`pages/api/tg-auth.ts`, покрыто 
 | 0010 | `0010_notification_engine.sql` | notification_rules, notification_deliveries | 2.4 (движок) |
 | 0011 | `0011_policies.sql` | policies, policy_evaluations | 3.1 (policy engine) |
 
-**Применено к prod:** 0001–0010 (0010 — 2026-07-18). **0011 — НЕ применена**
-(написана 2026-07-18, ждёт ручного применения Максимом; policy engine пока за
-флагом OFF и не подключён к send/AI). При добавлении миграции обновляй эту
-таблицу и «RLS-статус» выше.
+**Применено к prod:** 0001–**0011** (0010 и 0011 — 2026-07-18; 0011 RLS
+верифицирован: policies 4 CRUD-own, policy_evaluations select-own). Policy engine
+подключён в send-review, но **за флагом `NEXT_PUBLIC_POLICY_ENGINE_ENABLED` (OFF)** —
+при OFF send-флоу не меняется. При добавлении миграции обновляй эту таблицу и
+«RLS-статус» выше.
 
 ### public.policies / public.policy_evaluations (задача 3.1 — policy engine)
 Moat: детерминированные правила поверх денежных действий. Чистый движок —
