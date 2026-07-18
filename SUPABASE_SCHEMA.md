@@ -216,6 +216,20 @@ freshness `auth_date` ≤ 15 минут (`pages/api/tg-auth.ts`, покрыто 
 | 0008 | `0008_notifications.sql` | notifications | 2.4 (inbox) |
 | 0009 | `0009_claim_links.sql` | claim_links, claim_events | 2.8 |
 | 0010 | `0010_notification_engine.sql` | notification_rules, notification_deliveries | 2.4 (движок) |
+| 0011 | `0011_policies.sql` | policies, policy_evaluations | 3.1 (policy engine) |
 
-**Применено к prod:** 0001–0010 (0010 — 2026-07-18). При добавлении миграции
-обновляй эту таблицу и «RLS-статус» выше.
+**Применено к prod:** 0001–0010 (0010 — 2026-07-18). **0011 — НЕ применена**
+(написана 2026-07-18, ждёт ручного применения Максимом; policy engine пока за
+флагом OFF и не подключён к send/AI). При добавлении миграции обновляй эту
+таблицу и «RLS-статус» выше.
+
+### public.policies / public.policy_evaluations (задача 3.1 — policy engine)
+Moat: детерминированные правила поверх денежных действий. Чистый движок —
+`lib/policy-engine.ts` (не в БД). Флаг `NEXT_PUBLIC_POLICY_ENGINE_ENABLED`.
+- `policies`: id, user_id (CASCADE), enabled, **type** (CHECK по 7 типам правил),
+  **rule** JSONB (параметры), created/updated. RLS: **CRUD только своё** под JWT
+  (пользователь управляет своими политиками, как contacts). Миграция 0011.
+- `policy_evaluations`: append-only лог решений — mode (user/automation),
+  action_kind, asset, **effect** (allow/confirm/deny CHECK), applied_policy_ids,
+  reasons (машинные коды, без сумм/адресов), trace_id, created_at. RLS: select
+  своё; **insert только service role**; UPDATE/DELETE запрещены (append-only).

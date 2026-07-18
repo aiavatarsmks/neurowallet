@@ -276,6 +276,16 @@
 - UI: permissions dashboard, шаблоны политик, revoke button.
 - Таблицы: `policies`, `policy_evaluations`.
 - **Приёмка:** test suite доказывает, что запрещённое действие невозможно исполнить в обход политики.
+- **✅ Ядро движка построено (2026-07-18, flag OFF):** `lib/policy-engine.ts` —
+  чистый детерминированный `evaluateAction(action, policies, mode)`: правила
+  max_per_tx/day, allowed_networks, blocked_recipients, first_time_confirm,
+  require_approval_for_contract, allow_automation; агрегация deny>confirm>allow;
+  **automation = deny by default** (нет разрешающей политики → deny). Приёмка
+  доказана тестом: hard-limit деним даже при automation-whitelist (обход
+  невозможен). 14 тестов. Миграция `0011_policies.sql` (policies + append-only
+  policy_evaluations, RLS) — **Максим применяет вручную**. Флаг
+  `NEXT_PUBLIC_POLICY_ENGINE_ENABLED`. **Осталось (нужно ревью/решение):**
+  wiring в реальный send/AI-путь (гейтит деньги — по надзором), permissions UI.
 
 ### 3.2 Нейра command interface («send 20 USDT Максу»)
 - Архитектура: intent parser → context assembler → tool router (deterministic tools only) → policy checker → confirmation sheet → signer → audit.
