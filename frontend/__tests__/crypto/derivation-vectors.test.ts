@@ -12,6 +12,10 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { importWalletFromMnemonic, validateMnemonic, type CryptoWallet } from '@/lib/crypto/wallet';
 import { decryptBytes } from '@/lib/crypto/aes';
+import { tonAddressFromPrivKey } from '@/lib/crypto/ton-tx';
+import { mnemonicValidate, mnemonicToPrivateKey } from '@ton/crypto';
+import { Address, WalletContractV4 } from '@ton/ton';
+import { ethers } from 'ethers';
 
 const TEST_MNEMONIC =
   'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
@@ -73,3 +77,70 @@ describe('multi-chain derivation vectors', () => {
     expect(Object.keys(w).filter((k) => k.toLowerCase().includes('xor'))).toEqual([]);
   });
 });
+
+// ─── 24-word dual-valid (BIP39 + TON) vector — DECISION_TON_DERIVATION.md ────
+// Generated once and pinned; a test phrase that must never hold funds.
+// TON is checked against the TON reference implementation (@ton/crypto
+// mnemonicToPrivateKey + V4R2) computed independently of lib/crypto/wallet.ts —
+// i.e. the address Tonkeeper derives from this phrase. ETH against ethers.
+const DUAL_MNEMONIC =
+  'sword tattoo water unknown claw drill evoke circle cannon soccer defense agent ' +
+  'vivid bulb awkward raise extend amount honey picnic flat deny ten awake';
+
+describe('24-word dual-valid vector (TON standard scheme)', () => {
+  let d: CryptoWallet;
+  beforeAll(async () => {
+    delete process.env.NEXT_PUBLIC_TON_MNEMONIC_ENABLED;
+    d = await importWalletFromMnemonic(DUAL_MNEMONIC, PASSWORD);
+  }, SLOW);
+
+  it('phrase is valid both as BIP39 and as a TON mnemonic', async () => {
+    expect(validateMnemonic(DUAL_MNEMONIC)).toBe(true);
+    expect(await mnemonicValidate(DUAL_MNEMONIC.split(' '))).toBe(true);
+  });
+
+  it('TON uses the Tonkeeper scheme and matches the @ton/crypto reference', async () => {
+    const kp = await mnemonicToPrivateKey(DUAL_MNEMONIC.split(' '));
+    const ref = WalletContractV4.create({ publicKey: kp.publicKey, workchain: 0 }).address;
+    expect(d.tonScheme).toBe('ton-mnemonic-v4r2');
+    expect(Address.parse(d.ton).equals(ref)).toBe(true);
+    expect(d.ton).toBe('EQCdomz4v6wzHIlFIsjr_OMwqHUSZHWai1tfLSRzf7trcR0l');
+  });
+
+  it('other chains keep their BIP39 paths (unchanged scheme)', () => {
+    expect(d.eth).toBe(ethers.HDNodeWallet.fromPhrase(DUAL_MNEMONIC, '', "m/44'/60'/0'/0/0").address);
+    expect([d.eth, d.btc, d.sol, d.tron]).toEqual([
+      '0x81c4309B2EA4dD44ADb22d16D81c2ba5AC453463',
+      'bc1q2ne2ue8r4jafda4xphn4tgnvr5edslqxnu9lsm',
+      'GzrLaQPndWKJGPiTm7mzZ1DfHihfLF1o8sDew5dr12hL',
+      'TSnxXVXLjy2EMwKXXg2n6RXkay3cnj5HSc',
+    ]);
+  });
+
+  it('encrypted TON blob is the signing seed for the same address (send path)', async () => {
+    const seed = await decryptBytes(d.tonEnc, PASSWORD);
+    expect(seed.length).toBe(32);
+    expect(Address.parse(tonAddressFromPrivKey(seed)).equals(Address.parse(d.ton))).toBe(true);
+    seed.fill(0);
+  }, SLOW);
+});
+
+describe('legacy 12-word regression (flag ON must not move the TON address)', () => {
+  it('12-word import keeps the legacy SLIP-0010 TON account, shown as UQ…', async () => {
+    process.env.NEXT_PUBLIC_TON_MNEMONIC_ENABLED = 'true';
+    try {
+      const l = await importWalletFromMnemonic(TEST_MNEMONIC, PASSWORD);
+      expect(l.tonScheme).toBe('slip10-607-0-0');
+      expect(l.ton).toBe('UQA2qqtv2MASYNxCAjSB740ly2JELsh56uWl1rBeH4jWIpOq');
+      expect(Address.parse(l.ton).equals(Address.parse('EQA2qqtv2MASYNxCAjSB740ly2JELsh56uWl1rBeH4jWIs5v'))).toBe(true);
+    } finally {
+      delete process.env.NEXT_PUBLIC_TON_MNEMONIC_ENABLED;
+    }
+  }, SLOW);
+
+  it('flag OFF: 12-word import is byte-identical to before (legacy scheme, EQ…)', () => {
+    expect(w.tonScheme).toBe('slip10-607-0-0');
+    expect(w.ton).toBe('EQA2qqtv2MASYNxCAjSB740ly2JELsh56uWl1rBeH4jWIs5v');
+  });
+});
+

@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import { toNonBounceableTon } from '@/lib/crypto/ton-tx';
+import { tonMnemonicEnabled } from '@/lib/ton-mnemonic-config';
 import { useAuth } from '@/contexts/AuthContext';
 import { neuroIdFromUserId, syncMyNeuroDirectory } from '@/lib/neuro-id';
 import SecurityCenter from '@/components/SecurityCenter';
@@ -173,7 +175,9 @@ export const ProfileScreen: React.FC = () => {
     const sol  = localStorage.getItem('wallet_sol_address')  || '';
     const btc  = localStorage.getItem('wallet_btc_address')  || '';
     const tron = localStorage.getItem('wallet_tron_address') || '';
-    const ton  = localStorage.getItem('wallet_ton_address')  || '';
+    const tonStored = localStorage.getItem('wallet_ton_address')  || '';
+    // Flag ON: display TON as non-bounceable UQ… (same account as stored EQ…).
+    const ton  = tonStored && tonMnemonicEnabled() ? toNonBounceableTon(tonStored) : tonStored;
     setEthAddr(eth);
     setSolAddr(sol);
     setBtcAddr(btc);

@@ -5,6 +5,8 @@ import { sanitizeAmountInput } from '@/lib/display-format';
 import { COIN_PICKER_ORDER } from '@/lib/coin-labels';
 import QRCode from 'qrcode';
 import { useAuth } from '@/contexts/AuthContext';
+import { toNonBounceableTon } from '@/lib/crypto/ton-tx';
+import { tonMnemonicEnabled } from '@/lib/ton-mnemonic-config';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 export type ReceiveNetwork = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TRX' | 'TRC20' | 'TON' | 'USDT_TON';
@@ -86,7 +88,9 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
     const eth  = localStorage.getItem('wallet_eth_address');
     const sol  = localStorage.getItem('wallet_sol_address');
     const btc  = localStorage.getItem('wallet_btc_address');
-    const ton  = localStorage.getItem('wallet_ton_address');
+    const tonStored = localStorage.getItem('wallet_ton_address');
+    // Flag ON: show wallets' TON as non-bounceable UQ… (same account as stored EQ…).
+    const ton  = tonStored && tonMnemonicEnabled() ? toNonBounceableTon(tonStored) : tonStored;
     const tron = localStorage.getItem('wallet_tron_address');
     setAddresses({
       ETH:  eth  || '',

@@ -13,14 +13,22 @@ import { tronAddressFromPrivKey } from './tron-tx';
 import { tonAddressFromPrivKey } from './ton-tx';
 import { btcSegwitAddressFromPrivKey } from './btc-tx';
 import { encryptBytes } from './aes';
+import { generateDualValidMnemonic, tonSchemeForPhrase, tonSeedFromMnemonic } from './ton-mnemonic';
+import {
+  tonMnemonicEnabled,
+  TON_SCHEME_NATIVE,
+  TON_SCHEME_STORAGE_KEY,
+  type TonScheme,
+} from '@/lib/ton-mnemonic-config';
 
 export interface CryptoWallet {
   eth:  string;       // Ethereum address (BIP44 m/44'/60'/0'/0/0)
   sol:  string;       // Solana address (Ed25519 pubkey, Base58)
   btc:  string;       // Bitcoin native SegWit address (BIP84-compatible bc1q...)
   tron: string;       // Tron address (BIP44 m/44'/195'/0'/0/0, T...)
-  ton:  string;       // TON address (SLIP-0010 ed25519 m/44'/607'/0'/0')
-  mnemonic: string;   // 12-word BIP39 phrase
+  ton:  string;       // TON V4R2 address (scheme: see tonScheme)
+  tonScheme: TonScheme; // 'ton-mnemonic-v4r2' (24-word, Tonkeeper) | 'slip10-607-0-0' (legacy)
+  mnemonic: string;   // BIP39 phrase: 12 words (legacy) or 24 words (dual-valid BIP39 + TON)
   keystore: string;   // Encrypted ETH keystore JSON (AES-256 + scrypt N=131072)
   solEnc:  string;    // SOL privkey encrypted with AES-GCM + PBKDF2 (base64)
   btcEnc:  string;    // BTC privkey encrypted with AES-GCM + PBKDF2 (base64)
@@ -34,6 +42,15 @@ export function generateMnemonic(): string {
   return bip39.generateMnemonic(128);
 }
 
+/**
+ * Phrase for a NEW wallet. Flag ON: 24 words valid both as BIP39 and as a TON
+ * mnemonic (one phrase restores TON in Tonkeeper and EVM/SOL/BTC/TRON in their
+ * wallets). Flag OFF: the previous 12-word BIP39 phrase.
+ */
+export async function generateNewWalletMnemonic(): Promise<string> {
+  return tonMnemonicEnabled() ? generateDualValidMnemonic() : generateMnemonic();
+}
+
 export function validateMnemonic(phrase: string): boolean {
   return bip39.validateMnemonic(phrase.trim().toLowerCase().replace(/\s+/g, ' '));
 }
@@ -43,7 +60,8 @@ export async function importWalletFromMnemonic(
   password: string,
 ): Promise<CryptoWallet> {
   const normalized = mnemonic.trim().toLowerCase().replace(/\s+/g, ' ');
-  if (!bip39.validateMnemonic(normalized)) {
+  const wordCount = normalized.split(' ').length;
+  if ((wordCount !== 12 && wordCount !== 24) || !bip39.validateMnemonic(normalized)) {
     throw new Error('Неверная мнемоническая фраза. Проверь порядок и написание слов.');
   }
 
@@ -82,11 +100,18 @@ export async function importWalletFromMnemonic(
   const tron          = tronAddressFromPrivKey(tronPrivBytes);
   const tronEnc       = await encryptBytes(tronPrivBytes, password);
 
-  // TON — SLIP-0010 ed25519 at m/44'/607'/0'/0' (all components hardened — required by ed25519-hd-key)
-  const { key: tonPrivKey } = derivePath("m/44'/607'/0'/0'", seed.toString('hex'));
-  const tonPrivBytes        = tonPrivKey as unknown as Uint8Array;
-  const ton                 = tonAddressFromPrivKey(tonPrivBytes);
-  const tonEnc              = await encryptBytes(tonPrivBytes, password);
+  // TON — scheme is decided by the phrase itself (never by a feature flag, so a
+  // re-import always yields the same address):
+  //  • 24 words that are a valid TON mnemonic → TON standard (Tonkeeper-compatible);
+  //  • otherwise (all 12-word phrases) → legacy SLIP-0010 ed25519 at
+  //    m/44'/607'/0'/0' (all components hardened — required by ed25519-hd-key).
+  const tonScheme = await tonSchemeForPhrase(normalized);
+  const tonPrivBytes: Uint8Array = tonScheme === TON_SCHEME_NATIVE
+    ? await tonSeedFromMnemonic(normalized)
+    : (derivePath("m/44'/607'/0'/0'", seed.toString('hex')).key as unknown as Uint8Array);
+  // Flag ON → store/show the non-bounceable UQ… form (same account as EQ…).
+  const ton    = tonAddressFromPrivKey(tonPrivBytes, { bounceable: !tonMnemonicEnabled() });
+  const tonEnc = await encryptBytes(tonPrivBytes, password);
 
   // Zero out all in-memory private key buffers before returning
   solPrivBytes.fill(0);
@@ -94,7 +119,7 @@ export async function importWalletFromMnemonic(
   tronPrivBytes.fill(0);
   tonPrivBytes.fill(0);
 
-  return { eth: ethWallet.address, sol, btc, tron, ton, mnemonic: normalized, keystore, solEnc, btcEnc, tronEnc, tonEnc };
+  return { eth: ethWallet.address, sol, btc, tron, ton, tonScheme, mnemonic: normalized, keystore, solEnc, btcEnc, tronEnc, tonEnc };
 }
 
 // ─── localStorage helpers ──────────────────────────────────────────────────
@@ -110,6 +135,7 @@ const LS = {
   BTC_ENC:  'wallet_btc_enc',
   TRON_ENC: 'wallet_tron_enc',
   TON_ENC:  'wallet_ton_enc',
+  TON_SCHEME: TON_SCHEME_STORAGE_KEY,
 };
 
 export function saveWalletToStorage(w: CryptoWallet): void {
@@ -124,6 +150,7 @@ export function saveWalletToStorage(w: CryptoWallet): void {
   localStorage.setItem(LS.BTC_ENC,  w.btcEnc);
   localStorage.setItem(LS.TRON_ENC, w.tronEnc);
   localStorage.setItem(LS.TON_ENC,  w.tonEnc);
+  localStorage.setItem(LS.TON_SCHEME, w.tonScheme);
 }
 
 export function loadAddressesFromStorage(): { eth: string; sol: string; btc: string; tron: string; ton: string } | null {

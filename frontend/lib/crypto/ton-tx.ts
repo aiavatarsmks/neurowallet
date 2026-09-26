@@ -2,7 +2,9 @@
  * lib/crypto/ton-tx.ts
  * TON native + USDT Jetton (TRC-like on TON network).
  *
- * Key derivation: SLIP-0010 ed25519 at m/44'/607'/0'/0' (all segments hardened)
+ * Key derivation: see wallet.ts — TON standard mnemonic (24-word, Tonkeeper-
+ *                 compatible; ton-mnemonic.ts) or legacy SLIP-0010 ed25519
+ *                 m/44'/607'/0'/0' (all segments hardened) for 12-word phrases
  * Wallet:         WalletContractV4 (V4R2 in TON ecosystem)
  * USDT master:    EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs (6 decimals)
  * Transport:      toncenter API v2. Balances go through /api/balances with a
@@ -36,10 +38,26 @@ function getTonClient(apiKey?: string): TonClient {
 
 // ─── Address derivation ───────────────────────────────────────────────────────
 
-export function tonAddressFromPrivKey(privKeyBytes: Uint8Array): string {
+/**
+ * V4R2 address for a 32-byte ed25519 seed. `bounceable: false` gives the UQ…
+ * form recommended for wallets (same account, different encoding).
+ */
+export function tonAddressFromPrivKey(
+  privKeyBytes: Uint8Array,
+  opts: { bounceable?: boolean } = {},
+): string {
   const keyPair = keyPairFromSeed(Buffer.from(privKeyBytes));
   const wallet = WalletContractV4.create({ publicKey: keyPair.publicKey, workchain: 0 });
-  return wallet.address.toString({ bounceable: true, urlSafe: true });
+  return wallet.address.toString({ bounceable: opts.bounceable ?? true, urlSafe: true });
+}
+
+/** Any TON address form → non-bounceable UQ… for display; unparsable input returned as-is. */
+export function toNonBounceableTon(address: string): string {
+  try {
+    return Address.parse(address).toString({ bounceable: false, urlSafe: true });
+  } catch {
+    return address;
+  }
 }
 
 // ─── Address validation ───────────────────────────────────────────────────────

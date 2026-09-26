@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { generateMnemonic, importWalletFromMnemonic } from '@/lib/crypto/wallet';
+import { generateNewWalletMnemonic, importWalletFromMnemonic, saveWalletToStorage } from '@/lib/crypto/wallet';
+import { tonMnemonicEnabled } from '@/lib/ton-mnemonic-config';
 import { track } from '@/lib/analytics';
 import { getPendingClaim, completeClaim, clearPendingClaim } from '@/lib/claim-client';
 import { PinSetup } from '@/components/PinSetup';
@@ -41,6 +42,11 @@ export default function OnboardingWalletPage() {
   const router = useRouter();
   const { user, isDemo, isLoading, enterDemo } = useAuth();
   const { t } = useLanguage();
+  // Tonkeeper-compatible 24-word scheme (DECISION_TON_DERIVATION.md), flag-gated.
+  const tonMnemonic = tonMnemonicEnabled();
+  const tx24 = (key: Parameters<typeof t>[0]) =>
+    t((tonMnemonic ? `${key}24` : key) as Parameters<typeof t>[0]);
+  const [creating, setCreating] = useState(false);
   const safeTop = useTgSafeTop();
 
   const [step, setStep] = useState<Step>('choice');
@@ -97,13 +103,23 @@ export default function OnboardingWalletPage() {
     }
   }, [isLoading, user, isDemo, router.isReady, router.query.recover, router]);
 
-  const handleCreateNew = useCallback(() => {
-    const m = generateMnemonic();
-    setMnemonic(m);
-    setStep('show-mnemonic');
-    setCanContinue(false);
-    setTimeout(() => setCanContinue(true), 3000);
-  }, []);
+  const handleCreateNew = useCallback(async () => {
+    if (creating) return;
+    setCreating(true);
+    setError('');
+    try {
+      // Flag ON: dual-valid 24-word search (~0.1–1 s); OFF: 12-word BIP39.
+      const m = await generateNewWalletMnemonic();
+      setMnemonic(m);
+      setStep('show-mnemonic');
+      setCanContinue(false);
+      setTimeout(() => setCanContinue(true), 3000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t('onbGenError'));
+    } finally {
+      setCreating(false);
+    }
+  }, [creating, t]);
 
   const handleImport = () => {
     setStep('import-mnemonic');
@@ -117,8 +133,9 @@ export default function OnboardingWalletPage() {
 
   const handleImportContinue = () => {
     const words = importMnemonicInput.trim().toLowerCase().split(/\s+/);
-    if (words.length !== 12) {
-      setError(t('onbWordCountError'));
+    const allowed = tonMnemonic ? [12, 24] : [12];
+    if (!allowed.includes(words.length)) {
+      setError(tx24('onbWordCountError'));
       return;
     }
     setMnemonic(importMnemonicInput.trim().toLowerCase());
@@ -130,7 +147,7 @@ export default function OnboardingWalletPage() {
     // Pick 3 random distinct word indices for verification
     const indices: number[] = [];
     while (indices.length < 3) {
-      const r = Math.floor(Math.random() * 12);
+      const r = Math.floor(Math.random() * mnemonic.split(' ').length);
       if (!indices.includes(r)) indices.push(r);
     }
     indices.sort((a, b) => a - b);
@@ -164,18 +181,8 @@ export default function OnboardingWalletPage() {
 
     try {
       const wallet = await importWalletFromMnemonic(mnemonic, password);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('wallet_eth_address',  wallet.eth);
-        localStorage.setItem('wallet_sol_address',  wallet.sol);
-        localStorage.setItem('wallet_btc_address',  wallet.btc);
-        localStorage.setItem('wallet_tron_address', wallet.tron);
-        localStorage.setItem('wallet_ton_address',  wallet.ton);
-        localStorage.setItem('wallet_keystore',     wallet.keystore);
-        localStorage.setItem('wallet_sol_enc',       wallet.solEnc);
-        localStorage.setItem('wallet_btc_enc',       wallet.btcEnc);
-        localStorage.setItem('wallet_tron_enc',      wallet.tronEnc);
-        localStorage.setItem('wallet_ton_enc',       wallet.tonEnc);
-      }
+      // Addresses + encrypted blobs + TON scheme (never the phrase itself).
+      saveWalletToStorage(wallet);
       track(importMnemonicInput.trim() ? 'wallet_imported' : 'wallet_created');
 
       // Claim-link handoff (2.8): if this wallet was created to claim a link,
@@ -242,12 +249,13 @@ export default function OnboardingWalletPage() {
 
           <div className="flex flex-col gap-4 flex-1">
             <button
-              onClick={handleCreateNew}
+              onClick={() => { void handleCreateNew(); }}
+              disabled={creating}
               className="w-full py-5 rounded-2xl font-semibold text-sm transition-all active:scale-95 flex flex-col items-start px-5 gap-1"
               style={{ background: 'rgba(0,255,127,0.07)', border: '1.5px solid rgba(0,255,127,0.3)', color: '#00FF7F' }}
             >
               <span className="text-base font-bold">{t('onbCreateNewTitle')}</span>
-              <span className="text-[#3A6045] text-xs font-normal">{t('onbCreateNewSubtitle')}</span>
+              <span className="text-[#3A6045] text-xs font-normal">{tx24('onbCreateNewSubtitle')}</span>
             </button>
 
             <button
@@ -256,7 +264,7 @@ export default function OnboardingWalletPage() {
               style={{ background: '#0D1A10', border: '1.5px solid rgba(0,255,127,0.15)', color: 'white' }}
             >
               <span className="text-base font-bold">{t('onbImportTitle')}</span>
-              <span className="text-[#3A6045] text-xs font-normal">{t('onbImportSubtitle')}</span>
+              <span className="text-[#3A6045] text-xs font-normal">{tx24('onbImportSubtitle')}</span>
             </button>
 
             <button
@@ -286,7 +294,7 @@ export default function OnboardingWalletPage() {
         <div className="flex flex-col flex-1 pb-10 gap-5" style={{ paddingTop: safeTop }}>
           <div>
             <h1 className="text-white text-2xl font-bold">{t('onbShowTitle')}</h1>
-            <p className="text-[#3A6045] text-sm mt-1">{t('onbShowSubtitle')}</p>
+            <p className="text-[#3A6045] text-sm mt-1">{tx24('onbShowSubtitle')}</p>
           </div>
 
           <div
@@ -333,7 +341,7 @@ export default function OnboardingWalletPage() {
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
                   </svg>
-                  {t('onbCopyAll')}
+                  {tx24('onbCopyAll')}
                 </>
               )}
             </button>
@@ -428,7 +436,7 @@ export default function OnboardingWalletPage() {
               {t('onbBack')}
             </button>
             <h1 className="text-white text-2xl font-bold">{t('onbImportPageTitle')}</h1>
-            <p className="text-[#3A6045] text-sm mt-1">{t('onbImportPageSubtitle')}</p>
+            <p className="text-[#3A6045] text-sm mt-1">{tx24('onbImportPageSubtitle')}</p>
           </div>
 
           <textarea
