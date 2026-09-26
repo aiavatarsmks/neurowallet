@@ -54,7 +54,8 @@ NeuroWallet — мультичейн крипто-кошелёк (ETH, BTC, SOL,
    публичные данные: балансы, публичные адреса, история. Ключей нет ни в
    контексте, ни в промптах.
 3. **Server-only секреты** (`OPENROUTER_API_KEY`, `TELEGRAM_BOT_TOKEN`,
-   `SUPABASE_SERVICE_ROLE_KEY`, `ETHERSCAN_API_KEY`) живут только в env Vercel
+   `SUPABASE_SERVICE_ROLE_KEY`, `ETHERSCAN_API_KEY`, `TONCENTER_API_KEY`,
+   `TRONGRID_API_KEY`) живут только в env Vercel
    и никогда не проксируются в ответы (покрыто тестами).
 4. **Deny by default**: каждый защищённый endpoint требует Supabase JWT;
    RLS включён на всех пользовательских таблицах; вставка в audit_log —

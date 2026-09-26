@@ -3,11 +3,15 @@ import bs58 from 'bs58';
 import { createHash } from 'crypto';
 import { checkRateLimit, requireSupabaseUser, writeAuditLog } from '@/lib/server/api-security';
 import { isJettonServiceMsg, sameTonAddress, toFriendlyTon } from '@/lib/server/ton-history-parse';
+import { etherscanApiKey, toncenterHeaders, trongridHeaders } from '@/lib/server/provider-keys';
 
 /**
  * pages/api/tx-history.ts
  * Server-side proxy for transaction history.
- * - ETH: Etherscan API (ETHERSCAN_API_KEY env var, free tier: 5 req/s)
+ * - ETH: Etherscan API v2 (ETHERSCAN_API_KEY env var, free tier: 5 req/s)
+ * - TON: toncenter (TONCENTER_API_KEY — optional, without it 1 req/s)
+ * - TRON: TronGrid (TRONGRID_API_KEY — optional, without it strict limits)
+ *   Keys: lib/server/provider-keys.ts (server-only env, never NEXT_PUBLIC_).
  * - SOL: Solana JSON-RPC (free, no key)
  * - BTC: Blockstream API (free, no key)
  */
@@ -47,7 +51,7 @@ function tronHexToAddr(hex: string): string {
 
 // Etherscan V1 (/api) отключён в 2025 — только V2 (/v2/api?chainid=1).
 async function fetchEthTxs(address: string): Promise<TxRow[]> {
-  const key = process.env.ETHERSCAN_API_KEY;
+  const key = etherscanApiKey();
   if (!key) {
     console.warn('[tx-history] ETHERSCAN_API_KEY is not set — ETH/USDT history disabled');
     return [];
@@ -77,7 +81,7 @@ async function fetchEthTxs(address: string): Promise<TxRow[]> {
 // ─── USDT ERC-20 (Etherscan tokentx) ─────────────────────────────────────────
 
 async function fetchUsdtTxs(address: string): Promise<TxRow[]> {
-  const key = process.env.ETHERSCAN_API_KEY;
+  const key = etherscanApiKey();
   if (!key) return [];
 
   const url = `https://api.etherscan.io/v2/api?chainid=1&module=account&action=tokentx&contractaddress=${USDT_CONTRACT}&address=${address}&page=1&offset=20&sort=desc&apikey=${key}`;
@@ -107,7 +111,7 @@ async function fetchTrc20Txs(address: string): Promise<TxRow[]> {
     const url =
       `${TRONGRID}/v1/accounts/${address}/transactions/trc20` +
       `?contract_address=${USDT_TRC20_CONTRACT}&limit=20&order_by=block_timestamp,desc`;
-    const res  = await fetch(url, { headers: { Accept: 'application/json' } });
+    const res  = await fetch(url, { headers: { Accept: 'application/json', ...trongridHeaders() } });
     if (!res.ok) return [];
     const data = await res.json();
     if (!Array.isArray(data.data)) return [];
@@ -140,7 +144,7 @@ async function fetchTrxTxs(address: string): Promise<TxRow[]> {
     const url =
       `${TRONGRID}/v1/accounts/${address}/transactions` +
       '?only_confirmed=true&limit=20&order_by=block_timestamp,desc';
-    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    const res = await fetch(url, { headers: { Accept: 'application/json', ...trongridHeaders() } });
     if (!res.ok) return [];
     const data = await res.json();
     if (!Array.isArray(data.data)) return [];
@@ -319,7 +323,7 @@ async function fetchBtcTxs(address: string): Promise<TxRow[]> {
 async function fetchTonTxs(address: string): Promise<TxRow[]> {
   try {
     const url = `${TONCENTER}/getTransactions?address=${encodeURIComponent(address)}&limit=20`;
-    const res  = await fetch(url);
+    const res  = await fetch(url, { headers: toncenterHeaders() });
     if (!res.ok) return [];
     const data = await res.json();
     if (data.error || !Array.isArray(data.result)) return [];

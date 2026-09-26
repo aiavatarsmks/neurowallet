@@ -90,4 +90,30 @@ describe('GET /api/tx-history', () => {
     expect(actions).toContain('tx_history_requested');
     vi.unstubAllGlobals();
   });
+
+  it('sends TONCENTER/TRONGRID keys as headers when configured (and never returns them)', async () => {
+    process.env.TONCENTER_API_KEY = 'ton-secret';
+    process.env.TRONGRID_API_KEY = 'tron-secret';
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, result: [], data: [] }) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = mockRes();
+    await handler(
+      mockReq({ query: { ton: 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs', tron: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t' } }),
+      res,
+    );
+    expect(res.statusCode).toBe(200);
+
+    const callsTo = (host: string) =>
+      fetchMock.mock.calls.filter(([url]) => String(url).includes(host));
+    expect(callsTo('toncenter.com').length).toBeGreaterThan(0);
+    for (const [, init] of callsTo('toncenter.com')) expect(init.headers).toMatchObject({ 'X-API-Key': 'ton-secret' });
+    expect(callsTo('trongrid.io').length).toBeGreaterThan(0);
+    for (const [, init] of callsTo('trongrid.io')) expect(init.headers).toMatchObject({ 'TRON-PRO-API-KEY': 'tron-secret' });
+    expect(JSON.stringify(res.jsonBody)).not.toMatch(/secret/);
+
+    delete process.env.TONCENTER_API_KEY;
+    delete process.env.TRONGRID_API_KEY;
+    vi.unstubAllGlobals();
+  });
 });

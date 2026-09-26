@@ -1,12 +1,16 @@
 /**
  * lib/crypto/balances.ts
  * Real blockchain balance fetching via public RPC endpoints and CoinGecko.
- * All calls are client-side (browser fetch) — no API key required.
+ * ETH/SOL/BTC/prices: client-side, keyless. TON/USDT-TON and TRX/USDT-TRC20:
+ * first via /api/balances (server-side provider keys, never in the bundle),
+ * per-chain fallback to the direct keyless call when the server has no key
+ * or fails.
  */
 
 import { ethers } from 'ethers';
 import { fetchUsdtTrc20Balance, fetchTrxBalance } from './tron-tx';
 import { fetchTonBalance, fetchUsdtTonBalance } from './ton-tx';
+import type { BalancesResponse } from '@/lib/balances-types';
 
 const ETH_RPC    = 'https://cloudflare-eth.com';
 const SOL_RPC    = 'https://api.mainnet-beta.solana.com';
@@ -185,6 +189,40 @@ async function fetchSolBalance(address: string): Promise<number> {
   }
 }
 
+// ─── Server proxy (provider keys stay server-side) ─────────────────────────
+
+const NO_SERVER_BALANCES: BalancesResponse = { ton: null, usdtTon: null, trx: null, usdtTrc: null };
+
+/** /api/balances; any failure (no session, 4xx/5xx, network) → all null → direct fallback. */
+export async function fetchServerBalances(
+  tonAddress: string,
+  tronAddress: string,
+): Promise<BalancesResponse> {
+  if ((!tonAddress && !tronAddress) || typeof window === 'undefined') return NO_SERVER_BALANCES;
+  try {
+    // Lazy import: supabase.ts бросает без env — не тянем его в модуль при импорте.
+    const { supabase } = await import('@/lib/supabase');
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return NO_SERVER_BALANCES;
+    const qs = new URLSearchParams();
+    if (tonAddress) qs.set('ton', tonAddress);
+    if (tronAddress) qs.set('tron', tronAddress);
+    const res = await fetch(`/api/balances?${qs}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return NO_SERVER_BALANCES;
+    const body = (await res.json()) as Partial<BalancesResponse>;
+    const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+    return { ton: num(body.ton), usdtTon: num(body.usdtTon), trx: num(body.trx), usdtTrc: num(body.usdtTrc) };
+  } catch {
+    return NO_SERVER_BALANCES;
+  }
+}
+
+/** Server value if present, else the direct keyless fetch (previous behaviour). */
+function serverOr(value: number | null, direct: () => Promise<number>): Promise<number> {
+  return value !== null ? Promise.resolve(value) : direct();
+}
+
 // ─── Public API ────────────────────────────────────────────────────────────
 
 export async function fetchRealBalances(
@@ -194,15 +232,16 @@ export async function fetchRealBalances(
   tronAddress  = '',
   tonAddress   = '',
 ): Promise<WalletBalances> {
+  const server = await fetchServerBalances(tonAddress, tronAddress);
   const [ethResult, solResult, btcResult, trc20Result, trxResult, tonResult, usdtTonResult, prices] =
     await Promise.allSettled([
       fetchEthBalance(ethAddress),
       fetchSolBalance(solAddress),
       fetchBtcBalance(btcAddress),
-      tronAddress ? fetchUsdtTrc20Balance(tronAddress) : Promise.resolve(0),
-      tronAddress ? fetchTrxBalance(tronAddress)        : Promise.resolve(0),
-      tonAddress  ? fetchTonBalance(tonAddress)         : Promise.resolve(0),
-      tonAddress  ? fetchUsdtTonBalance(tonAddress)     : Promise.resolve(0),
+      tronAddress ? serverOr(server.usdtTrc, () => fetchUsdtTrc20Balance(tronAddress)) : Promise.resolve(0),
+      tronAddress ? serverOr(server.trx,     () => fetchTrxBalance(tronAddress))        : Promise.resolve(0),
+      tonAddress  ? serverOr(server.ton,     () => fetchTonBalance(tonAddress))         : Promise.resolve(0),
+      tonAddress  ? serverOr(server.usdtTon, () => fetchUsdtTonBalance(tonAddress))     : Promise.resolve(0),
       fetchPrices(),
     ]);
 
