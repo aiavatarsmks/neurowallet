@@ -5,7 +5,9 @@
  * Key derivation: BIP44 m/44'/195'/0'/0/0  (secp256k1, same curve as ETH/BTC)
  * Address format: base58check(0x41 || keccak256(uncompressedPub[1:])[12:])
  * Signing:        SHA256(raw_data_hex_bytes)  (NOT keccak256 like ETH)
- * Transport:      TronGrid REST API (no key required for public endpoints)
+ * Transport:      TronGrid REST API. Balances go through /api/balances with a
+ *                 server-side TRONGRID_API_KEY when configured; direct keyless
+ *                 calls are the fallback (and are used for build/broadcast).
  *
  * USDT contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t (6 decimals)
  */
@@ -96,39 +98,52 @@ function buildTransferData(toAddr: string, amountUsdt: number): string {
 
 // ─── Balance ──────────────────────────────────────────────────────────────────
 
-export async function fetchUsdtTrc20Balance(address: string): Promise<number> {
-  if (!address || !isValidTronAddress(address)) return 0;
-  try {
-    const res = await fetch(`${TRONGRID}/v1/accounts/${address}`, {
-      headers: { Accept: 'application/json' },
-    });
-    if (!res.ok) return 0;
-    const data = await res.json();
-    const account = (data.data ?? [])[0];
-    if (!account) return 0;
+export interface TronAccountBalances { trx: number; usdtTrc: number }
 
-    // trc20 is an array of {contractAddress: amountString} objects
-    const trc20List: Array<Record<string, string>> = account.trc20 ?? [];
-    const entry = trc20List.find(
-      (t) => Object.keys(t)[0]?.toLowerCase() === USDT_TRC20_CONTRACT.toLowerCase(),
-    );
-    if (!entry) return 0;
-    return parseInt(Object.values(entry)[0], 10) / 1e6;
+/** Parse TronGrid /v1/accounts/{addr} response (unactivated account → zeros). */
+export function parseTronAccount(data: unknown): TronAccountBalances {
+  const account = ((data as { data?: unknown[] })?.data ?? [])[0] as
+    | { balance?: number; trc20?: Array<Record<string, string>> }
+    | undefined;
+  if (!account) return { trx: 0, usdtTrc: 0 };
+  // trc20 is an array of {contractAddress: amountString} objects
+  const entry = (account.trc20 ?? []).find(
+    (t) => Object.keys(t)[0]?.toLowerCase() === USDT_TRC20_CONTRACT.toLowerCase(),
+  );
+  return {
+    trx: (account.balance ?? 0) / 1e6,
+    usdtTrc: entry ? parseInt(Object.values(entry)[0], 10) / 1e6 : 0,
+  };
+}
+
+/**
+ * TRX + USDT TRC-20 одним запросом (раньше — два одинаковых вызова).
+ * `headers` — для серверного вызова с TRON-PRO-API-KEY; в браузере не передаётся.
+ * Бросает при сетевой ошибке/не-2xx — вызывающий решает, что делать.
+ */
+export async function fetchTronAccountBalances(
+  address: string,
+  headers: Record<string, string> = {},
+): Promise<TronAccountBalances> {
+  if (!address || !isValidTronAddress(address)) return { trx: 0, usdtTrc: 0 };
+  const res = await fetch(`${TRONGRID}/v1/accounts/${address}`, {
+    headers: { Accept: 'application/json', ...headers },
+  });
+  if (!res.ok) throw new Error(`TronGrid ${res.status}`);
+  return parseTronAccount(await res.json());
+}
+
+export async function fetchUsdtTrc20Balance(address: string): Promise<number> {
+  try {
+    return (await fetchTronAccountBalances(address)).usdtTrc;
   } catch {
     return 0;
   }
 }
 
 export async function fetchTrxBalance(address: string): Promise<number> {
-  if (!address || !isValidTronAddress(address)) return 0;
   try {
-    const res = await fetch(`${TRONGRID}/v1/accounts/${address}`, {
-      headers: { Accept: 'application/json' },
-    });
-    if (!res.ok) return 0;
-    const data = await res.json();
-    const account = (data.data ?? [])[0];
-    return ((account?.balance as number) ?? 0) / 1e6;
+    return (await fetchTronAccountBalances(address)).trx;
   } catch {
     return 0;
   }

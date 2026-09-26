@@ -10,6 +10,7 @@
 | `/api/tg-auth` | POST | HMAC initData (login) | 10/мин/IP | `tg_auth_login` |
 | `/api/neura-chat` | POST | Supabase JWT | 20/мин/user | `ai_chat_requested`, `ai_chat_completed`, `ai_chat_failed` |
 | `/api/tx-history` | GET | Supabase JWT | 30/мин/user | `tx_history_requested` |
+| `/api/balances` | GET | Supabase JWT | 40/мин/user | — (read-only, опрос каждые 30 с) |
 | `/api/tg-notify` | POST | Supabase JWT | 10/мин/user | `telegram_notification_requested/sent/failed` |
 | `/api/neuro-id/resolve` | GET | Supabase JWT | 30/мин/user | `neuro_id_resolved` |
 | `/api/tg-webhook` | POST | секрет-токен Telegram (fail-closed) | 20/мин/chat | — (нет user_id) |
@@ -61,6 +62,15 @@ Solana RPC, Blockstream, Toncenter. Ответ: `200 { transactions: TxRow[] }`,
 где `TxRow = { id, chain, type: 'in'|'out', amount, address, hash, date, fee }` —
 ровно 8 полей, сырые поля апстрима и API-ключи не проксируются (покрыто тестом).
 Ошибки апстрима глотаются: соответствующий чейн просто отсутствует в выдаче.
+
+## GET /api/balances
+
+Балансы TON / USDT-TON и TRX / USDT-TRC20 через серверные ключи провайдеров
+(`TONCENTER_API_KEY`, `TRONGRID_API_KEY` — только server-side env). Query: `ton`,
+`tron` (опциональны, строгий regex, иначе `400`). Ответ:
+`{ ton, usdtTon, trx, usdtTrc }` — числа или `null`. `null`, если ключ сети не
+задан или провайдер ответил ошибкой: клиент тогда делает прежний прямой запрос
+без ключа. Ключи в ответ не попадают (покрыто тестами).
 
 ## POST /api/tg-notify
 

@@ -1,97 +1,84 @@
-# NeuroWallet Sprint 0
+# NeuroWallet
 
-This repository contains the minimal skeleton for the **Wallet Overview** MVP in the NeuroWallet project. It is organized as a monorepo with separate **frontend** and **backend** packages, a PostgreSQL database provisioned via Docker, and basic test and CI scaffolding.
+Некастодиальный мультичейн крипто-кошелёк с AI-ассистентом «Нейра». Работает как
+Telegram Mini App и как сайт в браузере на **neurowallet.tech** (деплой — Vercel).
 
-## Architecture overview
+> Статус: рабочий прототип. Реальные деньги — только после независимого
+> security-аудита (см. `CLAUDE.md`, `IMPLEMENTATION_PLAN.md`).
 
-The NeuroWallet MVP is split into two main services:
+## Что умеет
 
-* **Frontend** (`frontend/`): A [Next.js](https://nextjs.org/) application styled with **Tailwind CSS**. The wallet overview page is exposed at `/wallet` and renders three placeholder components—`BalanceCard`, `TransferButton`, and `TxHistory`. These components are implemented with plain React and Tailwind classes and are ready to be replaced with real UI from the `shadcn/ui` library and web3 integrations using **Ethers.js** and **WalletConnect v2**.
+- Сети: **TON, USDT (TON)**, BTC, ETH, USDT (ERC-20), SOL, TRX, USDT (TRC-20) — mainnet.
+- Создание / импорт seed-фразы, приём (QR, paylink), отправка с review-симуляцией
+  комиссии, risk engine и защитой от address-poisoning, история транзакций.
+- Вход: Telegram `initData` (в Mini App) или e-mail/пароль (Supabase) в браузере; demo-режим.
+- Нейра: чат и объяснение транзакций только по проверенным публичным данным.
+- Policy Engine, claim-ссылки, уведомления, swap/on-ramp — за feature-флагами.
 
-* **Backend** (`backend/`): A small [Fastify](https://fastify.dev/) server written in TypeScript. It exposes a single endpoint at `/api/tx/mock` that returns a list of fake transactions in JSON form. Prisma is configured with a minimal `schema.prisma` file pointing at a PostgreSQL database. Although the current implementation does not persist data, Prisma and the database are ready for future development.
+## Модель безопасности (кратко)
 
-Both services are independent Node.js projects. The repository also includes a `docker-compose.yml` file that provisions PostgreSQL and pgAdmin containers for local development.
+- Ключи и seed **никогда не покидают браузер**: деривация и подпись client-side,
+  на устройстве хранятся только зашифрованные блобы (AES-GCM / keystore) и публичные адреса.
+  Seed-фраза в localStorage не сохраняется.
+- Серверные API-роуты принимают только публичные данные и требуют Supabase JWT,
+  с rate limit и audit log. RLS включён на всех пользовательских таблицах.
+- Подробнее: `ARCHITECTURE.md`, `KEY_MANAGEMENT.md`, `SUPABASE_SCHEMA.md`, `API_SPEC.md`, `SECURITY.md`.
 
-## Getting started
-
-### Prerequisites
-
-* [Node.js](https://nodejs.org/) 18 or later
-* [Docker](https://www.docker.com/) and Docker Compose
-
-### 1. Clone the repository
-
-```
-git clone <your fork url>
-cd neurowallet
-```
-
-### 2. Start the database
-
-The app uses PostgreSQL to persist data (future development). Start the database and pgAdmin using Docker Compose:
+## Структура
 
 ```
-docker-compose up -d
+frontend/            Next.js 15 (pages router) + Tailwind + TypeScript — всё приложение
+  pages/             экраны и API-роуты (pages/api/*, серверная часть на Vercel)
+  lib/crypto/        деривация, шифрование, подпись и отправка по сетям
+  lib/server/        server-only код (auth/rate limit/audit, ключи провайдеров)
+  __tests__/         vitest
+supabase/migrations/ SQL-миграции (RLS, audit, контакты, уведомления, policies…)
+backend/             минимальный Fastify-сервис (legacy, в проде не используется)
 ```
 
-This will expose PostgreSQL on `localhost:5432` and pgAdmin on `localhost:5050` (login credentials are set in the compose file).
+## Запуск локально
 
-### 3. Configure the backend
+Требуется Node.js 22.
 
-Install dependencies and set up environment variables:
-
-```
-cd backend
-npm install
-cp .env.example .env
-# (optional) edit .env to match your database credentials
-
-# If you plan to use Prisma migrations later:
-npx prisma generate
+```bash
+npm install                      # из корня (npm workspaces)
+cd frontend
+# создать frontend/.env.local с переменными ниже (минимум — Supabase URL и anon key)
+npm run dev                      # http://localhost:3000
 ```
 
-To run the backend server in development mode (listens on port 3001 by default):
+Проверки (то же, что в CI):
 
-```
-npm run dev
-```
-
-You can verify the mock endpoint by visiting `http://localhost:3001/api/tx/mock` in your browser.
-
-### 4. Configure the frontend
-
-Install dependencies and start the Next.js dev server:
-
-```
-cd ../frontend
-npm install
-npm run dev
+```bash
+cd frontend
+npm run lint && npx tsc --noEmit && npm test
+npm audit --audit-level=high     # CI блокирует merge при high/critical
 ```
 
-The wallet overview page will be available at `http://localhost:3000/wallet`. It will make a request to the backend running on port 3001 to fetch mock transactions.
+## Переменные окружения (frontend)
 
-### 5. Running tests
+Публичные (`NEXT_PUBLIC_*` попадают в клиентский бандл — только не-секреты):
+`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_APP_URL`,
+`NEXT_PUBLIC_TELEGRAM_BOT_URL` и флаги `NEXT_PUBLIC_*_ENABLED`.
 
-Both the frontend and backend packages include simple unit tests. From the repository root, run:
+Серверные секреты (только env Vercel, никогда `NEXT_PUBLIC_`):
 
-```
-npm test
-```
+| Переменная | Назначение |
+|---|---|
+| `SUPABASE_SERVICE_ROLE_KEY` | audit log и серверные операции Supabase |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET` | Telegram auth / бот |
+| `OPENROUTER_API_KEY` | Нейра |
+| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | rate limit |
+| `ETHERSCAN_API_KEY` | история ETH / USDT ERC-20 (без ключа — пусто) |
+| `TONCENTER_API_KEY` | балансы TON / USDT-TON и история TON (без ключа — публичный лимит 1 req/s) |
+| `TRONGRID_API_KEY` | балансы и история TRX / USDT TRC-20 (без ключа — публичные лимиты) |
 
-This will execute Vitest suites in both packages. You can also run tests individually by navigating to each package and executing `npm test`.
+Ключи блокчейн-провайдеров читаются в `frontend/lib/server/provider-keys.ts`;
+браузер получает балансы TON/TRON через `/api/balances`, а если ключ не задан —
+ходит к провайдеру напрямую, как раньше.
 
-### 6. Continuous integration
+## Документы
 
-The repository includes a GitHub Actions workflow (`.github/workflows/ci.yml`) that performs linting and runs the unit tests on every push. Linting currently uses placeholder commands; you can replace them with ESLint or your tool of choice.
-
-## Future work
-
-Sprint 0 provides a basic scaffold. Future iterations should implement the actual wallet functionalities:
-
-* Replace placeholder components with interactive UI using **shadcn/ui**.
-* Integrate **WalletConnect v2** and **Ethers.js** to connect to Ethereum wallets and perform on-chain actions.
-* Define Prisma models and implement real transaction persistence.
-* Add authentication, error handling, and input validation.
-* Extend tests to cover business logic and UI interactions.
-
-Happy hacking!
+- `CLAUDE.md` — инварианты и принципы (приоритет при конфликте)
+- `IMPLEMENTATION_PLAN.md` — фазы и приёмка
+- `DECISION_*.md` — принятые / ожидающие решения

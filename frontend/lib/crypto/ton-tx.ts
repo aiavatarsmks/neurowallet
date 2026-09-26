@@ -5,7 +5,9 @@
  * Key derivation: SLIP-0010 ed25519 at m/44'/607'/0'/0' (all segments hardened)
  * Wallet:         WalletContractV4 (V4R2 in TON ecosystem)
  * USDT master:    EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs (6 decimals)
- * Transport:      TonCenter public API (free, 1 req/s)
+ * Transport:      toncenter API v2. Balances go through /api/balances with a
+ *                 server-side TONCENTER_API_KEY when configured (keyless public
+ *                 limit is 1 req/s); direct keyless calls are the fallback.
  */
 
 import {
@@ -27,8 +29,9 @@ const TON_CENTER_API = 'https://toncenter.com/api/v2';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function getTonClient(): TonClient {
-  return new TonClient({ endpoint: TON_CENTER_RPC });
+/** `apiKey` передаётся только из серверного кода (TONCENTER_API_KEY); в браузере — без ключа. */
+function getTonClient(apiKey?: string): TonClient {
+  return new TonClient({ endpoint: TON_CENTER_RPC, apiKey });
 }
 
 // ─── Address derivation ───────────────────────────────────────────────────────
@@ -53,28 +56,51 @@ export function isValidTonAddress(addr: string): boolean {
 
 // ─── Balances ─────────────────────────────────────────────────────────────────
 
-export async function fetchTonBalance(address: string): Promise<number> {
+/**
+ * Native TON balance. Бросает при сетевой ошибке/не-2xx (см. fetchTonBalance
+ * для варианта с 0). `apiKey` — только server-side.
+ */
+export async function fetchTonBalanceStrict(address: string, apiKey?: string): Promise<number> {
   if (!address || !isValidTonAddress(address)) return 0;
+  const res = await fetch(
+    `${TON_CENTER_API}/getAddressBalance?address=${encodeURIComponent(address)}`,
+    { headers: apiKey ? { 'X-API-Key': apiKey } : {} },
+  );
+  if (!res.ok) throw new Error(`toncenter ${res.status}`);
+  const data = await res.json();
+  if (data.error || data.result === undefined) throw new Error('toncenter: bad response');
+  return parseInt(data.result, 10) / 1e9;
+}
+
+/** USDT (jetton) on TON. Бросает при ошибке. `apiKey` — только server-side. */
+export async function fetchUsdtTonBalanceStrict(address: string, apiKey?: string): Promise<number> {
+  if (!address || !isValidTonAddress(address)) return 0;
+  const client = getTonClient(apiKey);
+  const usdtMaster = client.open(JettonMaster.create(Address.parse(USDT_TON_MASTER)));
+  const jettonWalletAddr = await usdtMaster.getWalletAddress(Address.parse(address));
+  const jettonWallet = client.open(JettonWallet.create(jettonWalletAddr));
   try {
-    const res = await fetch(`${TON_CENTER_API}/getAddressBalance?address=${encodeURIComponent(address)}`);
-    if (!res.ok) return 0;
-    const data = await res.json();
-    if (data.error || data.result === undefined) return 0;
-    return parseInt(data.result, 10) / 1e9;
+    const balance = await jettonWallet.getBalance();
+    return Number(balance) / 1e6; // 6 decimals
+  } catch (e) {
+    // Jetton-кошелёк ещё не развёрнут (USDT никогда не приходил) → баланс 0, не ошибка.
+    const deployed = await client.isContractDeployed(jettonWalletAddr).catch(() => true);
+    if (!deployed) return 0;
+    throw e;
+  }
+}
+
+export async function fetchTonBalance(address: string): Promise<number> {
+  try {
+    return await fetchTonBalanceStrict(address);
   } catch {
     return 0;
   }
 }
 
 export async function fetchUsdtTonBalance(address: string): Promise<number> {
-  if (!address || !isValidTonAddress(address)) return 0;
   try {
-    const client = getTonClient();
-    const usdtMaster = client.open(JettonMaster.create(Address.parse(USDT_TON_MASTER)));
-    const jettonWalletAddr = await usdtMaster.getWalletAddress(Address.parse(address));
-    const jettonWallet = client.open(JettonWallet.create(jettonWalletAddr));
-    const balance = await jettonWallet.getBalance();
-    return Number(balance) / 1e6; // 6 decimals
+    return await fetchUsdtTonBalanceStrict(address);
   } catch {
     return 0;
   }
