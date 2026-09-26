@@ -16,7 +16,14 @@
 | BTC | `m/84'/0'/0'/0/0` → P2WPKH `bc1q…` | secp256k1, ethers + bitcoinjs | внешний (BIP84) |
 | TRX | `m/44'/195'/0'/0/0` | secp256k1 | внешний (TronLink) |
 | SOL | `m/44'/501'/0'/0'` (все сегменты hardened) | ed25519, SLIP-0010 | внешний (Phantom) |
-| TON | `m/44'/607'/0'/0'` (все сегменты hardened) | ed25519, SLIP-0010 | snapshot кодовой базы |
+| TON (12 слов, legacy) | `m/44'/607'/0'/0'` (все сегменты hardened) | ed25519, SLIP-0010 | snapshot кодовой базы |
+| TON (24 слова, TON-валидная фраза) | без пути: TON-мнемоника (`@ton/crypto` `mnemonicToPrivateKey`), V4R2 | ed25519, стандарт TON (Tonkeeper) | эталон `@ton/crypto` + snapshot |
+
+TON-схема выбирается **по самой фразе** (24 слова и TON-валидна → стандарт TON,
+иначе legacy SLIP-0010) и сохраняется в `wallet_ton_scheme`. Новые 24-словные
+фразы (флаг `NEXT_PUBLIC_TON_MNEMONIC_ENABLED`) валидны и как BIP39, и как
+TON-мнемоника, поэтому ETH/BTC/SOL/TRX выводятся по тем же путям, что выше.
+Подробности — `DECISION_TON_DERIVATION.md`.
 
 ## Шифрование at rest (localStorage)
 

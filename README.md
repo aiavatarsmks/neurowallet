@@ -59,7 +59,9 @@ npm audit --audit-level=high     # CI блокирует merge при high/criti
 
 Публичные (`NEXT_PUBLIC_*` попадают в клиентский бандл — только не-секреты):
 `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_APP_URL`,
-`NEXT_PUBLIC_TELEGRAM_BOT_URL` и флаги `NEXT_PUBLIC_*_ENABLED`.
+`NEXT_PUBLIC_TELEGRAM_BOT_URL` и флаги `NEXT_PUBLIC_*_ENABLED` (в т.ч.
+`NEXT_PUBLIC_TON_MNEMONIC_ENABLED` — 24-словные фразы, совместимые с Tonkeeper;
+включать только после ручной проверки в Tonkeeper, см. `DECISION_TON_DERIVATION.md`).
 
 Серверные секреты (только env Vercel, никогда `NEXT_PUBLIC_`):
 

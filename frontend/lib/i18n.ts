@@ -45,6 +45,14 @@ export const translations = {
     authDemoHint: 'В демо-режиме используются только тестовые данные.',
 
     // ── Onboarding wallet creation (pages/onboarding.tsx) ────────────────────
+    onbWordCountError24: 'Нужно 12 или 24 слова',
+    onbCreateNewSubtitle24: 'Сгенерируем 24 слова — ключ от твоих активов',
+    onbImportSubtitle24: 'Введи 12 или 24 слова от существующего кошелька',
+    onbShowSubtitle24: '24 слова — единственный способ восстановить кошелёк. Подходят и для Tonkeeper',
+    onbCopyAll24: 'Копировать все 24 слова',
+    onbImportPageSubtitle24: 'Введи 12 или 24 слова через пробел',
+    securityTonLegacyTitle: 'TON этого кошелька восстанавливается только в NeuroWallet',
+    securityTonLegacyText: 'Кошелёк создан по старой схеме (12 слов): TON-адрес не откроется в Tonkeeper по этой фразе. Остальные сети и работа в NeuroWallet не затронуты. Чтобы пользоваться Tonkeeper, создай новый кошелёк (24 слова) и переведи на него TON.',
     onbWordCountError: 'Нужно ровно 12 слов',
     onbWordWrong: 'Слово #{n} введено неверно. Проверь запись и попробуй снова.',
     onbEnterPassword: 'Введи пароль',
@@ -541,6 +549,14 @@ export const translations = {
     authDemoHint: 'Demo mode uses test data only.',
 
     // ── Onboarding wallet creation (pages/onboarding.tsx) ────────────────────
+    onbWordCountError24: 'Must be 12 or 24 words',
+    onbCreateNewSubtitle24: "We'll generate 24 words — the key to your assets",
+    onbImportSubtitle24: 'Enter the 12 or 24 words from an existing wallet',
+    onbShowSubtitle24: '24 words — the only way to recover your wallet. Also works in Tonkeeper',
+    onbCopyAll24: 'Copy all 24 words',
+    onbImportPageSubtitle24: 'Enter the 12 or 24 words separated by spaces',
+    securityTonLegacyTitle: "This wallet's TON can only be restored in NeuroWallet",
+    securityTonLegacyText: "This wallet uses the older scheme (12 words): its TON address won't open in Tonkeeper with this phrase. Other networks and NeuroWallet itself are unaffected. To use Tonkeeper, create a new wallet (24 words) and move your TON to it.",
     onbWordCountError: 'Must be exactly 12 words',
     onbWordWrong: 'Word #{n} is incorrect. Check your notes and try again.',
     onbEnterPassword: 'Enter a password',

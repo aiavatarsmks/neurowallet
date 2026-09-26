@@ -23,6 +23,7 @@ const WALLET_LS_KEYS = [
   'wallet_eth_address', 'wallet_sol_address', 'wallet_btc_address',
   'wallet_tron_address', 'wallet_ton_address', 'wallet_keystore',
   'wallet_sol_enc', 'wallet_btc_enc', 'wallet_tron_enc', 'wallet_ton_enc',
+  'wallet_ton_scheme',
   'wallet_pin_blob', 'wallet_pin_attempts', 'wallet_pin_lockout_until',
   // legacy XOR-era blobs, if any lingered
   'wallet_sol_xor', 'wallet_btc_xor', 'wallet_tron_xor', 'wallet_ton_xor',

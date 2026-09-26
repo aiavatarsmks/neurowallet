@@ -13,6 +13,7 @@ import { track } from '@/lib/analytics';
 import { PinSetup } from '@/components/PinSetup';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { readStoredTonScheme, tonMnemonicEnabled, TON_SCHEME_LEGACY } from '@/lib/ton-mnemonic-config';
 
 interface Device {
   id: string;
@@ -56,6 +57,12 @@ export const SecurityCenter: React.FC = () => {
   const [devices, setDevices] = useState<Device[]>([]);
   const [feed, setFeed] = useState<FeedEvent[]>([]);
   const [revoked, setRevoked] = useState(false);
+  // Вариант B (DECISION_TON_DERIVATION.md): legacy 12-word wallets keep working,
+  // but are told their TON restores only in NeuroWallet. Flag-gated.
+  const [tonLegacy, setTonLegacy] = useState(false);
+  useEffect(() => {
+    setTonLegacy(tonMnemonicEnabled() && readStoredTonScheme() === TON_SCHEME_LEGACY);
+  }, []);
 
   // Флоу установки/смены PIN: пароль кошелька → PinSetup (overlay).
   const [hasWallet, setHasWallet]   = useState(false);
@@ -128,6 +135,16 @@ export const SecurityCenter: React.FC = () => {
   return (
     <div className="rounded-2xl p-4 flex flex-col gap-3" style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.1)' }}>
       <p className="text-white text-sm font-semibold">{t('secTitle')}</p>
+
+      {tonLegacy && (
+        <div
+          className="rounded-xl p-3 flex flex-col gap-1"
+          style={{ background: 'rgba(247,147,26,0.08)', border: '1px solid rgba(247,147,26,0.3)' }}
+        >
+          <p className="text-xs font-semibold" style={{ color: '#F7931A' }}>{t('securityTonLegacyTitle')}</p>
+          <p className="text-[#7FBF9A] text-[11px] leading-relaxed">{t('securityTonLegacyText')}</p>
+        </div>
+      )}
 
       {/* PIN статус + установка/смена */}
       <div className="flex items-center justify-between gap-2">
