@@ -5,6 +5,7 @@
  */
 
 import { ethers } from 'ethers';
+import { amountToDecimalString } from '@/lib/display-format';
 import { ed25519 } from '@noble/curves/ed25519';
 import bs58 from 'bs58';
 import {
@@ -47,7 +48,7 @@ export async function estimateEthFee(
   amountEth: number,
 ): Promise<EthFeeEstimate> {
   const provider  = new ethers.JsonRpcProvider(ETH_RPC);
-  const value     = ethers.parseEther(String(amountEth));
+  const value     = ethers.parseEther(amountToDecimalString(amountEth, 18));
   const [feeData, gasLimit] = await Promise.all([
     provider.getFeeData(),
     provider.estimateGas({ to: toAddress, value }),
@@ -80,10 +81,12 @@ export async function sendEth(
 
   const tx = await connected.sendTransaction({
     to:    toAddress,
-    value: ethers.parseEther(String(amountEth)),
+    value: ethers.parseEther(amountToDecimalString(amountEth, 18)),
   });
 
-  await tx.wait();
+  // Возвращаем хеш сразу после broadcast. Раньше ждали tx.wait(): если RPC
+  // падал/таймаутил уже ПОСЛЕ отправки, UI показывал ошибку и пользователь
+  // мог отправить повторно (двойной платёж). Статус смотрится по хешу.
   return tx.hash;
 }
 
@@ -101,9 +104,9 @@ export async function sendUsdt(
   const usdt      = new ethers.Contract(USDT_ADDR, USDT_ABI, connected);
 
   // USDT has 6 decimals
-  const amount = ethers.parseUnits(String(amountUsdt), 6);
+  const amount = ethers.parseUnits(amountToDecimalString(amountUsdt, 6), 6);
   const tx     = await usdt.transfer(toAddress, amount);
-  await tx.wait();
+  // См. sendEth: не ждём подтверждения, чтобы не спровоцировать повторную отправку.
   return tx.hash as string;
 }
 
@@ -178,48 +181,50 @@ export async function sendSol(
 ): Promise<string> {
   // 1. Decrypt SOL private key independently (no ETH keystore involved)
   const solPrivKey = await decryptBytes(solEncBlob, password);
+  // Ключ обнуляется в finally — и при ошибке (RPC/валидация), не только при успехе.
+  try {
+    // 2. Derive SOL public key and decode recipient
+    const fromPubkey = ed25519.getPublicKey(solPrivKey);
+    const toPubkey   = bs58.decode(toAddress);
+    if (toPubkey.length !== 32) throw new Error('Неверный SOL-адрес получателя.');
 
-  // 2. Derive SOL public key and decode recipient
-  const fromPubkey = ed25519.getPublicKey(solPrivKey);
-  const toPubkey   = bs58.decode(toAddress);
-  if (toPubkey.length !== 32) throw new Error('Неверный SOL-адрес получателя.');
+    const lamports = BigInt(Math.round(amountSol * 1e9));
+    if (lamports <= 0n) throw new Error('Сумма должна быть больше нуля.');
 
-  const lamports = BigInt(Math.round(amountSol * 1e9));
-  if (lamports <= 0n) throw new Error('Сумма должна быть больше нуля.');
+    // 4. Fetch recent blockhash
+    const blockhash      = await getSolanaBlockhash();
+    const blockhashBytes = bs58.decode(blockhash);
 
-  // 4. Fetch recent blockhash
-  const blockhash      = await getSolanaBlockhash();
-  const blockhashBytes = bs58.decode(blockhash);
+    // 5. Build message and sign
+    const message   = buildSolMessage(fromPubkey, toPubkey, lamports, blockhashBytes);
+    const signature = ed25519.sign(message, solPrivKey); // Uint8Array(64)
 
-  // 5. Build message and sign
-  const message   = buildSolMessage(fromPubkey, toPubkey, lamports, blockhashBytes);
-  const signature = ed25519.sign(message, solPrivKey); // Uint8Array(64)
+    // 6. Assemble: [num_sigs=1][signature 64 bytes][message]
+    const tx = new Uint8Array(1 + 64 + message.length);
+    tx[0] = 1;
+    tx.set(signature, 1);
+    tx.set(message, 65);
 
-  // 6. Assemble: [num_sigs=1][signature 64 bytes][message]
-  const tx = new Uint8Array(1 + 64 + message.length);
-  tx[0] = 1;
-  tx.set(signature, 1);
-  tx.set(message, 65);
+    // 7. Broadcast
+    const txBase64 = btoa(String.fromCharCode(...tx));
+    const res = await fetch(SOL_RPC, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 1,
+        method: 'sendTransaction',
+        params: [txBase64, { encoding: 'base64', preflightCommitment: 'finalized' }],
+      }),
+    });
 
-  // 7. Broadcast
-  const txBase64 = btoa(String.fromCharCode(...tx));
-  const res = await fetch(SOL_RPC, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      jsonrpc: '2.0', id: 1,
-      method: 'sendTransaction',
-      params: [txBase64, { encoding: 'base64', preflightCommitment: 'finalized' }],
-    }),
-  });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message || 'Solana RPC error');
 
-  const data = await res.json();
-  // Zero out private key before checking for errors
-  solPrivKey.fill(0);
-  if (data.error) throw new Error(data.error.message || 'Solana RPC error');
-
-  // Return tx signature as base58 string (Solana explorer format)
-  return bs58.encode(signature);
+    // Return tx signature as base58 string (Solana explorer format)
+    return bs58.encode(signature);
+  } finally {
+    solPrivKey.fill(0);
+  }
 }
 
 // ─── Send USDT TRC-20 (Tron) ─────────────────────────────────────────────────
@@ -267,23 +272,26 @@ export async function sendBtc(
 ): Promise<string> {
   // 1. Decrypt BTC private key independently
   const btcPrivKey = await decryptBytes(btcEncBlob, password);
+  try {
 
-  const amountSat = BigInt(Math.round(amountBtc * 1e8));
-  if (amountSat <= 546n) throw new Error('Сумма ниже минимума (546 sat / dust limit).');
+    const amountSat = BigInt(Math.round(amountBtc * 1e8));
+    if (amountSat <= 546n) throw new Error('Сумма ниже минимума (546 sat / dust limit).');
 
-  // 2. Fetch UTXOs and fee rate
-  const [utxos, feeRate] = await Promise.all([fetchUTXOs(fromAddress), getBtcFeeRate()]);
-  if (utxos.length === 0) throw new Error('Нет подтверждённых UTXO. Подожди подтверждения входящих транзакций.');
+    // 2. Fetch UTXOs and fee rate
+    const [utxos, feeRate] = await Promise.all([fetchUTXOs(fromAddress), getBtcFeeRate()]);
+    if (utxos.length === 0) throw new Error('Нет подтверждённых UTXO. Подожди подтверждения входящих транзакций.');
 
-  // 3. Select UTXOs and calculate change
-  // 3. Build and sign raw transaction. The PSBT helper supports old legacy
-  // NeuroWallet BTC addresses and new native SegWit addresses.
-  const rawHex = await buildSignedTx(btcPrivKey, utxos, toAddress, fromAddress, amountSat, feeRate);
-  btcPrivKey.fill(0);
+    // 3. Select UTXOs and calculate change
+    // 3. Build and sign raw transaction. The PSBT helper supports old legacy
+    // NeuroWallet BTC addresses and new native SegWit addresses.
+    const rawHex = await buildSignedTx(btcPrivKey, utxos, toAddress, fromAddress, amountSat, feeRate);
 
-  // 4. Broadcast
-  const txid = await broadcastBtcTx(rawHex);
-  return txid;
+    // 4. Broadcast
+    const txid = await broadcastBtcTx(rawHex);
+    return txid;
+  } finally {
+    btcPrivKey.fill(0);
+  }
 }
 
 // ─── Validate addresses ───────────────────────────────────────────────────────

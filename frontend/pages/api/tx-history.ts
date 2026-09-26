@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import bs58 from 'bs58';
 import { createHash } from 'crypto';
 import { checkRateLimit, requireSupabaseUser, writeAuditLog } from '@/lib/server/api-security';
+import { isJettonServiceMsg, sameTonAddress, toFriendlyTon } from '@/lib/server/ton-history-parse';
 
 /**
  * pages/api/tx-history.ts
@@ -44,11 +45,15 @@ function tronHexToAddr(hex: string): string {
 
 // ─── ETH (Etherscan) ──────────────────────────────────────────────────────────
 
+// Etherscan V1 (/api) отключён в 2025 — только V2 (/v2/api?chainid=1).
 async function fetchEthTxs(address: string): Promise<TxRow[]> {
   const key = process.env.ETHERSCAN_API_KEY;
-  if (!key) return [];
+  if (!key) {
+    console.warn('[tx-history] ETHERSCAN_API_KEY is not set — ETH/USDT history disabled');
+    return [];
+  }
 
-  const url = `https://api.etherscan.io/api?module=account&action=txlist&address=${address}&startblock=0&endblock=99999999&page=1&offset=20&sort=desc&apikey=${key}`;
+  const url = `https://api.etherscan.io/v2/api?chainid=1&module=account&action=txlist&address=${address}&startblock=0&endblock=99999999&page=1&offset=20&sort=desc&apikey=${key}`;
   const res  = await fetch(url);
   const data = await res.json();
   if (data.status !== '1' || !Array.isArray(data.result)) return [];
@@ -75,7 +80,7 @@ async function fetchUsdtTxs(address: string): Promise<TxRow[]> {
   const key = process.env.ETHERSCAN_API_KEY;
   if (!key) return [];
 
-  const url = `https://api.etherscan.io/api?module=account&action=tokentx&contractaddress=${USDT_CONTRACT}&address=${address}&page=1&offset=20&sort=desc&apikey=${key}`;
+  const url = `https://api.etherscan.io/v2/api?chainid=1&module=account&action=tokentx&contractaddress=${USDT_CONTRACT}&address=${address}&page=1&offset=20&sort=desc&apikey=${key}`;
   const res  = await fetch(url);
   const data = await res.json();
   if (data.status !== '1' || !Array.isArray(data.result)) return [];
@@ -330,11 +335,12 @@ async function fetchTonTxs(address: string): Promise<TxRow[]> {
         0,
       );
 
-      // Skip Jetton-related txs (they have tiny TON amounts just for gas)
-      // Jetton transfers identified by msg_data containing op 0x0f8a7ea5
-      const outBody = (outMsgs[0]?.msg_data as string) ?? '';
-      if (outBody.startsWith('0f8a7ea5') || outBody.startsWith('te6')) {
-        continue; // will appear in USDT TON history instead
+      // Jetton-служебные сообщения (перевод / notification / excesses) несут
+      // только газ — они покажутся в истории USDT TON, здесь пропускаем.
+      // msg_data — объект {body: base64 BoC}; op читаем из ячейки. Обычные
+      // текстовые комментарии (op 0) остаются в истории.
+      if (isJettonServiceMsg(outMsgs[0]?.msg_data) || isJettonServiceMsg(inMsg?.msg_data)) {
+        continue;
       }
 
       const isOut  = outMsgs.length > 0 && tonOut > 0;
@@ -371,9 +377,9 @@ const TONAPI = 'https://tonapi.io/v2';
 
 async function fetchUsdtTonTxs(address: string): Promise<TxRow[]> {
   try {
-    // tonapi.io: jetton transfer history for specific jetton
-    const url = `${TONAPI}/accounts/${encodeURIComponent(address)}/jettons/history` +
-      `?jetton=${encodeURIComponent(USDT_TON_MASTER)}&limit=20`;
+    // tonapi.io: history of one jetton for the account
+    const url = `${TONAPI}/accounts/${encodeURIComponent(address)}/jettons/` +
+      `${encodeURIComponent(USDT_TON_MASTER)}/history?limit=20`;
     const res = await fetch(url, {
       headers: { 'Accept': 'application/json' },
     });
@@ -388,14 +394,14 @@ async function fetchUsdtTonTxs(address: string): Promise<TxRow[]> {
         const jt = action.JettonTransfer;
         if (!jt) continue;
 
-        // Only USDT (filter by jetton master address)
-        const jettonAddr = (jt.jetton?.address as string ?? '').toLowerCase();
-        const masterNorm = USDT_TON_MASTER.toLowerCase();
-        if (jettonAddr && jettonAddr !== masterNorm) continue;
+        // Only USDT. tonapi отдаёт адреса в raw-форме (0:hex) — сравниваем
+        // через Address.equals, а не строками.
+        const jettonAddr = (jt.jetton?.address as string) ?? '';
+        if (jettonAddr && !sameTonAddress(jettonAddr, USDT_TON_MASTER)) continue;
 
         const senderAddr    = (jt.sender?.address    as string) ?? '';
         const recipientAddr = (jt.recipient?.address as string) ?? '';
-        const isOut = senderAddr.toLowerCase() === address.toLowerCase();
+        const isOut = sameTonAddress(senderAddr, address);
         const amount = Number(jt.amount ?? 0) / 1e6; // 6 decimals
         if (amount <= 0) continue;
 
@@ -406,7 +412,7 @@ async function fetchUsdtTonTxs(address: string): Promise<TxRow[]> {
           chain:   'USDT_TON',
           type:    isOut ? 'out' : 'in',
           amount,
-          address: isOut ? recipientAddr : senderAddr,
+          address: toFriendlyTon(isOut ? recipientAddr : senderAddr),
           hash:    txHash,
           date:    new Date((event.timestamp as number) * 1000).toISOString(),
           fee:     0,

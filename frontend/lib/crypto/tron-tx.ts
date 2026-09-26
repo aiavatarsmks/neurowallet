@@ -205,10 +205,7 @@ export async function sendUsdtTrc20Raw(
 
   const broadcastJson = await broadcastRes.json();
 
-  if (!broadcastJson.result) {
-    const msg = broadcastJson.message ?? broadcastJson.code ?? 'Ошибка отправки в сеть Tron.';
-    throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
-  }
+  if (!broadcastJson.result) throw new Error(tronBroadcastError(broadcastJson));
 
   return broadcastJson.txid as string;
 }
@@ -262,12 +259,24 @@ export async function sendTrxRaw(
   });
 
   const broadcastJson = await broadcastRes.json();
-  if (!broadcastJson.result) {
-    const msg = broadcastJson.message ?? broadcastJson.code ?? 'Ошибка отправки в сеть Tron.';
-    throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
-  }
+  if (!broadcastJson.result) throw new Error(tronBroadcastError(broadcastJson));
 
   return broadcastJson.txid as string;
+}
+
+/**
+ * TronGrid broadcasttransaction отдаёт `message` в hex (как и build-шаг).
+ * Декодируем, чтобы пользователь видел текст, а маппинг «insufficient» в UI срабатывал.
+ */
+export function tronBroadcastError(json: { message?: unknown; code?: unknown }): string {
+  const raw = json.message ?? json.code;
+  if (typeof raw !== 'string' || !raw) return 'Ошибка отправки в сеть Tron.';
+  if (/^[0-9a-fA-F]+$/.test(raw) && raw.length % 2 === 0) {
+    const text = Buffer.from(raw, 'hex').toString('utf8');
+    // eslint-disable-next-line no-control-regex
+    if (text && !/[\u0000-\u0008]/.test(text)) return text;
+  }
+  return raw;
 }
 
 // ─── Transaction history ──────────────────────────────────────────────────────

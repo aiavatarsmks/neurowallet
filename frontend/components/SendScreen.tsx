@@ -6,6 +6,7 @@ import { claimLinksEnabled } from '@/lib/claim-config';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { supabase } from '@/lib/supabase';
 import { isNeuroId, normalizeNeuroId } from '@/lib/neuro-id';
+import { completeDemoTask } from '@/lib/demo-guide';
 
 type TransferCurrency = 'EUR' | 'USD' | 'USDT' | 'ETH' | 'BTC' | 'SOL' | 'TON' | 'TRX' | 'TRC20' | 'USDT_TON';
 type CryptoCoin = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TRX' | 'TRC20' | 'TON' | 'USDT_TON';
@@ -33,6 +34,9 @@ const DEMO_CONTACTS: Contact[] = [
 
 const CURRENCY_ORDER: TransferCurrency[] = ['EUR', 'USD', 'TRC20', 'USDT', 'USDT_TON', 'ETH', 'BTC', 'SOL', 'TON', 'TRX'];
 const CRYPTO_CURRENCIES = new Set<TransferCurrency>(['USDT', 'ETH', 'BTC', 'SOL', 'TON', 'TRX', 'TRC20', 'USDT_TON']);
+// Фиат (EUR/USD) требует custodial ledger + лицензию — в real-режиме не предлагаем,
+// иначе пользователь проходит весь флоу и упирается в sendFiatError.
+const REAL_CURRENCY_ORDER = CURRENCY_ORDER.filter((c) => CRYPTO_CURRENCIES.has(c));
 
 type SendStep = 'contacts' | 'recipient' | 'amount' | 'confirm' | 'done';
 
@@ -343,6 +347,13 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
 
   const handleSend = () => {
     setSendError('');
+    // Demo: фиат-контакты и контакты без адреса завершаются демо-успехом.
+    // Никаких chain-действий (граница demo ↔ real).
+    if (isDemo && (!selected || !isCrypto(selectedCurrency) || !selected.address)) {
+      completeDemoTask('demo_send');
+      handleDemoDone();
+      return;
+    }
     if (selected && isCrypto(selectedCurrency)) {
       if (!selected.address) {
         setSendError(t('sendCryptoAddressRequired'));
@@ -502,7 +513,7 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
           <div>
             <p className="text-[#3A6045] text-xs font-medium uppercase tracking-wider mb-2">{t('sendCurrencyLabel')}</p>
             <div className="grid grid-cols-3 gap-2">
-              {CURRENCY_ORDER.map((item) => {
+              {(isDemo ? CURRENCY_ORDER : REAL_CURRENCY_ORDER).map((item) => {
                 const meta = CURRENCIES[item];
                 const active = currency === item;
                 return (

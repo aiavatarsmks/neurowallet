@@ -30,8 +30,12 @@ const csp = [
   "img-src 'self' data: https:",
   `connect-src ${connectSrc}`,
   "font-src 'self'",
+  // Clickjacking protection that still lets Telegram Web (web.telegram.org —
+  // K/A clients load Mini Apps in an iframe) embed us. Native Telegram apps use
+  // a WebView, not an iframe, so they are unaffected. Replaces the former
+  // X-Frame-Options: SAMEORIGIN, which blocked Telegram Web entirely.
+  "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org",
   'report-uri /api/csp-report',
-  // frame-ancestors intentionally omitted: Telegram Mini App embeds us in an iframe
 ].join('; ');
 
 const nextConfig = {
@@ -45,7 +49,6 @@ const nextConfig = {
         headers: [
           { key: 'Content-Security-Policy', value: csp },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
-          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate' },
         ],

@@ -13,7 +13,7 @@ const SOL_RPC    = 'https://api.mainnet-beta.solana.com';
 const USDT_ADDR  = '0xdAC17F958D2ee523a2206206994597C13D831ec7'; // ERC-20 Mainnet
 const ERC20_ABI  = ['function balanceOf(address) view returns (uint256)'];
 const PRICES_URL =
-  'https://api.coingecko.com/api/v3/simple/price?ids=ethereum,solana,bitcoin,tron-network,the-open-network&vs_currencies=eur&include_24hr_change=true&include_last_updated_at=true';
+  'https://api.coingecko.com/api/v3/simple/price?ids=ethereum,solana,bitcoin,tron,the-open-network,tether&vs_currencies=eur&include_24hr_change=true&include_last_updated_at=true';
 
 const PRICE_CACHE_KEY = 'nw_prices_cache';
 export const MARKET_REFRESH_MS = 30_000; // near-real-time without hammering public APIs
@@ -33,6 +33,7 @@ export interface WalletBalances {
   btcEur:   number;
   trxEur:   number;
   tonEur:   number;
+  usdtEur:  number;   // USDT ≠ 1 EUR (≈0.9) — курс из CoinGecko (tether)
   ethChange24h: number;
   solChange24h: number;
   btcChange24h: number;
@@ -47,6 +48,7 @@ export interface PriceData {
   btcEur:   number;
   trxEur:   number;
   tonEur:   number;
+  usdtEur:  number;   // USDT ≠ 1 EUR (≈0.9) — курс из CoinGecko (tether)
   ethChange24h: number;
   solChange24h: number;
   btcChange24h: number;
@@ -71,6 +73,7 @@ export async function fetchPrices(): Promise<PriceData> {
           btcChange24h: cached.btcChange24h ?? 0,
           trxChange24h: cached.trxChange24h ?? 0,
           tonChange24h: cached.tonChange24h ?? 0,
+          usdtEur: cached.usdtEur ?? 0.92,
           priceUpdatedAt: cached.priceUpdatedAt ?? cached.fetchedAt,
         };
       }
@@ -84,18 +87,19 @@ export async function fetchPrices(): Promise<PriceData> {
       ethEur:    data.ethereum?.eur            ?? 2800,
       solEur:    data.solana?.eur              ?? 120,
       btcEur:    data.bitcoin?.eur             ?? 55000,
-      trxEur:    data['tron-network']?.eur      ?? 0.22,
+      trxEur:    data.tron?.eur      ?? 0.22,
       tonEur:    data['the-open-network']?.eur  ?? 3.5,
+      usdtEur:   data.tether?.eur              ?? 0.92,
       ethChange24h: data.ethereum?.eur_24h_change ?? 0,
       solChange24h: data.solana?.eur_24h_change ?? 0,
       btcChange24h: data.bitcoin?.eur_24h_change ?? 0,
-      trxChange24h: data['tron-network']?.eur_24h_change ?? 0,
+      trxChange24h: data.tron?.eur_24h_change ?? 0,
       tonChange24h: data['the-open-network']?.eur_24h_change ?? 0,
       priceUpdatedAt: Math.max(
         data.ethereum?.last_updated_at ?? 0,
         data.solana?.last_updated_at ?? 0,
         data.bitcoin?.last_updated_at ?? 0,
-        data['tron-network']?.last_updated_at ?? 0,
+        data.tron?.last_updated_at ?? 0,
         data['the-open-network']?.last_updated_at ?? 0,
       ) * 1000,
       fetchedAt: Date.now(),
@@ -111,6 +115,7 @@ export async function fetchPrices(): Promise<PriceData> {
       btcEur: 55000,
       trxEur: 0.22,
       tonEur: 3.5,
+      usdtEur: 0.92,
       ethChange24h: 0,
       solChange24h: 0,
       btcChange24h: 0,
@@ -218,6 +223,7 @@ export async function fetchRealBalances(
           btcEur: 55000,
           trxEur: 0.22,
           tonEur: 3.5,
+          usdtEur: 0.92,
           ethChange24h: 0,
           solChange24h: 0,
           btcChange24h: 0,
@@ -241,6 +247,7 @@ export async function fetchRealBalances(
     btcEur:  priceData.btcEur,
     trxEur:  priceData.trxEur,
     tonEur:  priceData.tonEur,
+    usdtEur: priceData.usdtEur,
     ethChange24h: priceData.ethChange24h,
     solChange24h: priceData.solChange24h,
     btcChange24h: priceData.btcChange24h,
@@ -253,10 +260,8 @@ export async function fetchRealBalances(
 export function totalPortfolioEur(b: WalletBalances): number {
   return (
     b.eth * b.ethEur +
-    b.usdt +
-    b.usdtTrc +
+    (b.usdt + b.usdtTrc + b.usdtTon) * b.usdtEur +
     b.trx * b.trxEur +
-    b.usdtTon +
     b.sol * b.solEur +
     b.btc * b.btcEur +
     b.ton * b.tonEur

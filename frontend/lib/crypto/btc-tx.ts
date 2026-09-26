@@ -8,8 +8,13 @@
  */
 
 import * as bitcoin from 'bitcoinjs-lib';
+import * as ecc from '@bitcoinerlab/secp256k1';
 import { secp256k1 } from '@noble/curves/secp256k1';
 import { Buffer } from 'buffer';
+
+// Без ECC-библиотеки bitcoinjs не умеет taproot: toOutputScript('bc1p…') бросает
+// «No ECC Library provided» → адрес получателя считался невалидным.
+bitcoin.initEccLib(ecc);
 
 const BLOCKSTREAM = 'https://blockstream.info/api';
 const MEMPOOL     = 'https://mempool.space/api';

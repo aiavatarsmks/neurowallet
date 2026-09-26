@@ -2,8 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-
 * {
   box-sizing: border-box;
   -webkit-font-smoothing: antialiased;
@@ -13,7 +11,7 @@
 body {
   background-color: #080C09;
   color: #ffffff;
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--font-inter, 'Inter'), system-ui, sans-serif;
   overflow-x: hidden;
   /* Telegram Mini App: extend background behind status bar and home indicator */
   padding-top:    env(safe-area-inset-top,    0px);

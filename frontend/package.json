@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@bitcoinerlab/secp256k1": "^1.2.0",
     "@noble/curves": "^1.2.0",
     "@react-three/drei": "^9.92.0",
     "@react-three/fiber": "^8.15.0",
