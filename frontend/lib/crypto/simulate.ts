@@ -101,13 +101,16 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 }
 
 /** Реальная RPC-оценка комиссии (в нативной монете) для ETH/USDT/BTC. */
-async function estimateFeeNative(params: SimulateParams): Promise<number> {
+export async function estimateFeeNative(params: Pick<SimulateParams, 'coin' | 'amount' | 'fromBtcAddress'>): Promise<number> {
   const { coin } = params;
 
   if (coin === 'ETH' || coin === 'USDT') {
     const provider = new ethers.JsonRpcProvider(ETH_RPC);
     const feeData = await provider.getFeeData();
-    const gasPrice = feeData.gasPrice ?? BigInt(20e9);
+    // ethers шлёт EIP-1559 tx и проверяет баланс по maxFeePerGas (≈2× base fee).
+    // Оценка по legacy gasPrice занижала резерв → «почти MAX» проходил review
+    // и падал с insufficient funds. Берём верхнюю границу.
+    const gasPrice = feeData.maxFeePerGas ?? feeData.gasPrice ?? BigInt(20e9);
     const gasLimit = coin === 'ETH' ? GAS_LIMIT_NATIVE : GAS_LIMIT_ERC20;
     return parseFloat(ethers.formatEther(gasLimit * gasPrice));
   }

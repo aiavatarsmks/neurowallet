@@ -3,12 +3,17 @@ import { useEffect } from 'react';
 import type { AppProps } from 'next/app';
 import Head from 'next/head';
 import Script from 'next/script';
+import { Inter } from 'next/font/google';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { LanguageProvider } from '@/contexts/LanguageContext';
 import { DisplayCurrencyProvider } from '@/contexts/DisplayCurrencyContext';
 import { useTelegramInit } from '@/hooks/useTelegram';
 import { clearLegacyXorKeys } from '@/lib/crypto/wallet';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+
+// Inter self-hosted at build time (next/font): no runtime request to
+// fonts.googleapis.com, so the CSP can stay font-src 'self'.
+const inter = Inter({ subsets: ['latin', 'cyrillic'], weight: ['300', '400', '500', '600', '700', '800'], display: 'swap' });
 
 // Inner component so useTelegramInit can run inside AuthProvider tree
 function AppInner({ Component, pageProps }: AppProps) {
@@ -42,6 +47,7 @@ export default function App(props: AppProps) {
           strategy="beforeInteractive"
         />
 
+        <style jsx global>{`:root { --font-inter: ${inter.style.fontFamily}; }`}</style>
         <AppInner {...props} />
       </AuthProvider>
       </DisplayCurrencyProvider>

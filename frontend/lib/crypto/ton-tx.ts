@@ -19,6 +19,7 @@ import {
   JettonWallet,
 } from '@ton/ton';
 import { keyPairFromSeed } from '@ton/crypto';
+import { amountToDecimalString } from '@/lib/display-format';
 
 export const USDT_TON_MASTER = 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs';
 const TON_CENTER_RPC = 'https://toncenter.com/api/v2/jsonRPC';
@@ -144,7 +145,7 @@ export async function sendTonRaw(
     secretKey: keyPair.secretKey,
     seqno,
     messages: [
-      internal({ to: toAddress, value: toNano(amountTon.toString()), bounce: false }),
+      internal({ to: toAddress, value: toNano(amountToDecimalString(amountTon, 9)), bounce: false }),
     ],
   });
 

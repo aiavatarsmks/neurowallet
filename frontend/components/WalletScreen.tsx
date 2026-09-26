@@ -89,11 +89,11 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
           BTC: b.btcEur,
           ETH: b.ethEur,
           SOL: b.solEur,
-          USDT: 1,
+          USDT: b.usdtEur,
           TRX: b.trxEur,
-          USDT_TRC: 1,
+          USDT_TRC: b.usdtEur,
           TON: b.tonEur,
-          USDT_TON: 1,
+          USDT_TON: b.usdtEur,
         };
         const changes: Record<AssetSymbol, number> = {
           BTC: b.btcChange24h,
@@ -276,7 +276,8 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
         )}
       </div>
 
-      {/* Staking */}
+      {/* Staking — только демо-витрина: реального стейкинга пока нет, в real-режиме не показываем */}
+      {isDemo && (
       <div
         className="rounded-2xl p-4"
         style={{
@@ -294,14 +295,8 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
           </span>
         </div>
         <p className="text-[#3A6045] text-xs">{t('walletStakingDesc')}</p>
-        <button
-          className="mt-3 w-full py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-95"
-          style={{ background: 'rgba(0,255,127,0.1)', border: '1px solid rgba(0,255,127,0.2)', color: '#00FF7F' }}
-          onClick={() => {}}
-        >
-          {t('walletConnectStaking')}
-        </button>
       </div>
+      )}
     </div>
   );
 };

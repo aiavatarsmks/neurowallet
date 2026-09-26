@@ -86,17 +86,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // No Telegram context — check for saved demo session
+    // No Telegram context — check for saved demo session.
+    // Не выходим рано: подписка на onAuthStateChange нужна и в демо, иначе
+    // вход из демо в реальный аккаунт (DemoGuide → /auth) не подхватывается.
     if (typeof window !== 'undefined' && localStorage.getItem(DEMO_KEY) === 'true') {
       setState({ user: null, isDemo: true, isLoading: false });
-      return;
+    } else {
+      supabase.auth.getSession().then(({ data }) => {
+        const user = data.session?.user ? toUser(data.session.user) : null;
+        // Use functional update so we never override an isDemo=true set by enterDemo()
+        setState(prev => prev.isDemo ? prev : { user, isDemo: false, isLoading: false });
+      });
     }
-
-    supabase.auth.getSession().then(({ data }) => {
-      const user = data.session?.user ? toUser(data.session.user) : null;
-      // Use functional update so we never override an isDemo=true set by enterDemo()
-      setState(prev => prev.isDemo ? prev : { user, isDemo: false, isLoading: false });
-    });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const user = session?.user ? toUser(session.user) : null;
@@ -117,6 +118,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Вход в реальный аккаунт всегда завершает демо-сессию (граница demo ↔ real).
+  const leaveDemo = () => {
+    if (typeof window !== 'undefined') localStorage.removeItem(DEMO_KEY);
+  };
+
   const signUp = async (email: string, password: string, name?: string) => {
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -128,11 +134,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error('CONFIRM_EMAIL');
     }
     const user = data.user ? toUser(data.user) : null;
-    setState(s => ({ ...s, user, isLoading: false }));
+    leaveDemo();
+    setState({ user, isDemo: false, isLoading: false });
   };
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       // If email exists but wasn't confirmed (created before mailer_autoconfirm was enabled),
       // try signUp — with mailer_autoconfirm:true it returns a session immediately.
@@ -143,12 +150,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           options: { data: { name: email.split('@')[0] } },
         });
         if (!signUpError && signUpData.session && signUpData.user) {
-          setState(s => ({ ...s, user: toUser(signUpData.user!), isLoading: false }));
+          leaveDemo();
+          setState({ user: toUser(signUpData.user!), isDemo: false, isLoading: false });
           return;
         }
       }
       throw new Error(translateError(error.message));
     }
+    leaveDemo();
+    setState({ user: data.user ? toUser(data.user) : null, isDemo: false, isLoading: false });
   };
 
   const signInWithTelegram = async (initData: string) => {

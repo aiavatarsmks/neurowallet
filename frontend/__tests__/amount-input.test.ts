@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sanitizeAmountInput } from '@/lib/display-format';
+import { sanitizeAmountInput, amountToDecimalString, COIN_DECIMALS } from '@/lib/display-format';
 
 describe('sanitizeAmountInput', () => {
   it('keeps digits and a single decimal point', () => {
@@ -21,5 +21,28 @@ describe('sanitizeAmountInput', () => {
   it('allows a leading dot and empty', () => {
     expect(sanitizeAmountInput('.5')).toBe('.5');
     expect(sanitizeAmountInput('')).toBe('');
+  });
+});
+
+describe('sanitizeAmountInput — per-coin decimals cap', () => {
+  it('truncates fractional digits beyond chain precision', () => {
+    expect(sanitizeAmountInput('1.1234567', COIN_DECIMALS.USDT)).toBe('1.123456');
+    expect(sanitizeAmountInput('0.123456789', COIN_DECIMALS.BTC)).toBe('0.12345678');
+    expect(sanitizeAmountInput('5.', COIN_DECIMALS.TON)).toBe('5.');
+  });
+});
+
+describe('amountToDecimalString', () => {
+  it('never produces exponent notation (ethers/toNano reject 1e-7)', () => {
+    expect(amountToDecimalString(1e-7, 18)).toBe('0.0000001');
+    expect(amountToDecimalString(0.1, 18)).toBe('0.1');
+  });
+  it('truncates to chain decimals instead of rounding up', () => {
+    expect(amountToDecimalString(1.2345678, 6)).toBe('1.234567');
+    expect(amountToDecimalString(5e-10, 9)).toBe('0');
+  });
+  it('rejects invalid amounts', () => {
+    expect(() => amountToDecimalString(NaN, 6)).toThrow();
+    expect(() => amountToDecimalString(-1, 6)).toThrow();
   });
 });

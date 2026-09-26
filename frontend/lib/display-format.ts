@@ -17,11 +17,35 @@ export function formatPercent(value: number): string {
  * — type="number" gives an unreliable mobile keypad (locale comma/dot, no
  * decimal key on some Android/Telegram WebViews, spinner arrows, 'e'/+/-).
  */
-export function sanitizeAmountInput(raw: string): string {
+export function sanitizeAmountInput(raw: string, maxDecimals?: number): string {
   let v = raw.replace(',', '.').replace(/[^0-9.]/g, '');
   const dot = v.indexOf('.');
-  if (dot !== -1) v = v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, '');
+  if (dot !== -1) {
+    let frac = v.slice(dot + 1).replace(/\./g, '');
+    // Точность сети (USDT — 6, BTC — 8, …): лишние знаки иначе роняют подпись.
+    if (maxDecimals !== undefined) frac = frac.slice(0, maxDecimals);
+    v = v.slice(0, dot + 1) + frac;
+  }
   return v;
+}
+
+/** On-chain decimals per coin (USDT — 6 во всех трёх сетях). */
+export const COIN_DECIMALS: Record<string, number> = {
+  ETH: 18, USDT: 6, BTC: 8, SOL: 9, TRX: 6, TRC20: 6, TON: 9, USDT_TON: 6,
+};
+
+/**
+ * Number → plain decimal string for parseUnits/toNano: never exponent form
+ * (String(1e-7) === '1e-7' ломает ethers/toNano), truncated to `decimals`.
+ */
+export function amountToDecimalString(n: number, decimals: number): string {
+  if (!Number.isFinite(n) || n < 0) throw new Error('Некорректная сумма.');
+  return n.toLocaleString('en-US', {
+    useGrouping: false,
+    maximumFractionDigits: decimals,
+    // truncate, never round up past the user's balance (ignored on old engines → rounds)
+    roundingMode: 'trunc',
+  } as Intl.NumberFormatOptions);
 }
 
 export function formatCryptoAmount(value: number): string {

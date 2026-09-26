@@ -33,7 +33,7 @@ function calcCryptoTotal(b: WalletBalances): number {
     b.btc * b.btcEur +
     b.eth * b.ethEur +
     b.sol * b.solEur +
-    b.usdt + b.usdtTrc + b.usdtTon +
+    (b.usdt + b.usdtTrc + b.usdtTon) * b.usdtEur +
     b.trx * b.trxEur +
     b.ton * b.tonEur
   );
@@ -121,11 +121,11 @@ export const BalanceCard: React.FC = () => {
             BTC: balances.btcEur,
             ETH: balances.ethEur,
             SOL: balances.solEur,
-            USDT: 1,
+            USDT: balances.usdtEur,
             TRX: balances.trxEur,
-            USDT_TRC: 1,
+            USDT_TRC: balances.usdtEur,
             TON: balances.tonEur,
-            USDT_TON: 1,
+            USDT_TON: balances.usdtEur,
           };
           const changes: Record<AssetSymbol, number> = {
             BTC: balances.btcChange24h,

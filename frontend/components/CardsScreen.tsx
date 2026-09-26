@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useDisplayCurrency } from '@/contexts/DisplayCurrencyContext';
@@ -22,6 +22,7 @@ export const CardsScreen: React.FC = () => {
   const { isDemo } = useAuth();
   const { t } = useLanguage();
   const { formatFiat } = useDisplayCurrency();
+  const [demoNote, setDemoNote] = useState(false);
 
   if (!isDemo) {
     return (
@@ -184,6 +185,7 @@ export const CardsScreen: React.FC = () => {
         ].map((btn) => (
           <button
             key={btn.label}
+            onClick={() => setDemoNote(true)}
             className="flex flex-col items-center gap-1.5 rounded-2xl py-3 transition-all active:scale-95"
             style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.1)' }}
           >
@@ -192,6 +194,10 @@ export const CardsScreen: React.FC = () => {
           </button>
         ))}
       </div>
+
+      {demoNote && (
+        <p className="text-[#3A6045] text-xs text-center -mt-2">{t('cardsDemoActionNote')}</p>
+      )}
 
       {/* Recent card transactions */}
       <div>

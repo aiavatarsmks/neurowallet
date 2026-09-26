@@ -5,10 +5,10 @@ import { upgradeStoredKeystoreIfWeak } from '@/lib/crypto/keystore-migration';
 import { track, trackOnce, newTraceId } from '@/lib/analytics';
 import { coinLabel, COIN_PICKER_ORDER } from '@/lib/coin-labels';
 import { DEMO_HOLDING } from '@/lib/demo-data';
-import { sanitizeAmountInput } from '@/lib/display-format';
+import { sanitizeAmountInput, COIN_DECIMALS, amountToDecimalString } from '@/lib/display-format';
 import { emitNotification } from '@/lib/notifications-client';
 import { looksLikeTonDnsName, resolveName, type ResolvableChain } from '@/lib/name-resolvers';
-import { simulateTransfer, isBlocked, type SimulationResult, type SimWarning } from '@/lib/crypto/simulate';
+import { simulateTransfer, isBlocked, estimateFeeNative, FEE_CURRENCY, type SimulationResult, type SimWarning } from '@/lib/crypto/simulate';
 import { assessRecipient, type RiskAssessment } from '@/lib/risk/engine';
 import { policyEngineEnabled, type PolicyDecision } from '@/lib/policy-engine';
 import { evaluateSend } from '@/lib/policy-check';
@@ -193,6 +193,33 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   const amountNum  = parseFloat(amount) || 0;
   const available  = balances[coin];
   const insufficient = amountNum > 0 && amountNum > available;
+
+  // MAX: для нативной монеты (комиссия платится ею же) резервируем оценку
+  // комиссии, иначе review всегда блокирует «недостаточно средств».
+  const [maxLoading, setMaxLoading] = useState(false);
+  const handleMax = async () => {
+    const decimals = COIN_DECIMALS[coin];
+    if (isDemo || FEE_CURRENCY[coin].coin !== coin) {
+      setAmount(amountToDecimalString(available, decimals));
+      return;
+    }
+    setMaxLoading(true);
+    try {
+      const fee = await estimateFeeNative({
+        coin,
+        amount: available,
+        fromBtcAddress: localStorage.getItem('wallet_btc_address') ?? undefined,
+      });
+      // SOL: резерв ровно на комиссию, чтобы остаток был 0, а не «ниже rent-exempt».
+      const reserve = coin === 'SOL' ? fee : fee * 1.1;
+      const max = Math.max(0, available - reserve);
+      setAmount(max > 0 ? amountToDecimalString(max, decimals) : '');
+    } catch {
+      setAmount(amountToDecimalString(available, decimals)); // review покажет нехватку на комиссию
+    } finally {
+      setMaxLoading(false);
+    }
+  };
 
   // ── Review-симуляция при входе на confirm-шаг (реальный режим) ──────────
   useEffect(() => {
@@ -545,9 +572,13 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         setSendErr(t('csErrNoWallet'));
       } else if (msg.includes('no_sol_enc')) {
         setSendErr(t('csErrNoSol'));
-      } else if (msg.includes('password') || msg.includes('invalid') || msg.includes('decrypt') || msg.includes('bad mac') || msg.includes('неверный пароль')) {
+      } else if (msg.includes('incorrect password') || msg.includes('bad mac') || msg.includes('неверный пароль')) {
+        // Только ошибки расшифровки (ethers keystore / aes.ts). Раньше сюда
+        // попадало любое 'invalid' (адрес, сумма) → ложное «неверный пароль».
         setPwError(t('csErrWrongPassword'));
-      } else if (msg.includes('insufficient') || msg.includes('insufficient funds')) {
+      } else if (msg.includes('insufficient funds for rent')) {
+        setSendErr(t('csErrSolRent'));
+      } else if (msg.includes('insufficient') || msg.includes('not sufficient')) {
         setSendErr(t('csErrInsufficientFee'));
       } else if (msg.includes('nonce') || msg.includes('replacement')) {
         setSendErr(t('csErrPendingTx'));
@@ -616,7 +647,9 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
                     : coin === 'TRX' || coin === 'TRC20'
                     ? `https://tronscan.org/#/transaction/${txHash}`
                     : coin === 'TON' || coin === 'USDT_TON'
-                    ? `https://tonscan.org/tx/${txHash}`
+                    // TON-отправка возвращает ton:seqno:N (хеш появится только после
+                    // обработки) — ведём на страницу своего адреса, там будет tx.
+                    ? `https://tonscan.org/address/${encodeURIComponent(localStorage.getItem('wallet_ton_address') ?? '')}`
                     : `https://etherscan.io/tx/${txHash}`
                 }
                 target="_blank"
@@ -1090,7 +1123,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
               type="text"
               inputMode="decimal"
               value={amount}
-              onChange={(e) => setAmount(sanitizeAmountInput(e.target.value))}
+              onChange={(e) => setAmount(sanitizeAmountInput(e.target.value, COIN_DECIMALS[coin]))}
               placeholder="0"
               className="text-white text-4xl font-bold bg-transparent outline-none w-32 text-center"
               style={{ caretColor: '#00FF7F' }}
@@ -1108,7 +1141,8 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           {/* MAX button */}
           {available > 0 && !insufficient && (
             <button
-              onClick={() => setAmount(String(available))}
+              onClick={() => { void handleMax(); }}
+              disabled={maxLoading}
               className="mt-2 text-xs font-semibold px-3 py-1 rounded-full transition-all active:scale-95"
               style={{ background: 'rgba(0,255,127,0.08)', color: '#00FF7F' }}
             >
