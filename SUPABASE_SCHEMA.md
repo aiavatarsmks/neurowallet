@@ -23,7 +23,10 @@
 невидим и незаписываем. Публичного чтения нет (deny by default).
 
 ### public.neuro_directory — справочник NeuroID → адреса
-Обслуживает `GET /api/neuro-id/resolve`. Формат id: `^nw-[a-z0-9]{8,32}$` (CHECK).
+Обслуживает `GET /api/neuro-id/resolve`. Формат id: `^nw-[a-z0-9]{8,32}$` (CHECK);
+с 0012 ещё CHECK `neuro_directory_id_derived`: `neuro_id = 'nw-' ||
+left(replace(user_id::text,'-',''),12)` (= `neuroIdFromUserId`), чтобы нельзя было
+занять чужой NeuroID.
 
 | Колонка | Тип |
 |---|---|
@@ -32,8 +35,12 @@
 | display_name, eth/sol/btc/tron/ton_address | TEXT |
 | created_at / updated_at | TIMESTAMPTZ |
 
-**RLS**: SELECT — все `authenticated` (публичный справочник, by design);
-INSERT/UPDATE — только своя строка (`auth.uid() = user_id`).
+**RLS** (с 0012): SELECT / INSERT / UPDATE — только своя строка
+(`auth.uid() = user_id`). До 0012 SELECT был открыт всем `authenticated`, а
+регистрация по email открыта, то есть любой мог выгрузить имена и все адреса
+кошельков через REST. Чужие строки теперь читает только service role:
+`/api/neuro-id/resolve` ищет один точный `neuro_id` и отдаёт адрес одной
+монеты. Код резолвера работает и до, и после применения 0012.
 
 ### public.audit_log — append-only журнал
 Пишется **только** service role из `lib/server/api-security.ts` (`writeAuditLog`).
@@ -102,6 +109,14 @@ GDPR-ревью. RLS «только своё»; анонимный резолв 
 service role по точному uuid (политик для anon нет), см. NIGHT_DECISIONS
 D-1.5-1. Миграции: 0005, 0006.
 
+С 0013 у `payment_requests` есть BEFORE UPDATE триггер
+`payment_requests_owner_status_only`: под JWT (роли `anon`/`authenticated`)
+менять можно только `status` и только `active → completed | cancelled`;
+адрес, сумма, срок и прочие колонки уже расшаренной ссылки неизменны
+(сравнение `to_jsonb(NEW)` и `to_jsonb(OLD)` без `status`/`updated_at`, так что
+новые колонки защищены по умолчанию). Нарушение → SQLSTATE 42501. service role
+(ленивое протухание в резолвере) и postgres не ограничены.
+
 ### public.risk_events / public.override_actions (задача 1.3 — risk engine)
 Anti-poisoning / risk engine. Пишутся под JWT через `POST /api/risk-event`.
 - `risk_events`: id, user_id → auth.users (CASCADE), draft_id → tx_drafts (SET NULL),
@@ -167,13 +182,13 @@ Rule engine поверх `notifications` (0008). Пишутся service role
 | Таблица | RLS | Политик | Запись |
 |---|---|---|---|
 | profiles | ✅ | 3 (select/insert/update own) | своя строка под JWT |
-| neuro_directory | ✅ | 3 (public read + insert/update own) | своя строка |
+| neuro_directory | ✅ | 3 (select/insert/update own; public read снят в 0012) | своя строка; чужие читает только service role |
 | audit_log | ✅ | 0 (+ триггер append-only) | service role only |
 | analytics_events | ✅ | 0 | service role (`/api/track`) |
 | tx_drafts / simulation_results | ✅ | select/insert(/update) own | своя строка под JWT |
 | risk_events / override_actions | ✅ | select/insert own | своя строка под JWT |
 | contacts | ✅ | select/insert/update/delete own | своя строка |
-| payment_requests / payment_events | ✅ | select(/insert/update) own | своя + anon-резолв через service role |
+| payment_requests / payment_events | ✅ | select(/insert/update) own | своя + anon-резолв через service role; с 0013 владелец меняет только status |
 | devices | ✅ | select own | service role |
 | notifications | ✅ | 1 (select own) | service role |
 | claim_links | ✅ | 1 (select own) | service role |
@@ -199,8 +214,10 @@ freshness `auth_date` ≤ 15 минут (`pages/api/tg-auth.ts`, покрыто 
 - **anon key** — публичный, но бесполезен без RLS-политик: анонимный select
   по всем таблицам пуст, insert отбивается 42501 (проверено probe'ами).
 - **service role key** — только в env Vercel (`SUPABASE_SERVICE_ROLE_KEY`),
-  используется единственной функцией `writeAuditLog`. В клиентском коде
-  запрещён навсегда.
+  используется только серверными API-маршрутами: `writeAuditLog`, inbox и
+  движок уведомлений, claim-ссылки, резолв платёжных ссылок и NeuroID
+  (`/api/neuro-id/resolve`), запись `app_metadata.telegram_id` в
+  `/api/tg-auth` (admin API). В клиентском коде запрещён навсегда.
 
 ## Миграции
 
@@ -223,6 +240,13 @@ freshness `auth_date` ≤ 15 минут (`pages/api/tg-auth.ts`, покрыто 
 | 0009 | `0009_claim_links.sql` | claim_links, claim_events | 2.8 |
 | 0010 | `0010_notification_engine.sql` | notification_rules, notification_deliveries | 2.4 (движок) |
 | 0011 | `0011_policies.sql` | policies, policy_evaluations | 3.1 (policy engine) |
+| 0012 | `0012_neuro_directory_private.sql` | neuro_directory: SELECT own, CHECK derived neuro_id, удаление поддельных строк | night audit 2026-10-13 |
+| 0013 | `0013_payment_requests_status_only.sql` | payment_requests: триггер status-only для владельца | night audit 2026-10-13 |
+
+**0012 и 0013 НЕ применены** (написаны 2026-10-13, применять вручную в SQL
+Editor; в каждом файле есть блок Verify и ROLLBACK; проверены на локальном
+Postgres 16: идемпотентность, клиентский upsert, PATCH ссылок, ленивое
+протухание через service role).
 
 **Применено к prod:** 0001–**0011** (0010 и 0011 — 2026-07-18; 0011 RLS
 верифицирован: policies 4 CRUD-own, policy_evaluations select-own). Policy engine

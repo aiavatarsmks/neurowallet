@@ -140,11 +140,16 @@ message_chars }`, `..._sent`, `..._failed`; полный адрес и хеш в
 ## GET /api/neuro-id/resolve
 
 Резолв NeuroID → адрес. Query: `neuro_id` (`nw-[a-z0-9]{8,32}`), `coin`
-(BTC/ETH/SOL/USDT/TRX/TRC20/TON/USDT_TON). Читает `neuro_directory`
-под JWT пользователя (RLS: чтение справочника доступно всем authenticated).
+(BTC/ETH/SOL/USDT/TRX/TRC20/TON/USDT_TON). Ищет в `neuro_directory` один
+точный `neuro_id` через **service role** (справочник приватный с миграции
+0012) и выбирает только колонку адреса запрошенной монеты. `user_id` и
+адреса других сетей в ответ не попадают. Строка, у которой `neuro_id` не
+выведен из `user_id` (`neuroIdFromUserId`), считается поддельной → `404`
+(работает и до применения 0012).
 
 Ответы: `200 { neuro_id, display_name, coin, address, internal, settlement }`;
-`400` битый формат; `404` не найден или нет адреса этой монеты.
+`400` битый формат; `404` не найден, поддельная строка или нет адреса этой
+монеты; `503` на сервере нет `SUPABASE_SERVICE_ROLE_KEY`.
 
 ## POST /api/tg-webhook
 

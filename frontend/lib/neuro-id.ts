@@ -26,6 +26,17 @@ export function isNeuroId(value: string): boolean {
   return /^nw-[a-z0-9]{8,32}$/.test(normalizeNeuroId(value));
 }
 
+export type NeuroAddressColumn = 'eth_address' | 'sol_address' | 'btc_address' | 'tron_address' | 'ton_address';
+
+/** Directory column that holds the address for `coin` (lets the server select just that one). */
+export function addressColumnForCoin(coin: NeuroCoin): NeuroAddressColumn {
+  if (coin === 'BTC') return 'btc_address';
+  if (coin === 'SOL') return 'sol_address';
+  if (coin === 'TRX' || coin === 'TRC20') return 'tron_address';
+  if (coin === 'TON' || coin === 'USDT_TON') return 'ton_address';
+  return 'eth_address';
+}
+
 export function getAddressForCoin(row: Partial<NeuroDirectoryRow>, coin: NeuroCoin): string {
   if (coin === 'BTC') return row.btc_address ?? '';
   if (coin === 'SOL') return row.sol_address ?? '';
