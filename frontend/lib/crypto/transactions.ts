@@ -8,13 +8,7 @@ import { ethers } from 'ethers';
 import { amountToDecimalString } from '@/lib/display-format';
 import { ed25519 } from '@noble/curves/ed25519';
 import bs58 from 'bs58';
-import {
-  fetchUTXOs,
-  getBtcFeeRate,
-  buildSignedTx,
-  broadcastBtcTx,
-  isValidBtcAddress as _isValidBtcAddress,
-} from './btc-tx';
+import { isValidBtcAddress as _isValidBtcAddress } from './btc-tx';
 import {
   sendUsdtTrc20Raw,
   sendTrxRaw,
@@ -32,41 +26,6 @@ import { getEthProvider } from './eth-provider';
 const SOL_RPC   = 'https://api.mainnet-beta.solana.com';
 const USDT_ADDR = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
 const USDT_ABI  = ['function transfer(address to, uint256 amount) returns (bool)'];
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export interface EthFeeEstimate {
-  gasLimit: bigint;
-  gasPrice: bigint;
-  feeEth:   number;
-  feeEur:   number;
-}
-
-// ─── ETH fee estimation ───────────────────────────────────────────────────────
-
-export async function estimateEthFee(
-  toAddress: string,
-  amountEth: number,
-): Promise<EthFeeEstimate> {
-  const provider  = getEthProvider();
-  const value     = ethers.parseEther(amountToDecimalString(amountEth, 18));
-  const [feeData, gasLimit] = await Promise.all([
-    provider.getFeeData(),
-    provider.estimateGas({ to: toAddress, value }),
-  ]);
-  const gasPrice = feeData.gasPrice ?? BigInt(20e9);
-  const feeWei   = gasLimit * gasPrice;
-  const feeEth   = parseFloat(ethers.formatEther(feeWei));
-
-  let feeEur = feeEth * 2800;
-  try {
-    const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=eur');
-    const { ethereum } = await res.json();
-    feeEur = feeEth * (ethereum?.eur ?? 2800);
-  } catch { /* use fallback */ }
-
-  return { gasLimit, gasPrice, feeEth, feeEur };
-}
 
 // ─── Send ETH ─────────────────────────────────────────────────────────────────
 
@@ -262,38 +221,11 @@ export async function sendTrx(
 
 // ─── Send BTC ─────────────────────────────────────────────────────────────────
 //
-// BTC private key stored encrypted independently (wallet_btc_enc, AES-GCM + PBKDF2).
+// Single implementation lives in btc-tx.ts: signs at the fee rate shown in the
+// review (with absolute and fee/amount caps) and falls back to mempool.space for
+// broadcast. Re-exported here so older imports keep working.
 
-export async function sendBtc(
-  btcEncBlob:  string,
-  password:    string,
-  toAddress:   string,
-  amountBtc:   number,
-  fromAddress: string, // our BTC address (for change output)
-): Promise<string> {
-  // 1. Decrypt BTC private key independently
-  const btcPrivKey = await decryptBytes(btcEncBlob, password);
-  try {
-
-    const amountSat = BigInt(Math.round(amountBtc * 1e8));
-    if (amountSat <= 546n) throw new Error('Сумма ниже минимума (546 sat / dust limit).');
-
-    // 2. Fetch UTXOs and fee rate
-    const [utxos, feeRate] = await Promise.all([fetchUTXOs(fromAddress), getBtcFeeRate()]);
-    if (utxos.length === 0) throw new Error('Нет подтверждённых UTXO. Подожди подтверждения входящих транзакций.');
-
-    // 3. Select UTXOs and calculate change
-    // 3. Build and sign raw transaction. The PSBT helper supports old legacy
-    // NeuroWallet BTC addresses and new native SegWit addresses.
-    const rawHex = await buildSignedTx(btcPrivKey, utxos, toAddress, fromAddress, amountSat, feeRate);
-
-    // 4. Broadcast
-    const txid = await broadcastBtcTx(rawHex);
-    return txid;
-  } finally {
-    btcPrivKey.fill(0);
-  }
-}
+export { sendBtc } from './btc-tx';
 
 // ─── Validate addresses ───────────────────────────────────────────────────────
 

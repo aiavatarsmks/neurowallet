@@ -19,6 +19,8 @@
  * success or failure: they stay 'pending' or become 'unknown'.
  */
 
+import { ETH_RPC_URLS } from './eth-provider';
+
 export type TxStatusCoin = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TRX' | 'TRC20' | 'TON' | 'USDT_TON';
 export type TxState = 'pending' | 'confirmed' | 'failed' | 'unknown';
 
@@ -54,8 +56,9 @@ export const SOL_EXPIRY_MS = 2 * 60_000;
 /** A BTC txid unknown to both explorers after this is reported as 'unknown'. */
 export const BTC_NOT_FOUND_GRACE_MS = 10 * 60_000;
 
-// TODO(eth-provider): switch to getEthProvider() from lib/crypto/eth-provider.ts once it lands.
-const ETH_RPCS = ['https://ethereum-rpc.publicnode.com', 'https://1rpc.io/eth'];
+// Same keyless RPC list as the send path (lib/crypto/eth-provider.ts), queried
+// with a plain eth_getTransactionReceipt so status polling stays dependency-light.
+const ETH_RPCS: readonly string[] = ETH_RPC_URLS;
 const BTC_APIS = ['https://blockstream.info/api', 'https://mempool.space/api'];
 const SOL_RPC = 'https://api.mainnet-beta.solana.com';
 const TRONGRID = 'https://api.trongrid.io';

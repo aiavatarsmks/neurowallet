@@ -108,7 +108,6 @@ const nextConfig = {
         ...(config.externals || []),
         'three',
         '@react-three/fiber',
-        '@react-three/drei',
       ];
     }
     return config;

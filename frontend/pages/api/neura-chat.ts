@@ -83,7 +83,9 @@ const ERRORS: Record<Lang, {
 
 function buildSystemPrompt(lang: Lang, ctx?: WalletContext): string {
   let prompt = lang === 'en' ? SYSTEM_PROMPT_EN : SYSTEM_PROMPT_RU;
-  if (ctx && (ctx.eth !== undefined || ctx.btc !== undefined)) {
+  const hasBalances = !!ctx && ['eth', 'btc', 'sol', 'trx', 'ton', 'usdt', 'usdtTrc', 'usdtTon']
+    .some((k) => ctx[k as keyof WalletContext] !== undefined);
+  if (ctx && hasBalances) {
     const lines: string[] = [lang === 'en' ? "\n\nUser's current wallet data:" : '\n\nТекущие данные кошелька пользователя:'];
     if (ctx.btc  !== undefined) lines.push(`• BTC: ${ctx.btc.toFixed(6)} BTC (~€${((ctx.btc || 0) * (ctx.btcEur || 0)).toFixed(2)})`);
     if (ctx.eth  !== undefined) lines.push(`• ETH: ${ctx.eth.toFixed(4)} ETH (~€${((ctx.eth || 0) * (ctx.ethEur || 0)).toFixed(2)})`);

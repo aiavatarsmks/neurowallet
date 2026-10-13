@@ -48,18 +48,19 @@ describe('getTxStatus: ETH / USDT ERC-20 (eth_getTransactionReceipt)', () => {
     await expect(getTxStatus('ETH', ETH_HASH)).resolves.toEqual({ state: 'pending' });
   });
 
-  it('primary RPC down / rate-limited → fallback 1rpc.io', async () => {
+  it('primary RPC down / rate-limited → next RPC from the shared list', async () => {
     const f = stubFetch(new TypeError('Failed to fetch'), json({ result: { status: '0x1' } }));
     await expect(getTxStatus('ETH', ETH_HASH)).resolves.toEqual({ state: 'confirmed' });
-    expect(f.mock.calls[1][0]).toBe('https://1rpc.io/eth');
+    expect(f.mock.calls[0][0]).toBe('https://ethereum-rpc.publicnode.com');
+    expect(f.mock.calls[1][0]).toBe('https://eth.drpc.org');
 
     const g = stubFetch(json({}, 429), json({ result: null }));
     await expect(getTxStatus('ETH', ETH_HASH)).resolves.toEqual({ state: 'pending' });
     expect(g).toHaveBeenCalledTimes(2);
   });
 
-  it('both RPCs failing → TxStatusFetchError (poller backs off)', async () => {
-    stubFetch(json({}, 503), new TypeError('offline'));
+  it('all RPCs failing → TxStatusFetchError (poller backs off)', async () => {
+    stubFetch(json({}, 503), new TypeError('offline'), json({}, 429));
     await expect(getTxStatus('ETH', ETH_HASH)).rejects.toBeInstanceOf(TxStatusFetchError);
   });
 

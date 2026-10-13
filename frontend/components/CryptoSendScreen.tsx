@@ -11,7 +11,7 @@ import { sanitizeAmountInput, COIN_DECIMALS, amountToDecimalString } from '@/lib
 import { emitNotification } from '@/lib/notifications-client';
 import { buildTxSentNotice, postTxSentNotice } from '@/lib/tg-notify-client';
 import { looksLikeTonDnsName, resolveName, type ResolvableChain } from '@/lib/name-resolvers';
-import { simulateTransfer, isBlocked, estimateFeeNative, FEE_CURRENCY, type SimulationResult, type SimWarning } from '@/lib/crypto/simulate';
+import { simulateTransfer, isBlocked, estimateFeeNative, FEE_CURRENCY, SIM_DETAIL_I18N, type SimulationResult, type SimWarning } from '@/lib/crypto/simulate';
 import { assessRecipient, type RiskAssessment } from '@/lib/risk/engine';
 import { policyEngineEnabled, type PolicyDecision } from '@/lib/policy-engine';
 import { evaluateSend } from '@/lib/policy-check';
@@ -174,6 +174,9 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   const [sendErr,  setSendErr]  = useState('');
   const [balances, setBalances] = useState<Record<Coin, number>>({ ETH: 0, BTC: 0, SOL: 0, USDT: 0, TRX: 0, TRC20: 0, TON: 0, USDT_TON: 0 });
   const [balReady, setBalReady] = useState(false);
+  // Coins whose balance did not load this round (provider down). Their number
+  // is a last-known value or 0, so we never claim "insufficient funds" for them.
+  const [unknownCoins, setUnknownCoins] = useState<Coin[]>([]);
   const [eurRates, setEurRates] = useState({ eth: 2800, btc: 55000, sol: 120, trx: 0.22, ton: 3.5 });
 
   // Review-симуляция (задача 1.2)
@@ -252,6 +255,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       fetchRealBalances(eth, sol, btc, tron, ton)
         .then((b) => {
           setBalances({ ETH: b.eth, BTC: b.btc, SOL: b.sol, USDT: b.usdt, TRX: b.trx, TRC20: b.usdtTrc, TON: b.ton, USDT_TON: b.usdtTon });
+          setUnknownCoins((b.unavailable ?? []).map((a) => (a === 'USDT_TRC' ? 'TRC20' : a) as Coin));
           setEurRates({ eth: b.ethEur, btc: b.btcEur, sol: b.solEur, trx: b.trxEur, ton: b.tonEur });
           setBalReady(true);
         })
@@ -268,7 +272,8 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   // Shown to the user: the typed decimal string, never JS number formatting (1e-7).
   const displayAmount = amount.replace(/\.$/, '').replace(/^\./, '0.') || '0';
   const available  = balances[coin];
-  const insufficient = amountNum > 0 && amountNum > available;
+  const balanceUnknown = !isDemo && unknownCoins.includes(coin);
+  const insufficient = !balanceUnknown && amountNum > 0 && amountNum > available;
 
   // ── Post-send on-chain status (done screen) ──────────────────────────────
   // Broadcast ≠ success: a USDT TRC-20 transfer can fail with OUT_OF_ENERGY
@@ -355,6 +360,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           balances,
           eurRates,
           fromBtcAddress: localStorage.getItem('wallet_btc_address') ?? undefined,
+          unknownBalances: unknownCoins,
         }),
         fetchHistory(),
       ]);
@@ -468,6 +474,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
     insufficient_fee_balance: 'csWarnFeeBalance',
     simulation_timeout: 'csWarnSimTimeout',
     simulation_failed: 'csWarnSimFailed',
+    balance_unknown: 'csWarnBalanceUnknown',
   };
 
   const addressValid =
@@ -478,9 +485,10 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
     : isValidBtcAddress(address.trim()); // BTC
 
   // Name resolution (2.6): TON DNS for TON-family coins (verified working).
-  // ENS (.eth) is temporarily gated off — ethers resolveName fails against the
-  // public cloudflare-eth RPC in the browser bundle; needs a reliable ETH RPC
-  // or a raw-eth_call implementation. The resolveEns lib stays (tested) for then.
+  // ENS (.eth) stays gated off here on purpose. The original blocker (the dead
+  // cloudflare-eth RPC) is gone: resolveEns now uses lib/crypto/eth-provider.ts
+  // and resolves live. Turning it on decides where real money goes, so it is an
+  // owner decision after a manual check (see the night audit plan, 2026-10-13).
   const resolvableChain: ResolvableChain | null =
     coin === 'TON' || coin === 'USDT_TON' ? 'ton'
     : null;
@@ -1132,8 +1140,17 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
               : { background: 'rgba(247,147,26,0.06)', border: '1px solid rgba(247,147,26,0.2)' }}
           >
             <p className="text-xs" style={{ color: w.level === 'block' ? '#FF453A' : '#F7931A' }}>
-              {t(WARNING_I18N[w.code])}
+              {t(w.detail ? SIM_DETAIL_I18N[w.detail] : WARNING_I18N[w.code])}
             </p>
+          </div>
+        ))}
+        {realReview && sim !== null && (sim.notices ?? []).map((n) => (
+          <div
+            key={n.detail}
+            className="rounded-2xl p-3"
+            style={{ background: 'rgba(247,147,26,0.06)', border: '1px solid rgba(247,147,26,0.2)' }}
+          >
+            <p className="text-xs" style={{ color: '#F7931A' }}>{t(SIM_DETAIL_I18N[n.detail])}</p>
           </div>
         ))}
 
@@ -1290,14 +1307,16 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           </div>
           {amountNum > 0 && (
             <p className="text-sm mt-1.5">
-              {insufficient
+              {balanceUnknown
+                ? <span style={{ color: '#F7931A' }}>{t('csBalanceUnknownInline')}</span>
+                : insufficient
                 ? <span style={{ color: '#FF5252' }}>{t('csInsufficientFunds')}</span>
                 : <span className="text-[#3A6045]">{t('csAvailableInline').replace('{amt}', available.toLocaleString(numLocale, { maximumFractionDigits: 6 })).replace('{coin}', coinLabel(coin))}</span>
               }
             </p>
           )}
           {/* MAX button */}
-          {available > 0 && !insufficient && (
+          {available > 0 && !insufficient && !balanceUnknown && (
             <button
               onClick={() => { void handleMax(); }}
               disabled={maxLoading}

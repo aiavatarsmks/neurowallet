@@ -575,6 +575,9 @@ export const translations = {
     ebReload: 'Перезагрузить',
     ebResetCta: 'Удалить ключи с устройства и восстановить по seed-фразе',
     secEvent_session_started: 'Вход в аккаунт',
+    // ── night-integration ──
+    csWarnBalanceUnknown: "Баланс сейчас не загрузился, поэтому проверить, хватает ли средств, не получилось. Если не хватит, сеть просто отклонит перевод.",
+    csBalanceUnknownInline: "Баланс не загрузился, сумму проверит сеть",
   },
   en: {
     // ── Landing / onboarding carousel (pages/index.tsx) ──────────────────────
@@ -1150,6 +1153,8 @@ export const translations = {
     ebReload: 'Reload',
     ebResetCta: 'Remove keys from this device and restore from seed phrase',
     secEvent_session_started: 'Account sign-in',
+    csWarnBalanceUnknown: "Your balance did not load right now, so we could not check that you have enough. If you do not, the network will simply reject the transfer.",
+    csBalanceUnknownInline: "Balance did not load, the network will check the amount",
   },
 } as const;
 

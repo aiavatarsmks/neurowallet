@@ -33,7 +33,8 @@ export interface SimWarning {
     | 'insufficient_funds'
     | 'insufficient_fee_balance'
     | 'simulation_timeout'
-    | 'simulation_failed';
+    | 'simulation_failed'
+    | 'balance_unknown';
   /** Additive: the specific reason behind `code` (UI: SIM_DETAIL_I18N[detail]). */
   detail?: SimWarningDetail;
 }
@@ -79,6 +80,13 @@ export interface SimulateParams {
   fromTronAddress?: string;
   /** Таймаут RPC-части симуляции, мс. */
   timeoutMs?: number;
+  /**
+   * Coins whose balance could not be loaded this round (provider down). Their
+   * number in `balances` is a last-known value or 0, so the sufficiency check is
+   * skipped for them (warn `balance_unknown`) instead of a false "insufficient".
+   * The chain still enforces the real balance at broadcast.
+   */
+  unknownBalances?: SimCoin[];
 }
 
 /** Нативная монета, которой платится комиссия за перевод данной монеты. */
@@ -214,19 +222,27 @@ export async function simulateTransfer(params: SimulateParams): Promise<Simulati
   const sendBalance = balances[coin] ?? 0;
   const feeBalance = balances[feeCur.coin] ?? 0;
   const sameCurrency = feeCur.coin === coin;
+  const unknown = new Set(params.unknownBalances ?? []);
+  const sendUnknown = unknown.has(coin);
+  const feeUnknown = unknown.has(feeCur.coin);
 
+  if (sendUnknown || feeUnknown) {
+    // Balance didn't load: we can't honestly say "insufficient". Warn instead;
+    // the network rejects an underfunded transfer at broadcast.
+    warnings.push({ level: 'warn', code: 'balance_unknown' });
+  }
   if (sameCurrency) {
     const needed = amount + (feeNative ?? 0);
-    if (needed > sendBalance) warnings.push({ level: 'block', code: 'insufficient_funds' });
+    if (!sendUnknown && needed > sendBalance) warnings.push({ level: 'block', code: 'insufficient_funds' });
   } else {
-    if (amount > sendBalance) warnings.push({ level: 'block', code: 'insufficient_funds' });
-    if (feeNative !== null && feeNative > feeBalance) {
+    if (!sendUnknown && amount > sendBalance) warnings.push({ level: 'block', code: 'insufficient_funds' });
+    if (!feeUnknown && feeNative !== null && feeNative > feeBalance) {
       warnings.push({ level: 'block', code: 'insufficient_fee_balance' });
     }
   }
 
   const balanceAfter =
-    amount <= sendBalance
+    !sendUnknown && amount <= sendBalance
       ? Math.max(0, sendBalance - amount - (sameCurrency ? feeNative ?? 0 : 0))
       : null;
 

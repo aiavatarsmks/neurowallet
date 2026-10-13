@@ -50,6 +50,28 @@ async function getDemoResponse(
   }
 }
 
+type ChatWalletContext = WalletBalances & { ethAddr?: string; btcAddr?: string; solAddr?: string; tronAddr?: string; tonAddr?: string };
+
+/** Balance field per asset, for stripping assets whose balance did not load. */
+const BALANCE_FIELD: Record<string, keyof WalletBalances> = {
+  BTC: 'btc', ETH: 'eth', SOL: 'sol', USDT: 'usdt', TRX: 'trx', USDT_TRC: 'usdtTrc', TON: 'ton', USDT_TON: 'usdtTon',
+};
+
+/**
+ * What Neura may see: unavailable assets are dropped, so she never states a
+ * fake 0 (the number there is a last-known value or 0, not a fresh fact).
+ */
+export function chatWalletContext(ctx?: ChatWalletContext): Record<string, unknown> | undefined {
+  if (!ctx) return undefined;
+  const out: Record<string, unknown> = { ...ctx };
+  for (const asset of ctx.unavailable ?? []) {
+    const field = BALANCE_FIELD[asset];
+    if (field) delete out[field];
+  }
+  delete out.unavailable;
+  return out;
+}
+
 async function getResponse(
   history: { from: 'neura' | 'user'; text: string }[],
   lang: 'ru' | 'en',
@@ -70,7 +92,7 @@ async function getResponse(
       },
       body: JSON.stringify({
         messages: asApiMessages(history),
-        walletContext,
+        walletContext: chatWalletContext(walletContext),
         lang,
       }),
     });
