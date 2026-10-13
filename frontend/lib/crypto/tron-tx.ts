@@ -941,15 +941,58 @@ function parseActivated(json: Json): boolean {
   throw new Error('TRON_ESTIMATE_BAD_ACCOUNT');
 }
 
-/** /wallet/triggerconstantcontract: energy_used of a successful dry run. */
+/** TronGrid sends VM / API messages hex-encoded ("REVERT opcode executed" → 5245…); plain text passes through. */
+function tronApiText(raw: unknown): string {
+  if (typeof raw !== 'string' || !raw) return '';
+  if (!/^[0-9a-fA-F]+$/.test(raw) || raw.length % 2 !== 0) return raw;
+  const bytes = new Uint8Array(raw.length / 2);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(raw.slice(i * 2, i * 2 + 2), 16);
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return raw;
+  }
+}
+
+/**
+ * The contract itself refused the call: REVERT (require failed: USDT balance
+ * below the amount, sender blacklisted, token paused) or an INVALID opcode
+ * (assert). Deterministic: the real transfer would fail the same way on chain
+ * and still burn TRX for the energy it used.
+ */
+const TRON_CONTRACT_REFUSED_RE = /REVERT opcode executed|\brevert\b|Invalid operation code/i;
+
+/**
+ * /wallet/triggerconstantcontract: energy_used of a successful dry run.
+ * Throws 'TRON_ESTIMATE_REVERT' when the contract refused the transfer (the
+ * review blocks the send), 'TRON_ESTIMATE_DRY_RUN_FAILED' for any other failed
+ * dry run (CPU timeout, unclear answer: the static estimate is used, non-blocking).
+ */
 function parseEnergyUsed(json: Json): number {
   const result = json.result as { result?: unknown; message?: unknown } | undefined;
-  if (!result || result.result !== true || result.message) throw new Error('TRON_ESTIMATE_REVERT');
   const ret = (json.transaction as { ret?: Array<{ ret?: unknown }> } | undefined)?.ret?.[0]?.ret;
-  if (ret !== undefined && ret !== 'SUCCESS') throw new Error('TRON_ESTIMATE_REVERT');
+  const message = tronApiText(result?.message);
+  const failed = !result || result.result !== true || message !== '' || (ret !== undefined && ret !== 'SUCCESS');
+  if (failed) {
+    throw new Error(TRON_CONTRACT_REFUSED_RE.test(message) ? 'TRON_ESTIMATE_REVERT' : 'TRON_ESTIMATE_DRY_RUN_FAILED');
+  }
   const e = json.energy_used;
   if (typeof e !== 'number' || !Number.isSafeInteger(e) || e <= 0) throw new Error('TRON_ESTIMATE_BAD_ENERGY');
   return e;
+}
+
+/**
+ * Sender's TRX balance in sun from /wallet/getaccount (read-only). `{}` = not
+ * activated = 0. Throws on any provider failure or odd answer: the caller then
+ * treats the balance as unknown.
+ */
+export async function fetchTronTrxBalanceSun(address: string, timeoutMs = 6_000): Promise<number> {
+  if (!isValidTronAddress(address)) throw new Error('TRON_BALANCE_BAD_ADDRESS');
+  const json = await tronPost('/wallet/getaccount', { address, visible: true }, timeoutMs);
+  if (!parseActivated(json)) return 0;
+  const balance = json.balance ?? 0; // omitted when 0
+  if (typeof balance !== 'number' || !Number.isSafeInteger(balance) || balance < 0) throw new Error('TRON_BALANCE_BAD');
+  return balance;
 }
 
 function bandwidthBurnSun(bytes: number, r: TronAccountResource, txFeeSun: number): number {

@@ -19,7 +19,7 @@ import {
   isValidTonAddress,
 } from './transactions';
 import { fetchUTXOs, getBtcFeeRate, estimateBtcFeeSat } from './btc-tx';
-import { estimateTronFee, tronStaticFeeEstimate, type TronFeeEstimate } from './tron-tx';
+import { estimateTronFee, fetchTronTrxBalanceSun, tronStaticFeeEstimate, type TronFeeEstimate } from './tron-tx';
 import type { TranslationKey } from '../i18n';
 import { getEthProvider } from './eth-provider';
 
@@ -43,7 +43,8 @@ export interface SimWarning {
 export type SimWarningDetail =
   | 'tron_fee_limit_exceeded'        // block: energy cost > fee_limit → OUT_OF_ENERGY
   | 'tron_fee_estimate_unavailable'  // warn: live TRON estimate failed, static fee shown
-  | 'tron_recipient_not_activated';  // notice: TRX to a new account, +1 TRX creation fee
+  | 'tron_recipient_not_activated'   // notice: TRX to a new account, +1 TRX creation fee
+  | 'tron_estimate_revert';          // block (code simulation_failed): USDT dry run reverted → TRX would burn for nothing
 
 /** Non-blocking note without a SimWarning code yet (older UIs ignore it). */
 export interface SimNotice {
@@ -85,6 +86,10 @@ export interface SimulateParams {
    * number in `balances` is a last-known value or 0, so the sufficiency check is
    * skipped for them (warn `balance_unknown`) instead of a false "insufficient".
    * The chain still enforces the real balance at broadcast.
+   * TRX / TRC20 sends with 'TRX' here: the TRON estimate reads the sender's TRX
+   * balance itself (/wallet/getaccount) and checks it like a known balance, so
+   * a TRC-20 send that cannot pay its fee is still blocked (a failed TRC-20
+   * call burns TRX). Only if that read fails too does `balance_unknown` stay.
    */
   unknownBalances?: SimCoin[];
 }
@@ -196,13 +201,15 @@ export async function simulateTransfer(params: SimulateParams): Promise<Simulati
 
   let status: SimulationResult['status'] = 'ok';
   let feeNative: number | null = null;
-  const tronSim: { est?: TronFeeEstimate } = {}; // TRON: live energy/bandwidth estimate
+  // TRON: live energy/bandwidth estimate; sender TRX read from the chain when the caller had none.
+  const tronSim: { est?: TronFeeEstimate; senderTrx?: number | null } = {};
   let btcFeeRateSatVb: number | undefined; // BTC: the rate behind the reviewed fee
   try {
     feeNative = await withTimeout(
       isTronCoin(coin)
-        ? estimateTronForSim(params, warnings.length === 0).then((est) => {
+        ? estimateTronForSim(params, warnings.length === 0).then(({ est, senderTrx }) => {
             tronSim.est = est;
+            tronSim.senderTrx = senderTrx;
             return est.feeTrx;
           })
         : coin === 'BTC'
@@ -219,10 +226,16 @@ export async function simulateTransfer(params: SimulateParams): Promise<Simulati
   }
 
   // Достаточность баланса — с учётом комиссии, если она известна.
-  const sendBalance = balances[coin] ?? 0;
-  const feeBalance = balances[feeCur.coin] ?? 0;
-  const sameCurrency = feeCur.coin === coin;
   const unknown = new Set(params.unknownBalances ?? []);
+  let knownBalances = balances;
+  if (unknown.has('TRX') && typeof tronSim.senderTrx === 'number') {
+    // TRON estimate read the sender's TRX from the chain: check it like a loaded balance.
+    unknown.delete('TRX');
+    knownBalances = { ...balances, TRX: tronSim.senderTrx };
+  }
+  const sendBalance = knownBalances[coin] ?? 0;
+  const feeBalance = knownBalances[feeCur.coin] ?? 0;
+  const sameCurrency = feeCur.coin === coin;
   const sendUnknown = unknown.has(coin);
   const feeUnknown = unknown.has(feeCur.coin);
 
@@ -274,6 +287,7 @@ export const SIM_DETAIL_I18N: Record<SimWarningDetail, TranslationKey> = {
   tron_fee_limit_exceeded: 'simTronFeeLimitExceeded',
   tron_fee_estimate_unavailable: 'simTronFeeEstimateUnavailable',
   tron_recipient_not_activated: 'simTronRecipientNotActivated',
+  tron_estimate_revert: 'simTronEstimateRevert',
 };
 
 function isTronCoin(coin: SimCoin): coin is 'TRX' | 'TRC20' {
@@ -296,24 +310,29 @@ function senderTronAddress(params: SimulateParams): string {
  * or on any provider failure, the previous static value with a flag. Never
  * rejects; the live calls get 3/4 of the simulation timeout so the fallback
  * arrives before the outer timeout.
+ * When the caller could not load the TRX balance (unknownBalances has 'TRX'),
+ * the sender's TRX is read alongside (/wallet/getaccount): `senderTrx` is that
+ * balance in TRX, or null if it was not needed or could not be read.
  */
-async function estimateTronForSim(params: SimulateParams, inputsValid: boolean): Promise<TronFeeEstimate> {
+async function estimateTronForSim(
+  params: SimulateParams,
+  inputsValid: boolean,
+): Promise<{ est: TronFeeEstimate; senderTrx: number | null }> {
   const kind = params.coin === 'TRX' ? 'trx' : 'usdt';
   const staticFee = STATIC_FEE_NATIVE[params.coin] ?? 0;
-  if (!inputsValid) return tronStaticFeeEstimate(kind, staticFee, 'invalid_input');
+  if (!inputsValid) return { est: tronStaticFeeEstimate(kind, staticFee, 'invalid_input'), senderTrx: null };
   const from = senderTronAddress(params);
-  if (!from) return tronStaticFeeEstimate(kind, staticFee, 'no_sender_address');
-  try {
-    return await estimateTronFee({
-      kind,
-      from,
-      to: params.toAddress.trim(),
-      amount: params.amount,
-      timeoutMs: Math.floor((params.timeoutMs ?? 8_000) * 0.75),
-    });
-  } catch (err) {
-    return tronStaticFeeEstimate(kind, staticFee, err instanceof Error ? err.message.slice(0, 80) : 'error');
-  }
+  if (!from) return { est: tronStaticFeeEstimate(kind, staticFee, 'no_sender_address'), senderTrx: null };
+  const timeoutMs = Math.floor((params.timeoutMs ?? 8_000) * 0.75);
+  const needTrx = (params.unknownBalances ?? []).includes('TRX');
+  const [est, senderTrx] = await Promise.all([
+    estimateTronFee({ kind, from, to: params.toAddress.trim(), amount: params.amount, timeoutMs })
+      .catch((err: unknown) => tronStaticFeeEstimate(kind, staticFee, err instanceof Error ? err.message.slice(0, 80) : 'error')),
+    needTrx
+      ? fetchTronTrxBalanceSun(from, timeoutMs).then((sun) => sun / 1e6, () => null)
+      : Promise.resolve(null),
+  ]);
+  return { est, senderTrx };
 }
 
 /**
@@ -331,7 +350,17 @@ function applyTronWarnings(est: TronFeeEstimate, warnings: SimWarning[], notices
       warnings.push({ level: 'block', code: 'insufficient_fee_balance', detail: 'tron_fee_limit_exceeded' });
     }
   }
-  if (est.source === 'static' && est.unavailableReason !== 'invalid_input'
+  if (est.source === 'static' && est.unavailableReason === 'TRON_ESTIMATE_REVERT') {
+    // The USDT dry run reverted (e.g. USDT balance below the amount): the real
+    // call would revert too and still burn TRX for energy. Block, one entry per code.
+    const existing = warnings.find((w) => w.code === 'simulation_failed');
+    if (existing) {
+      existing.level = 'block';
+      existing.detail = 'tron_estimate_revert';
+    } else {
+      warnings.push({ level: 'block', code: 'simulation_failed', detail: 'tron_estimate_revert' });
+    }
+  } else if (est.source === 'static' && est.unavailableReason !== 'invalid_input'
       && !warnings.some((w) => w.code === 'simulation_failed')) {
     warnings.push({ level: 'warn', code: 'simulation_failed', detail: 'tron_fee_estimate_unavailable' });
   }
