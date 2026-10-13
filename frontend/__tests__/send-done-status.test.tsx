@@ -171,6 +171,15 @@ describe('CryptoSendScreen done screen: on-chain status', () => {
     expect(H.track.mock.calls.some((c) => c[0] === 'send_failed')).toBe(false);
   });
 
+  it('TON / USDT-TON forms warn that memo is not supported; other coins do not', async () => {
+    const view = render(<CryptoSendScreen initialCoin="TON" initialAddress="" initialAmount="" />);
+    expect(await screen.findByText('csTonMemoWarning')).toBeInTheDocument();
+    view.rerender(<CryptoSendScreen initialCoin="USDT_TON" initialAddress="" initialAmount="" />);
+    expect(await screen.findByText('csTonMemoWarning')).toBeInTheDocument();
+    view.rerender(<CryptoSendScreen initialCoin="TRC20" initialAddress="" initialAmount="" />);
+    await waitFor(() => expect(screen.queryByText('csTonMemoWarning')).not.toBeInTheDocument());
+  });
+
   it('demo mode: no polling at all, demo text, no chain call', async () => {
     H.auth = { user: null as unknown as { id: string }, isDemo: true, isLoading: false };
     await sendThrough('TRC20', TRON_TO, '5');

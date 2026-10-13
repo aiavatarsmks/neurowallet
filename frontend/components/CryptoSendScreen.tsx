@@ -1208,6 +1208,10 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         {resolveErr && (
           <p className="text-xs mt-1" style={{ color: '#FF5252' }}>{resolveErr}</p>
         )}
+        {/* No memo/comment on TON yet: exchange deposits that need one would be lost. */}
+        {(coin === 'TON' || coin === 'USDT_TON') && (
+          <p className="text-[11px] mt-1.5 leading-relaxed" style={{ color: '#F7931A' }}>{t('csTonMemoWarning')}</p>
+        )}
       </div>
 
       {/* Amount */}

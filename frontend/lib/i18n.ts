@@ -523,6 +523,9 @@ export const translations = {
     csStatusCheckExplorer: 'Проверь статус в обозревателе.',
     csStatusStopped: 'Автопроверка остановлена. Статус можно посмотреть в обозревателе.',
     csNeuraFailedOnchain: 'Перевод не прошёл в сети. Сумма осталась на твоём адресе, списана только комиссия сети. Проверь баланс и причину, прежде чем пробовать снова.',
+    sendPrivateNotePlaceholder: 'Заметка для себя (не отправляется в сеть)',
+    sendPrivateNoteLabel: 'Заметка для себя',
+    csTonMemoWarning: 'Перевод на биржу? Мемо/комментарий пока не поддерживается. Не отправляйте на адреса, где биржа требует мемо.',
   },
   en: {
     // ── Landing / onboarding carousel (pages/index.tsx) ──────────────────────
@@ -1046,6 +1049,9 @@ export const translations = {
     csStatusCheckExplorer: 'Check the status in the explorer.',
     csStatusStopped: 'Automatic checking has stopped. You can follow the status in the explorer.',
     csNeuraFailedOnchain: 'The transfer failed on-chain. The amount stayed at your address; only the network fee was spent. Check your balance and the reason before trying again.',
+    sendPrivateNotePlaceholder: 'Private note (not sent on-chain)',
+    sendPrivateNoteLabel: 'Private note',
+    csTonMemoWarning: "Sending to an exchange? Memo/comment isn't supported yet. Don't send to addresses that require a memo.",
   },
 } as const;
 
