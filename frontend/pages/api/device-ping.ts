@@ -7,7 +7,7 @@
  * Audit: email-входы раньше не попадали в audit_log (логин идёт напрямую в
  * Supabase Auth, мимо нашего API). Этот вызов и есть серверная точка «сессия
  * началась на устройстве», поэтому здесь пишется `session_started`
- * { method: 'email' } — его показывает security center. Telegram-аккаунты
+ * { method: 'email' }, его показывает security center. Telegram-аккаунты
  * пропускаем: для них tg-auth уже пишет `tg_auth_login`.
  */
 
@@ -47,7 +47,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const svc = createClient(url, serviceKey);
-    // Ошибка = миграция 0007 не применена — тихо, но audit ниже всё равно пишем.
+    // Ошибка = миграция 0007 не применена: тихо, но audit ниже всё равно пишем.
     await svc.from('devices').upsert(
       {
         user_id: auth.user.id,

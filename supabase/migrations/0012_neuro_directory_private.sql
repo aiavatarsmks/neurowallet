@@ -1,4 +1,4 @@
--- NeuroWallet — 0012: neuro_directory becomes private + NeuroID anti-impersonation.
+-- NeuroWallet 0012: neuro_directory becomes private + NeuroID anti-impersonation.
 --
 -- HOW TO APPLY: manually, whole file, in the Supabase SQL Editor (there is no
 -- auto-apply). Idempotent: safe to run more than once.

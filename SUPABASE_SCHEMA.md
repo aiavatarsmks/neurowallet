@@ -35,7 +35,7 @@ left(replace(user_id::text,'-',''),12)` (= `neuroIdFromUserId`), чтобы не
 | display_name, eth/sol/btc/tron/ton_address | TEXT |
 | created_at / updated_at | TIMESTAMPTZ |
 
-**RLS** (с 0012): SELECT / INSERT / UPDATE — только своя строка
+**RLS** (с 0012): SELECT / INSERT / UPDATE только своя строка
 (`auth.uid() = user_id`). До 0012 SELECT был открыт всем `authenticated`, а
 регистрация по email открыта, то есть любой мог выгрузить имена и все адреса
 кошельков через REST. Чужие строки теперь читает только service role:

@@ -1,4 +1,4 @@
--- NeuroWallet — 0013: payment_requests owner may change only `status`.
+-- NeuroWallet 0013: payment_requests owner may change only `status`.
 --
 -- HOW TO APPLY: manually, whole file, in the Supabase SQL Editor (there is no
 -- auto-apply). Idempotent: safe to run more than once.

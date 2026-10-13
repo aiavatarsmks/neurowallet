@@ -21,7 +21,7 @@
 | `/api/risk-event` | POST, PATCH | Supabase JWT | 30/мин/user | `risk_flagged`, `risk_override_confirmed` |
 | `/api/contacts` | GET, POST, PATCH, DELETE | Supabase JWT | 30/мин/user | `contact_saved/updated/deleted` (только id+монета) |
 | `/api/payment-request` | GET (аноним), POST, PATCH | GET: rate limit по IP; POST/PATCH: JWT | 30/мин/IP; 20/мин/user | `payment_request_created/updated` |
-| `/api/health` | GET | — (для uptime-мониторов) | 30/мин/IP | — |
+| `/api/health` | GET | нет (для uptime-мониторов) | 30/мин/IP | нет |
 
 Общие правила:
 - **Auth**: заголовок `Authorization: Bearer <supabase_access_token>`; невалидный/отсутствующий → `401`.
@@ -129,7 +129,7 @@ HTML-экранируется. Подписи монет: USDT → `USDT (ERC-20
 `USDT (TRC-20)`, USDT_TON → `USDT (TON)`, остальные как есть. Адрес
 сокращается до `первые 6...последние 4`, хеш до первых 16 символов.
 
-Получатель — только `app_metadata.telegram_id` сессии (см. tg-auth). Поля
+Получатель: только `app_metadata.telegram_id` сессии (см. tg-auth). Поля
 `telegramId` в body и `user_metadata.telegram_id` игнорируются.
 
 Ответы: `200 { ok: true }`; `400 { error: 'invalid kind' | 'invalid coin' |
