@@ -174,8 +174,8 @@ export function parseTronAccount(data: unknown): TronAccountBalances {
 /**
  * TRX + USDT TRC-20 одним запросом (раньше — два одинаковых вызова).
  * `headers` — для серверного вызова с TRON-PRO-API-KEY; в браузере не передаётся.
- * Бросает при сетевой ошибке / не-2xx / битом JSON / error-поле API —
- * вызывающий решает, что делать. Неактивированный аккаунт — честный 0.
+ * Бросает при сетевой ошибке, не-2xx, битом JSON и error-поле API: что
+ * делать, решает вызывающий. Неактивированный аккаунт даёт честный 0.
  */
 export async function fetchTronAccountBalances(
   address: string,
@@ -615,7 +615,7 @@ export async function sendUsdtTrc20Raw(
     feeLimitSun: BigInt(USDT_TRC20_FEE_LIMIT_SUN),
   });
 
-  // 3. Sign: SHA256(raw_data_bytes) — Tron uses SHA256, not keccak256. 4. Broadcast.
+  // 3. Sign SHA256(raw_data_bytes) (Tron uses SHA256, not keccak256). 4. Broadcast.
   return broadcastVerified(buildJson.transaction, verified, signVerified(verified, privKey));
 }
 
@@ -675,6 +675,266 @@ export function tronBroadcastError(json: { message?: unknown; code?: unknown }):
     if (text && !/[\u0000-\u0008]/.test(text)) return text;
   }
   return raw;
+}
+
+// ─── Fee estimate (energy + bandwidth + account activation) ──────────────────
+//
+// Replaces the static "~14 TRX" for USDT. TRX burned ≈
+//   max(0, energy_used − sender's staked energy left) × getEnergyFee
+// + bandwidth: 0 if staked (NetLimit−NetUsed) or free (freeNetLimit−freeNetUsed)
+//   bandwidth covers the tx size, else size × getTransactionFee (all-or-nothing)
+// + TRX to a non-activated account: getCreateNewAccountFeeInSystemContract
+//   (1 TRX), and its bandwidth is staked-or-getCreateAccountFee (0.1 TRX);
+//   free bandwidth cannot pay for account creation.
+// fee_limit caps the TOTAL energy of the call (staked + burned) at
+// fee_limit / getEnergyFee (java-tron VMActuator.getAccountEnergyLimitWithFixRatio),
+// so energy_used × getEnergyFee > fee_limit means OUT_OF_ENERGY: TRX burned, USDT not moved.
+
+/** Bandwidth bytes (java-tron: tx without ret + 65 B signature + 64 B result reserve). */
+export const TRX_TRANSFER_BANDWIDTH_BYTES = 280;   // measured 267 B; headroom for long amounts
+export const TRC20_TRANSFER_BANDWIDTH_BYTES = 345; // measured 345 B (fixed-size call data)
+
+export interface TronFeeEstimate {
+  /** 'live' = computed from chain data; 'static' = fallback, the live estimate was unavailable. */
+  source: 'live' | 'static';
+  /** Expected TRX burned by the send (energy + bandwidth + activation), TRX. */
+  feeTrx: number;
+  /** USDT only: energy the transfer needs (triggerconstantcontract, incl. dynamic-energy penalty). */
+  energyUsed: number | null;
+  /** USDT only: sender's staked energy left (EnergyLimit − EnergyUsed). */
+  energyAvailable: number | null;
+  /** USDT only: chain energy price, sun per energy (getEnergyFee). */
+  energyFeeSun: number | null;
+  /** USDT only: TRX burned for energy not covered by stake. */
+  energyBurnTrx: number | null;
+  /** USDT only: full energy value energy_used × price, compared with fee_limit. */
+  energyCostTrx: number | null;
+  /** USDT only: fee_limit the send uses, TRX. */
+  feeLimitTrx: number | null;
+  /** USDT only: energyCostTrx > feeLimitTrx → the send would fail with OUT_OF_ENERGY. */
+  exceedsFeeLimit: boolean;
+  bandwidthBytes: number;
+  /** TRX burned for bandwidth (TRX to a new account: the 0.1 TRX creation bandwidth fee). */
+  bandwidthBurnTrx: number | null;
+  /** TRX only: whether the recipient account exists (null = not checked / unknown). */
+  recipientActivated: boolean | null;
+  /** TRX only: account-creation fee for a non-activated recipient (1 TRX), else 0. */
+  activationFeeTrx: number;
+  /** Why the live estimate was not used (source 'static'). */
+  unavailableReason?: string;
+}
+
+export function tronStaticFeeEstimate(
+  kind: 'trx' | 'usdt',
+  feeTrx: number,
+  unavailableReason: string,
+): TronFeeEstimate {
+  return {
+    source: 'static',
+    feeTrx,
+    energyUsed: null,
+    energyAvailable: null,
+    energyFeeSun: null,
+    energyBurnTrx: null,
+    energyCostTrx: null,
+    feeLimitTrx: kind === 'usdt' ? USDT_TRC20_FEE_LIMIT_SUN / 1e6 : null,
+    exceedsFeeLimit: false,
+    bandwidthBytes: kind === 'usdt' ? TRC20_TRANSFER_BANDWIDTH_BYTES : TRX_TRANSFER_BANDWIDTH_BYTES,
+    bandwidthBurnTrx: null,
+    recipientActivated: null,
+    activationFeeTrx: 0,
+    unavailableReason,
+  };
+}
+
+type Json = Record<string, unknown>;
+
+/** POST to TronGrid with a hard timeout; any transport/API error throws. */
+async function tronPost(path: string, body: unknown, timeoutMs: number): Promise<Json> {
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const call = (async () => {
+    const res = await fetch(`${TRONGRID}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller?.signal,
+    });
+    if (!res.ok) throw new Error(`TRON_ESTIMATE_HTTP_${res.status}`);
+    const json: unknown = await res.json();
+    if (!json || typeof json !== 'object' || Array.isArray(json)) throw new Error('TRON_ESTIMATE_MALFORMED');
+    const obj = json as Json;
+    const result = obj.result as { code?: unknown } | undefined;
+    if ('Error' in obj || 'error' in obj || (result && typeof result === 'object' && 'code' in result)) {
+      throw new Error('TRON_ESTIMATE_API_ERROR');
+    }
+    return obj;
+  })();
+  try {
+    return await Promise.race([
+      call,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          controller?.abort();
+          reject(new Error('TRON_ESTIMATE_TIMEOUT'));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+function chainParam(json: Json, key: string): number {
+  const list = json.chainParameter;
+  if (!Array.isArray(list)) throw new Error('TRON_ESTIMATE_BAD_PARAMS');
+  const entry = list.find((e) => !!e && typeof e === 'object' && (e as Json).key === key) as Json | undefined;
+  const v = entry?.value;
+  if (typeof v !== 'number' || !Number.isSafeInteger(v) || v <= 0) throw new Error(`TRON_ESTIMATE_BAD_PARAM_${key}`);
+  return v;
+}
+
+interface TronAccountResource {
+  freeNetLimit: number;
+  freeNetUsed: number;
+  NetLimit: number;
+  NetUsed: number;
+  EnergyLimit: number;
+  EnergyUsed: number;
+}
+
+/** /wallet/getaccountresource omits zero fields (a fresh account is `{}`). */
+function parseAccountResource(json: Json): TronAccountResource {
+  const num = (key: keyof TronAccountResource): number => {
+    const v = json[key];
+    if (v === undefined) return 0;
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) throw new Error('TRON_ESTIMATE_BAD_RESOURCE');
+    return v;
+  };
+  return {
+    freeNetLimit: num('freeNetLimit'),
+    freeNetUsed: num('freeNetUsed'),
+    NetLimit: num('NetLimit'),
+    NetUsed: num('NetUsed'),
+    EnergyLimit: num('EnergyLimit'),
+    EnergyUsed: num('EnergyUsed'),
+  };
+}
+
+/** /wallet/getaccount: `{}` = not activated; an object with `address` = exists. */
+function parseActivated(json: Json): boolean {
+  if (Object.keys(json).length === 0) return false;
+  if (typeof json.address === 'string' && json.address.length > 0) return true;
+  throw new Error('TRON_ESTIMATE_BAD_ACCOUNT');
+}
+
+/** /wallet/triggerconstantcontract: energy_used of a successful dry run. */
+function parseEnergyUsed(json: Json): number {
+  const result = json.result as { result?: unknown; message?: unknown } | undefined;
+  if (!result || result.result !== true || result.message) throw new Error('TRON_ESTIMATE_REVERT');
+  const ret = (json.transaction as { ret?: Array<{ ret?: unknown }> } | undefined)?.ret?.[0]?.ret;
+  if (ret !== undefined && ret !== 'SUCCESS') throw new Error('TRON_ESTIMATE_REVERT');
+  const e = json.energy_used;
+  if (typeof e !== 'number' || !Number.isSafeInteger(e) || e <= 0) throw new Error('TRON_ESTIMATE_BAD_ENERGY');
+  return e;
+}
+
+function bandwidthBurnSun(bytes: number, r: TronAccountResource, txFeeSun: number): number {
+  const staked = Math.max(0, r.NetLimit - r.NetUsed);
+  const free = Math.max(0, r.freeNetLimit - r.freeNetUsed);
+  return staked >= bytes || free >= bytes ? 0 : bytes * txFeeSun;
+}
+
+export interface TronFeeEstimateInput {
+  kind: 'trx' | 'usdt';
+  /** Sender "T…" address. */
+  from: string;
+  /** Recipient "T…" address. */
+  to: string;
+  /** Human amount (TRX or USDT). */
+  amount: number;
+  /** Per-request timeout, ms. */
+  timeoutMs?: number;
+}
+
+/**
+ * Live TRON fee estimate (read-only TronGrid calls, never builds or signs).
+ * Throws if any call fails or returns something unexpected: the caller falls
+ * back to the static estimate and flags it.
+ */
+export async function estimateTronFee(input: TronFeeEstimateInput): Promise<TronFeeEstimate> {
+  const { kind, from, to } = input;
+  if (!isValidTronAddress(from) || !isValidTronAddress(to)) throw new Error('TRON_ESTIMATE_BAD_ADDRESS');
+  const units = toTronBaseUnits(input.amount);
+  const timeoutMs = input.timeoutMs ?? 6_000;
+
+  const [chain, resource, third] = await Promise.all([
+    tronPost('/wallet/getchainparameters', {}, timeoutMs),
+    tronPost('/wallet/getaccountresource', { address: from, visible: true }, timeoutMs),
+    kind === 'usdt'
+      ? tronPost('/wallet/triggerconstantcontract', {
+          owner_address:    tronAddrToHex(from),
+          contract_address: tronAddrToHex(USDT_TRC20_CONTRACT),
+          data:             buildTransferData(tronAddrToHex(to), units),
+          call_value:       0,
+          visible:          false,
+        }, timeoutMs)
+      : tronPost('/wallet/getaccount', { address: to, visible: true }, timeoutMs),
+  ]);
+
+  const r = parseAccountResource(resource);
+  const txFeeSun = chainParam(chain, 'getTransactionFee');
+
+  if (kind === 'trx') {
+    const bytes = TRX_TRANSFER_BANDWIDTH_BYTES;
+    const activated = parseActivated(third);
+    let bandwidthSun: number;
+    let activationSun = 0;
+    if (activated) {
+      bandwidthSun = bandwidthBurnSun(bytes, r, txFeeSun);
+    } else {
+      activationSun = chainParam(chain, 'getCreateNewAccountFeeInSystemContract');
+      const staked = Math.max(0, r.NetLimit - r.NetUsed);
+      bandwidthSun = staked >= bytes ? 0 : chainParam(chain, 'getCreateAccountFee');
+    }
+    return {
+      source: 'live',
+      feeTrx: (bandwidthSun + activationSun) / 1e6,
+      energyUsed: null,
+      energyAvailable: null,
+      energyFeeSun: null,
+      energyBurnTrx: null,
+      energyCostTrx: null,
+      feeLimitTrx: null,
+      exceedsFeeLimit: false,
+      bandwidthBytes: bytes,
+      bandwidthBurnTrx: bandwidthSun / 1e6,
+      recipientActivated: activated,
+      activationFeeTrx: activationSun / 1e6,
+    };
+  }
+
+  const energyFeeSun = chainParam(chain, 'getEnergyFee');
+  const energyUsed = parseEnergyUsed(third);
+  const energyAvailable = Math.max(0, r.EnergyLimit - r.EnergyUsed);
+  const energyBurnSun = Math.max(0, energyUsed - energyAvailable) * energyFeeSun;
+  const energyCostSun = energyUsed * energyFeeSun;
+  const bandwidthSun = bandwidthBurnSun(TRC20_TRANSFER_BANDWIDTH_BYTES, r, txFeeSun);
+  return {
+    source: 'live',
+    feeTrx: (energyBurnSun + bandwidthSun) / 1e6,
+    energyUsed,
+    energyAvailable,
+    energyFeeSun,
+    energyBurnTrx: energyBurnSun / 1e6,
+    energyCostTrx: energyCostSun / 1e6,
+    feeLimitTrx: USDT_TRC20_FEE_LIMIT_SUN / 1e6,
+    exceedsFeeLimit: energyCostSun > USDT_TRC20_FEE_LIMIT_SUN,
+    bandwidthBytes: TRC20_TRANSFER_BANDWIDTH_BYTES,
+    bandwidthBurnTrx: bandwidthSun / 1e6,
+    recipientActivated: null,
+    activationFeeTrx: 0,
+  };
 }
 
 // ─── Transaction history ──────────────────────────────────────────────────────

@@ -504,6 +504,12 @@ export const translations = {
     // ── Language switcher ─────────────────────────────────────────────────────
     languageRu: 'RU',
     languageEn: 'EN',
+
+    // ── night-tron ──
+    simTronFeeLimitExceeded: 'Комиссия сети за этот перевод USDT выше лимита, который кошелёк ставит на транзакцию. Перевод упал бы из-за нехватки энергии: TRX сгорели бы, а USDT остались бы у тебя. Отправка заблокирована. Попробуй позже или получи энергию через стейкинг TRX.',
+    simTronFeeEstimateUnavailable: 'Не удалось точно рассчитать комиссию Tron, показана примерная оценка. Отправить можно, но держи на балансе запас TRX.',
+    simTronRecipientNotActivated: 'Адрес получателя ещё не активирован в сети Tron. Первый перевод TRX его активирует, и сеть дополнительно спишет около 1 TRX. Это уже учтено в комиссии.',
+    csErrTronTxMismatch: 'Сеть вернула транзакцию, которая не совпадает с твоим запросом. Подпись отменена, средства не отправлены.',
   },
   en: {
     // ── Landing / onboarding carousel (pages/index.tsx) ──────────────────────
@@ -1008,6 +1014,12 @@ export const translations = {
     // ── Language switcher ─────────────────────────────────────────────────────
     languageRu: 'RU',
     languageEn: 'EN',
+
+    // ── night-tron ──
+    simTronFeeLimitExceeded: 'The network fee for this USDT transfer is above the limit the wallet sets per transaction. The transfer would run out of energy: the TRX would be burned and the USDT would stay with you. Sending is blocked. Try again later or get energy by staking TRX.',
+    simTronFeeEstimateUnavailable: 'Could not calculate the exact Tron fee, showing a rough estimate. You can still send, but keep some spare TRX.',
+    simTronRecipientNotActivated: 'The recipient address is not activated on Tron yet. Your first TRX transfer activates it, and the network charges about 1 TRX extra. This is already included in the fee.',
+    csErrTronTxMismatch: 'The network returned a transaction that does not match your request. Signing was cancelled and no funds were sent.',
   },
 } as const;
 

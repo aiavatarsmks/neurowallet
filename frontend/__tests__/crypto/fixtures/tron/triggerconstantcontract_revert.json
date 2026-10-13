@@ -1,0 +1,21 @@
+{
+  "owner": "TMHoiBf3VyoYXTDuYQW7hang3v1mGvNWpY",
+  "response": {
+    "constant_result": [
+      ""
+    ],
+    "result": {
+      "result": true,
+      "message": "524556455254206f70636f6465206578656375746564"
+    },
+    "energy_used": 8624,
+    "energy_penalty": 6640,
+    "transaction": {
+      "ret": [
+        {
+          "ret": "FAILED"
+        }
+      ]
+    }
+  }
+}
