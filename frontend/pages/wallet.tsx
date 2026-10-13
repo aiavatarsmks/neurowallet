@@ -22,10 +22,57 @@ import { WalletScreen } from '@/components/WalletScreen';
 import { ReceiveScreen, type ReceiveNetwork } from '@/components/ReceiveScreen';
 import { CryptoSendScreen } from '@/components/CryptoSendScreen';
 
+// Static stand-in for the 3D avatar: shown while the three.js chunk loads and
+// instead of it when the user prefers reduced motion. No three.js here.
+const NeuraAvatarStatic: React.FC = () => (
+  <div data-testid="neura-avatar-static" className="relative w-full" style={{ height: '100%' }} aria-hidden="true">
+    <div
+      className="absolute inset-0 pointer-events-none"
+      style={{
+        background:
+          'radial-gradient(ellipse 70% 55% at 50% 50%, rgba(0,255,127,0.13) 0%, rgba(0,255,127,0.04) 50%, transparent 75%)',
+      }}
+    />
+    <svg className="absolute inset-0" width="100%" height="100%" viewBox="0 0 200 200" preserveAspectRatio="xMidYMid meet" fill="none">
+      <ellipse cx="100" cy="100" rx="90" ry="30" stroke="#00FF7F" strokeOpacity="0.55" strokeWidth="1" transform="rotate(-18 100 100)" />
+      <ellipse cx="100" cy="100" rx="96" ry="22" stroke="#00CC60" strokeOpacity="0.35" strokeWidth="0.8" transform="rotate(14 100 100)" />
+      <circle cx="100" cy="100" r="62" fill="#050E07" stroke="#00FF7F" strokeOpacity="0.8" strokeWidth="1.2" />
+      <ellipse cx="100" cy="100" rx="22" ry="62" stroke="#00FF7F" strokeOpacity="0.35" strokeWidth="0.8" />
+      <ellipse cx="100" cy="100" rx="44" ry="62" stroke="#00FF7F" strokeOpacity="0.3" strokeWidth="0.8" />
+      <ellipse cx="100" cy="100" rx="62" ry="20" stroke="#00FF7F" strokeOpacity="0.3" strokeWidth="0.8" />
+      <ellipse cx="100" cy="100" rx="62" ry="42" stroke="#00FF7F" strokeOpacity="0.25" strokeWidth="0.8" />
+      <circle cx="83" cy="93" r="4.5" fill="#00FF7F" />
+      <circle cx="117" cy="93" r="4.5" fill="#00FF7F" />
+    </svg>
+    <div
+      className="absolute bottom-0 left-0 right-0 h-16 pointer-events-none"
+      style={{ background: 'linear-gradient(to bottom, transparent, #080C09)' }}
+    />
+  </div>
+);
+
+// three.js + @react-three/fiber load on demand, only when the avatar is shown.
 const NeuraAvatar = dynamic(
   () => import('@/components/NeuraAvatar').then((m) => m.NeuraAvatar),
-  { ssr: false, loading: () => <div style={{ height: 280 }} /> }
+  { ssr: false, loading: () => <NeuraAvatarStatic /> }
 );
+
+function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReduced(mq.matches);
+    update();
+    if (typeof mq.addEventListener === 'function') {
+      mq.addEventListener('change', update);
+      return () => mq.removeEventListener('change', update);
+    }
+    mq.addListener(update); // older WebKit
+    return () => mq.removeListener(update);
+  }, []);
+  return reduced;
+}
 
 type NavTab = 'home' | 'send' | 'add' | 'cards' | 'wallet';
 type Tab = NavTab | 'profile' | 'receive' | 'crypto-send';
@@ -203,6 +250,7 @@ export default function WalletPage() {
   const router = useRouter();
   const { t } = useLanguage();
   const { user, isDemo, isLoading, enterDemo } = useAuth();
+  const reducedMotion = usePrefersReducedMotion();
   const HEADER_TITLES: Record<Tab, string> = {
     home:          t('headerHome'),
     send:          t('headerSend'),
@@ -411,7 +459,7 @@ export default function WalletPage() {
       {/* ── Avatar ─────────────────────────────────────────── */}
       {showAvatar && (
         <div style={{ transition: 'height 0.4s ease', height: avatarHeight, flexShrink: 0, overflow: 'hidden' }}>
-          <NeuraAvatar state={avatarState} />
+          {reducedMotion ? <NeuraAvatarStatic /> : <NeuraAvatar state={avatarState} />}
         </div>
       )}
 
@@ -457,7 +505,8 @@ export default function WalletPage() {
           <section className="px-6">
             <div className="flex items-center justify-between mb-2">
               <p className="font-semibold text-sm" style={{ color: '#00FF7F' }}>{t('transactionsHeader')}</p>
-              <MiniChart width={120} height={40} />
+              {/* MiniChart draws sample data: demo only, never for real balances. */}
+              {isDemo && <MiniChart width={120} height={40} />}
             </div>
             <TxHistory limit={7} />
           </section>
