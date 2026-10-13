@@ -88,7 +88,8 @@ function persistSavedContacts(contacts: Contact[]): void {
 
 export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCryptoTransfer }) => {
   const { isDemo } = useAuth();
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
+  const numLocale = lang === 'en' ? 'en-US' : 'ru-RU';
   const [step, setStep] = useState<SendStep>('contacts');
   const [selected, setSelected] = useState<Contact | null>(null);
   const [savedContacts, setSavedContacts] = useState<Contact[]>([]);
@@ -391,7 +392,7 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
         </div>
         <div>
           <p className="text-white text-xl font-bold">
-            {t('sendDoneTitle').replace('{amt}', amountNum.toLocaleString('ru-RU', { maximumFractionDigits: 6 })).replace('{currency}', selectedCurrency)}
+            {t('sendDoneTitle').replace('{amt}', amountNum.toLocaleString(numLocale, { maximumFractionDigits: 6 })).replace('{currency}', selectedCurrency)}
           </p>
           <p className="text-[#3A6045] text-sm mt-1">{t('sendDoneJustNow').replace('{name}', selected?.name ?? '')}</p>
         </div>
@@ -717,7 +718,7 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
             <div className="flex justify-between gap-4">
               <span className="text-[#3A6045] text-sm">{t('sendAmountLabel')}</span>
               <span className="text-[#00FF7F] text-sm font-bold">
-                {amountNum.toLocaleString('ru-RU', { maximumFractionDigits: 6 })} {selectedMeta.short}
+                {amountNum.toLocaleString(numLocale, { maximumFractionDigits: 6 })} {selectedMeta.short}
               </span>
             </div>
             {selected.address && (

@@ -61,7 +61,7 @@ const DEMO_TXS: TxRow[] = [
   },
 ];
 
-function formatDate(iso: string, t: (k: any) => string): string {
+function formatDate(iso: string, t: (k: any) => string, locale: string): string {
   const d = new Date(iso);
   const now = new Date();
   const diff = now.getTime() - d.getTime();
@@ -74,7 +74,7 @@ function formatDate(iso: string, t: (k: any) => string): string {
     return t('txHoursAgo').replace('{h}', String(h));
   }
   if (diff < 2 * 86400_000) return t('txYesterday');
-  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+  return d.toLocaleDateString(locale, { day: 'numeric', month: 'short' });
 }
 
 function shortAddr(addr: string): string {
@@ -108,6 +108,7 @@ interface TxHistoryProps {
 export const TxHistory: React.FC<TxHistoryProps> = ({ limit = 15 }) => {
   const { isDemo } = useAuth();
   const { t, lang } = useLanguage();
+  const numLocale = lang === 'en' ? 'en-US' : 'ru-RU';
   const [txs,     setTxs]     = useState<TxRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [noWallet, setNoWallet] = useState(false);
@@ -238,7 +239,7 @@ export const TxHistory: React.FC<TxHistoryProps> = ({ limit = 15 }) => {
                   </span>
                 </div>
                 <p className="text-[#3A6045] text-xs mt-0.5">
-                  {positive ? `${t('txFrom')} ` : `${t('txTo')} `}{shortAddr(tx.address)} · {formatDate(tx.date, t)}
+                  {positive ? `${t('txFrom')} ` : `${t('txTo')} `}{shortAddr(tx.address)} · {formatDate(tx.date, t, numLocale)}
                 </p>
               </div>
 
@@ -247,7 +248,7 @@ export const TxHistory: React.FC<TxHistoryProps> = ({ limit = 15 }) => {
                 className="text-sm font-semibold flex-shrink-0"
                 style={{ color: positive ? '#00FF7F' : '#ffffff' }}
               >
-                {positive ? '+' : '–'}{tx.amount.toLocaleString('ru-RU', {
+                {positive ? '+' : '–'}{tx.amount.toLocaleString(numLocale, {
                   maximumFractionDigits: tx.chain === 'USDT' || tx.chain === 'TRC20' || tx.chain === 'USDT_TON' ? 2 : 6,
                 })} {tx.chain === 'TRC20' ? 'USDT' : tx.chain === 'USDT_TON' ? 'USDT' : tx.chain}
               </span>

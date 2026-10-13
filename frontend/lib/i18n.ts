@@ -533,6 +533,12 @@ export const translations = {
     csErrBtcUnsupportedSource: 'Этот тип BTC-адреса отправителя пока не поддерживается. Создай или импортируй обычный кошелёк NeuroWallet.',
     csErrBtcUnavailable: 'Серверы сети Bitcoin недоступны. Проверь соединение и попробуй позже.',
     csErrBtcRejected: 'Сеть Bitcoin отклонила транзакцию:',
+    csErrInvalidRecipient: 'Неверный адрес получателя. Проверь адрес и сеть.',
+    csErrInvalidAmount: 'Некорректная сумма. Проверь сумму перевода.',
+    csErrTronBuild: 'Не удалось собрать транзакцию Tron. Попробуй ещё раз.',
+    csErrTronBroadcast: 'Сеть Tron не приняла транзакцию. Попробуй ещё раз позже.',
+    csErrNetworkBusy: 'Сеть сейчас перегружена или ограничивает запросы. Подожди немного и попробуй снова.',
+    csErrGenericRetry: 'Ошибка отправки. Попробуй ещё раз.',
   },
   en: {
     // ── Landing / onboarding carousel (pages/index.tsx) ──────────────────────
@@ -1066,6 +1072,12 @@ export const translations = {
     csErrBtcUnsupportedSource: "This sender BTC address type isn't supported yet. Create or import a regular NeuroWallet wallet.",
     csErrBtcUnavailable: 'Bitcoin servers are unavailable. Check your connection and try again later.',
     csErrBtcRejected: 'The Bitcoin network rejected the transaction:',
+    csErrInvalidRecipient: 'Invalid recipient address. Check the address and the network.',
+    csErrInvalidAmount: 'Invalid amount. Check the amount.',
+    csErrTronBuild: "Couldn't build the Tron transaction. Try again.",
+    csErrTronBroadcast: 'The Tron network did not accept the transaction. Try again later.',
+    csErrNetworkBusy: 'The network is busy or rate-limiting requests. Wait a moment and try again.',
+    csErrGenericRetry: 'Send error. Please try again.',
   },
 } as const;
 

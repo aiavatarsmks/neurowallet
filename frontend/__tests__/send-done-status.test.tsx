@@ -79,7 +79,7 @@ vi.mock('@/lib/crypto/btc-tx', () => ({
   BTC_MAX_FEE_RATE_SAT_VB: 500,
 }));
 
-import { CryptoSendScreen } from '@/components/CryptoSendScreen';
+import { CryptoSendScreen, describeSendError } from '@/components/CryptoSendScreen';
 
 const fetchMock = vi.fn(async (_url: unknown, _init?: unknown) => new Response('{}', { status: 200 }));
 
@@ -195,6 +195,13 @@ describe('CryptoSendScreen done screen: on-chain status', () => {
     expect(H.track).toHaveBeenCalledWith('send_failed', { coin: 'BTC' }, 'trace-1');
   });
 
+  it('EN user never sees an unmapped Russian lib message', async () => {
+    H.sendUsdtTrc20.mockReset().mockRejectedValue(new Error('Какая-то новая ошибка библиотеки.'));
+    await sendThrough('TRC20', TRON_TO, '5');
+    expect(await screen.findByText('csErrGenericRetry')).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/[А-Яа-яЁё]/);
+  });
+
   it('TON / USDT-TON forms warn that memo is not supported; other coins do not', async () => {
     const view = render(<CryptoSendScreen initialCoin="TON" initialAddress="" initialAmount="" />);
     expect(await screen.findByText('csTonMemoWarning')).toBeInTheDocument();
@@ -211,5 +218,37 @@ describe('CryptoSendScreen done screen: on-chain status', () => {
     expect(H.useTxStatus.mock.calls.every((c) => c[0].enabled === false)).toBe(true);
     expect(screen.queryByText('csStatusPending')).not.toBeInTheDocument();
     expect(H.sendUsdtTrc20).not.toHaveBeenCalled();
+  });
+});
+
+describe('describeSendError: lib errors → i18n keys', () => {
+  const key = (e: unknown) => describeSendError(e).key;
+
+  it('maps the Russian lib messages that used to reach EN users', () => {
+    expect(key(new Error('Неверный SOL-адрес получателя.'))).toBe('csErrInvalidRecipient');      // transactions.ts
+    expect(key(new Error('Неверный TRX-адрес получателя.'))).toBe('csErrInvalidRecipient');      // tron-tx.ts
+    expect(key(new Error('Сумма должна быть больше нуля.'))).toBe('csErrInvalidAmount');
+    expect(key(new Error('Некорректная сумма.'))).toBe('csErrInvalidAmount');                    // display-format.ts
+    expect(key(new Error('Ошибка построения TRX-транзакции.'))).toBe('csErrTronBuild');
+    expect(key(new Error('Ошибка отправки в сеть Tron.'))).toBe('csErrTronBroadcast');
+    expect(key(new Error('TronGrid недоступен. Проверь соединение и попробуй позже.'))).toBe('csErrTrongridDown');
+  });
+
+  it('wrong password goes to the password field', () => {
+    expect(describeSendError(new Error('Неверный пароль или повреждённые данные.'))).toEqual({ field: 'password', key: 'csErrWrongPassword' });
+    expect(describeSendError(new Error('incorrect password')).field).toBe('password');
+  });
+
+  it('BTC codes win over message text; a node reject reason is kept as detail', () => {
+    expect(key(Object.assign(new Error('Недостаточно средств'), { code: 'BTC_INSUFFICIENT_FUNDS' }))).toBe('csErrBtcInsufficient');
+    expect(describeSendError(Object.assign(new Error('x'), { code: 'BTC_BROADCAST_REJECTED', detail: 'min relay fee not met' })))
+      .toEqual({ field: 'send', key: 'csErrBtcRejected', detail: 'min relay fee not met' });
+  });
+
+  it('rate limits get their own message; unknown errors keep a short detail', () => {
+    expect(key(new Error('Request failed with status code 429'))).toBe('csErrNetworkBusy');
+    expect(describeSendError(new Error('execution reverted: something'))).toEqual({
+      field: 'send', key: 'csErrGeneric', detail: 'execution reverted: something',
+    });
   });
 });

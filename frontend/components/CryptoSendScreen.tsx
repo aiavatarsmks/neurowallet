@@ -24,6 +24,7 @@ import { TX_STATUS_REASON } from '@/lib/crypto/tx-status';
 import { useTxStatus } from '@/hooks/useTxStatus';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
+import type { TranslationKey } from '@/lib/i18n';
 import { useDisplayCurrency } from '@/contexts/DisplayCurrencyContext';
 
 type Coin = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TRX' | 'TRC20' | 'TON' | 'USDT_TON';
@@ -66,6 +67,70 @@ function formatFeeEstimate(coin: Coin, formatFiat: (eurValue: number, options?: 
   return `~${formatFiat(fee.value)}`;
 }
 
+const BTC_ERROR_I18N: Record<BtcErrorCode, TranslationKey> = {
+  BTC_FEE_RATE_TOO_HIGH: 'csErrBtcFeeRateTooHigh',
+  BTC_FEE_TOO_HIGH_VS_AMOUNT: 'csErrBtcFeeVsAmount',
+  BTC_INVALID_FEE_RATE: 'csErrBtcInvalidFeeRate',
+  BTC_DUST: 'csErrDust',
+  BTC_NO_UTXO: 'csErrNoUtxo',
+  BTC_INSUFFICIENT_FUNDS: 'csErrBtcInsufficient',
+  BTC_UNSUPPORTED_SOURCE: 'csErrBtcUnsupportedSource',
+  BTC_UTXO_FETCH_FAILED: 'csErrBtcUnavailable',
+  BTC_RAW_TX_FETCH_FAILED: 'csErrBtcUnavailable',
+  BTC_BROADCAST_REJECTED: 'csErrBtcRejected',
+  BTC_BROADCAST_UNAVAILABLE: 'csErrBtcUnavailable',
+};
+
+export interface SendErrorView {
+  field: 'password' | 'send';
+  key: TranslationKey;
+  /** Extra text after the translated message (node reject reason, unmapped lib text). */
+  detail?: string;
+}
+
+/**
+ * Lib error → i18n key. Error codes first (btc-tx.ts), then stable substrings
+ * of the libs' messages, several of which are Russian (transactions.ts,
+ * tron-tx.ts, aes.ts, display-format.ts): mapping them keeps raw Russian text
+ * away from EN users. Unmapped errors fall back to csErrGeneric + detail.
+ */
+export function describeSendError(e: unknown): SendErrorView {
+  const raw = e instanceof Error ? e.message : String(e);
+  const msg = raw.toLowerCase();
+  const send = (key: TranslationKey, detail?: string): SendErrorView => ({ field: 'send', key, detail });
+
+  const btcCode = btcErrorCode(e);
+  if (btcCode) {
+    const detail = btcCode === 'BTC_BROADCAST_REJECTED' ? (e as { detail?: string }).detail?.slice(0, 120) : undefined;
+    return send(BTC_ERROR_I18N[btcCode], detail || undefined);
+  }
+  if (msg.includes('no_keystore')) return send('csErrNoWallet');
+  if (msg.includes('no_sol_enc')) return send('csErrNoSol');
+  if (msg.includes('no_btc_enc')) return send('csErrNoBtc');
+  if (msg.includes('no_tron_enc')) return send('csErrNoTron');
+  if (msg.includes('no_ton_enc')) return send('csErrNoTon');
+  // Только ошибки расшифровки (ethers keystore / aes.ts). Раньше сюда
+  // попадало любое 'invalid' (адрес, сумма) → ложное «неверный пароль».
+  if (msg.includes('incorrect password') || msg.includes('bad mac') || msg.includes('неверный пароль')) {
+    return { field: 'password', key: 'csErrWrongPassword' };
+  }
+  if (msg.includes('insufficient funds for rent')) return send('csErrSolRent');
+  if (msg.includes('insufficient') || msg.includes('not sufficient')) return send('csErrInsufficientFee');
+  if (msg.includes('nonce') || msg.includes('replacement')) return send('csErrPendingTx');
+  // transactions.ts / tron-tx.ts recipient checks ('Неверный SOL-/TRX-адрес получателя.')
+  if (/неверный (sol|trx)-адрес/.test(msg) || msg.includes('has no matching script')) return send('csErrInvalidRecipient');
+  // 'Сумма должна быть больше нуля.' (transactions.ts, tron-tx.ts), 'Некорректная сумма.' (display-format.ts)
+  if (msg.includes('сумма должна быть больше нуля') || msg.includes('некорректная сумма')) return send('csErrInvalidAmount');
+  if (msg.includes('ошибка построения trx')) return send('csErrTronBuild');
+  if (msg.includes('ошибка отправки в сеть tron')) return send('csErrTronBroadcast');
+  if (msg.includes('trongrid') || (msg.includes('tron') && msg.includes('недоступен'))) return send('csErrTrongridDown');
+  if (msg.includes('utxo') || msg.includes('подтверждённых')) return send('csErrNoUtxo');
+  if (msg.includes('dust') || msg.includes('546')) return send('csErrDust');
+  if (msg.includes('blockhash')) return send('csErrSolanaNetwork');
+  if (/\b429\b/.test(msg) || msg.includes('rate limit') || msg.includes('ratelimit')) return send('csErrNetworkBusy');
+  return send('csErrGeneric', raw.slice(0, 100));
+}
+
 /** Клавиатура: скрывать по тапу вне текстового поля (mobile WebView). */
 function blurOnOutsideTap(e: React.PointerEvent) {
   const target = e.target as HTMLElement;
@@ -93,6 +158,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
 }) => {
   const { isDemo } = useAuth();
   const { t, lang } = useLanguage();
+  const numLocale = lang === 'en' ? 'en-US' : 'ru-RU';
   const { formatFiat } = useDisplayCurrency();
   const [coin,     setCoin]     = useState<Coin>(initialCoin);
   const [address,  setAddress]  = useState('');
@@ -395,20 +461,6 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
     })();
   };
 
-  const BTC_ERROR_I18N: Record<BtcErrorCode, Parameters<typeof t>[0]> = {
-    BTC_FEE_RATE_TOO_HIGH: 'csErrBtcFeeRateTooHigh',
-    BTC_FEE_TOO_HIGH_VS_AMOUNT: 'csErrBtcFeeVsAmount',
-    BTC_INVALID_FEE_RATE: 'csErrBtcInvalidFeeRate',
-    BTC_DUST: 'csErrDust',
-    BTC_NO_UTXO: 'csErrNoUtxo',
-    BTC_INSUFFICIENT_FUNDS: 'csErrBtcInsufficient',
-    BTC_UNSUPPORTED_SOURCE: 'csErrBtcUnsupportedSource',
-    BTC_UTXO_FETCH_FAILED: 'csErrBtcUnavailable',
-    BTC_RAW_TX_FETCH_FAILED: 'csErrBtcUnavailable',
-    BTC_BROADCAST_REJECTED: 'csErrBtcRejected',
-    BTC_BROADCAST_UNAVAILABLE: 'csErrBtcUnavailable',
-  };
-
   const WARNING_I18N: Record<SimWarning['code'], Parameters<typeof t>[0]> = {
     invalid_address: 'csWarnInvalidAddress',
     invalid_amount: 'csWarnInvalidAmount',
@@ -629,44 +681,18 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
     } catch (e: unknown) {
       track('send_failed', { coin }, traceId);
       finalizeDraft('failed');
-      const msg = (e instanceof Error ? e.message : String(e)).toLowerCase();
-      const btcCode = btcErrorCode(e);
-      if (btcCode) {
-        const key = BTC_ERROR_I18N[btcCode];
-        const detail = btcCode === 'BTC_BROADCAST_REJECTED' ? (e as { detail?: string }).detail ?? '' : '';
-        setSendErr(`${t(key).replace('{cap}', String(BTC_MAX_FEE_RATE_SAT_VB))}${detail ? ` ${detail.slice(0, 120)}` : ''}`);
-      } else if (msg.includes('no_keystore')) {
-        setSendErr(t('csErrNoWallet'));
-      } else if (msg.includes('no_sol_enc')) {
-        setSendErr(t('csErrNoSol'));
-      } else if (msg.includes('incorrect password') || msg.includes('bad mac') || msg.includes('неверный пароль')) {
-        // Только ошибки расшифровки (ethers keystore / aes.ts). Раньше сюда
-        // попадало любое 'invalid' (адрес, сумма) → ложное «неверный пароль».
-        setPwError(t('csErrWrongPassword'));
-      } else if (msg.includes('insufficient funds for rent')) {
-        setSendErr(t('csErrSolRent'));
-      } else if (msg.includes('insufficient') || msg.includes('not sufficient')) {
-        setSendErr(t('csErrInsufficientFee'));
-      } else if (msg.includes('nonce') || msg.includes('replacement')) {
-        setSendErr(t('csErrPendingTx'));
-      } else if (msg.includes('no_btc_enc')) {
-        setSendErr(t('csErrNoBtc'));
-      } else if (msg.includes('no_tron_enc')) {
-        setSendErr(t('csErrNoTron'));
-      } else if (msg.includes('no_ton_enc')) {
-        setSendErr(t('csErrNoTon'));
-      } else if (msg.includes('trongrid') || msg.includes('tron') && msg.includes('недоступен')) {
-        setSendErr(t('csErrTrongridDown'));
-      } else if (msg.includes('utxo') || msg.includes('подтверждённых')) {
-        setSendErr(t('csErrNoUtxo'));
-      } else if (msg.includes('dust') || msg.includes('546')) {
-        setSendErr(t('csErrDust'));
-      } else if (msg.includes('segwit') || msg.includes('bc1')) {
-        setSendErr(e instanceof Error ? e.message : t('csErrSegwit'));
-      } else if (msg.includes('blockhash not found') || msg.includes('blockhash')) {
-        setSendErr(t('csErrSolanaNetwork'));
+      const view = describeSendError(e);
+      const text = t(view.key).replace('{cap}', String(BTC_MAX_FEE_RATE_SAT_VB));
+      if (view.field === 'password') {
+        setPwError(text);
+      } else if (view.key === 'csErrGeneric') {
+        // Unmapped error: show the lib text only if it is readable in the UI
+        // language (lib messages are partly Russian).
+        const detail = view.detail ?? '';
+        const readable = detail && !(lang === 'en' && /[А-Яа-яЁё]/.test(detail));
+        setSendErr(readable ? `${text} ${detail}` : t('csErrGenericRetry'));
       } else {
-        setSendErr(`${t('csErrGeneric')} ${(e instanceof Error ? e.message : String(e)).slice(0, 100)}`);
+        setSendErr(view.detail ? `${text} ${view.detail}` : text);
       }
       onAvatarState?.('idle');
     } finally {
@@ -1198,7 +1224,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         <p className="text-[#3A6045] text-xs mt-2">
           {t('csAvailable')}{' '}
           {balReady
-            ? <span className="text-white font-medium">{available.toLocaleString('ru-RU', { maximumFractionDigits: 6 })} {coinLabel(coin)}</span>
+            ? <span className="text-white font-medium">{available.toLocaleString(numLocale, { maximumFractionDigits: 6 })} {coinLabel(coin)}</span>
             : <span className="text-[#3A6045]">{t('csLoadingEllipsis')}</span>
           }
         </p>
@@ -1266,7 +1292,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
             <p className="text-sm mt-1.5">
               {insufficient
                 ? <span style={{ color: '#FF5252' }}>{t('csInsufficientFunds')}</span>
-                : <span className="text-[#3A6045]">{t('csAvailableInline').replace('{amt}', available.toLocaleString('ru-RU', { maximumFractionDigits: 6 })).replace('{coin}', coinLabel(coin))}</span>
+                : <span className="text-[#3A6045]">{t('csAvailableInline').replace('{amt}', available.toLocaleString(numLocale, { maximumFractionDigits: 6 })).replace('{coin}', coinLabel(coin))}</span>
               }
             </p>
           )}
