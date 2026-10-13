@@ -76,8 +76,8 @@ export function isValidTonAddress(addr: string): boolean {
 
 /**
  * Native TON balance. Бросает при сетевой ошибке, не-2xx (в т.ч. 429) и
- * кривом ответе: сбой провайдера никогда не превращается в 0. `apiKey` —
- * только server-side.
+ * кривом ответе: сбой провайдера никогда не превращается в 0. `apiKey`
+ * передаётся только server-side.
  */
 export async function fetchTonBalanceStrict(address: string, apiKey?: string): Promise<number> {
   if (!address || !isValidTonAddress(address)) return 0;

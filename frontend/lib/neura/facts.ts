@@ -72,8 +72,8 @@ const ASSET_TO_FACT: Record<string, FactChain> = {
 /**
  * Факты recap из снапшота балансов (WalletBalances). Монеты из
  * `b.unavailable` (провайдер не ответил) не попадают в coins/totalEur: их
- * число в снапшоте — последнее известное или 0-заглушка, и Нейра не должна
- * выдавать его за текущий баланс. Они перечислены в `unavailable`.
+ * число в снапшоте либо последнее известное, либо 0-заглушка, и Нейра не
+ * должна выдавать его за текущий баланс. Они перечислены в `unavailable`.
  */
 export function recapFacts(b: {
   eth: number; sol: number; btc: number; trx: number; ton: number;
