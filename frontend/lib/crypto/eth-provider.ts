@@ -21,9 +21,16 @@
  *    enough funds, nonce too low) are returned as they are, without retry.
  *  - Broadcast: the signed tx goes to every backend at once and the first
  *    backend that returns its hash wins. "already known" means that backend
- *    already holds this exact tx, so it counts as accepted. "nonce too low"
- *    or "replacement underpriced" count as accepted only if some backend can
- *    see the tx by hash; otherwise that rejection reaches the caller. No
+ *    already holds this exact tx, so it counts as accepted. When nobody
+ *    accepted and some backend gave no definitive answer, the tx is looked up
+ *    by hash on every backend: found → accepted. A node saying the tx itself
+ *    is invalid (not enough funds, gas below intrinsic, bad sender) reaches
+ *    the caller as is when the tx is not found. "nonce too low" /
+ *    "replacement underpriced" with the tx not found is a real rejection.
+ *    With no definitive answer at all (timeouts, 429, 5xx, -32603) and the tx
+ *    not found, the outcome is unknown: one backend may have relayed it before
+ *    its answer was lost, so BroadcastOutcomeUnknownError(hash) is thrown and
+ *    the UI polls by hash instead of inviting a second, paid retry. No
  *    follow-up read runs after a successful broadcast, so a failing read can
  *    never turn an accepted tx into an error (and a retry into a double pay).
  *  - A priority-fee estimate of 0 counts as "no estimate", so ethers applies
@@ -52,6 +59,7 @@ import {
   type TransactionResponse,
   type TransactionResponseParams,
 } from 'ethers';
+import { BroadcastOutcomeUnknownError } from './broadcast-error';
 
 /** Keyless mainnet RPCs, in priority order. Keep in sync with connect-src in next.config.js. */
 export const ETH_RPC_URLS = [
@@ -123,6 +131,20 @@ function isNonceConflict(err: unknown): boolean {
   return isError(err, 'NONCE_EXPIRED') || isError(err, 'REPLACEMENT_UNDERPRICED');
 }
 
+/**
+ * Txpool wordings (geth/reth/erigon/nethermind/besu) for "this transaction is
+ * invalid", the same on every node. ethers maps only insufficient funds and
+ * the nonce errors to codes; these arrive as UNKNOWN_ERROR with the node text.
+ * Node-policy answers ("transaction underpriced", "txpool is full") are not
+ * here: another node may still have taken the tx.
+ */
+const TX_INVALID_RE = /intrinsic gas too low|invalid sender|invalid signature|invalid chain ?id|exceeds block gas limit|(?:transaction|tx) type not supported|max priority fee per gas higher than max fee per gas|tip (?:above|higher than) fee cap|oversized data|only replay-protected|insufficient funds/i;
+
+/** A definitive "no" to this exact tx from a node (as opposed to no answer). */
+function isTxRejection(err: unknown): boolean {
+  return isDeterministicChainError(err) || TX_INVALID_RE.test(nodeMessage(err));
+}
+
 // ─── Broadcast ────────────────────────────────────────────────────────────────
 
 type BroadcastOutcome = { ok: true } | { ok: false; error: unknown };
@@ -153,17 +175,30 @@ function firstOk(attempts: Promise<BroadcastOutcome>[]): Promise<boolean> {
   });
 }
 
-async function anyBackendSeesTx(backends: readonly AbstractProvider[], hash: string): Promise<boolean> {
-  const found = await Promise.all(
-    backends.map((b) => b.getTransaction(hash).then((tx) => tx != null, () => false)),
+/**
+ * eth_getTransactionByHash on every backend (pending txs included):
+ * 'found' if any has it, 'not_found' if none has it and at least one answered,
+ * 'unavailable' if no backend answered.
+ */
+async function lookupTx(backends: readonly AbstractProvider[], hash: string): Promise<'found' | 'not_found' | 'unavailable'> {
+  const answers = await Promise.all(
+    backends.map((b) => b.getTransaction(hash).then(
+      (tx) => (tx != null && tx.hash.toLowerCase() === hash.toLowerCase() ? 'found' : 'not_found'),
+      () => 'unavailable',
+    )),
   );
-  return found.some(Boolean);
+  if (answers.includes('found')) return 'found';
+  return answers.includes('not_found') ? 'not_found' : 'unavailable';
 }
 
 /**
  * Send a signed tx to every backend; resolve with its hash on the first
  * acceptance. Exported for tests; production code goes through
  * EthFallbackProvider.broadcastTransaction (used by Wallet.sendTransaction).
+ *
+ * Throws the node's error for a definitive rejection, and
+ * BroadcastOutcomeUnknownError(hash) when no backend gave a definitive answer
+ * and the tx cannot be found by hash (it may still have been relayed).
  */
 export async function broadcastToBackends(backends: readonly AbstractProvider[], signedTx: string): Promise<string> {
   const expectedHash = Transaction.from(signedTx).hash;
@@ -173,15 +208,20 @@ export async function broadcastToBackends(backends: readonly AbstractProvider[],
   if (await firstOk(attempts)) return expectedHash;
 
   const errors = (await Promise.all(attempts)).flatMap((o) => (o.ok ? [] : [o.error]));
-  if (errors.some(isNonceConflict) && (await anyBackendSeesTx(backends, expectedHash))) return expectedHash;
-  // Prefer a chain answer (e.g. insufficient funds), then anything a node
-  // said, over "no answer".
-  throw (
-    errors.find(isDeterministicChainError) ??
-    errors.find((e) => nodeMessage(e) !== '') ??
-    errors[0] ??
-    new Error('ETH broadcast failed')
-  );
+  // "This tx is invalid" (not enough funds, gas, sender).
+  const rejection = errors.find((e) => isTxRejection(e) && !isNonceConflict(e));
+  // Every backend said so: none of them can have relayed it.
+  if (rejection && errors.every(isTxRejection)) throw rejection;
+
+  // Some backend timed out or answered 429/5xx/-32603: it may still have
+  // relayed the tx before its answer was lost. Ask for it by hash.
+  const seen = await lookupTx(backends, expectedHash);
+  if (seen === 'found') return expectedHash;
+  if (rejection) throw rejection;
+  // The nonce is used, and not by this tx: a real conflict.
+  const nonceConflict = errors.find(isNonceConflict);
+  if (nonceConflict && seen === 'not_found') throw nonceConflict;
+  throw new BroadcastOutcomeUnknownError(expectedHash);
 }
 
 // ─── Provider ─────────────────────────────────────────────────────────────────

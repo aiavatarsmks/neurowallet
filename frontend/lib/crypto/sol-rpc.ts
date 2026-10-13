@@ -15,11 +15,14 @@
  * Order on the server (Node, no Origin): official RPC, then publicnode.
  *
  * Errors:
- *   - Transport problems (network, non-2xx, 403/429 inside JSON-RPC, malformed
- *     body) move on to the next endpoint.
+ *   - Transport problems (network, non-2xx, 403/429/-32603 inside JSON-RPC,
+ *     malformed body) move on to the next endpoint.
  *   - A real JSON-RPC answer (e.g. sendTransaction preflight "insufficient
  *     funds for rent") is returned to the caller as SolRpcError right away.
  *     Re-sending the same signed bytes elsewhere would give the same answer.
+ *   - sendSol (transactions.ts) turns SolRpcUnavailableError on
+ *     sendTransaction into a getSignatureStatuses lookup and, if the
+ *     signature is not found, BroadcastOutcomeUnknownError (broadcast-error.ts).
  * Nothing secret goes through here: only public keys, signed transactions,
  * signatures.
  */
@@ -65,9 +68,15 @@ export class SolRpcUnavailableError extends Error {
 
 type RpcBody = { result?: unknown; error?: { code?: unknown; message?: unknown } | null };
 
-/** JSON-RPC error codes that mean "this endpoint refuses us", not "the chain says no". */
+/**
+ * JSON-RPC error codes that mean "this endpoint refuses us / failed", not "the
+ * chain says no". -32603 (internal error) is the JSON-RPC twin of an HTTP 5xx:
+ * for sendTransaction it says nothing about whether the bytes were forwarded,
+ * so it must not end the send as a definitive rejection.
+ */
 function isTransportRpcError(code: unknown): boolean {
-  return code === 403 || code === 429 || code === -32005 || code === -32029 || code === -32052 || code === 35;
+  return code === 403 || code === 429 || code === -32005 || code === -32029 || code === -32052 || code === 35
+    || code === -32603;
 }
 
 export interface SolRpcOptions {

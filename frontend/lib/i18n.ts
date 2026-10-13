@@ -578,6 +578,8 @@ export const translations = {
     // ── night-integration ──
     csWarnBalanceUnknown: "Баланс сейчас не загрузился, поэтому проверить, хватает ли средств, не получилось. Если не хватит, сеть просто отклонит перевод.",
     csBalanceUnknownInline: "Баланс не загрузился, сумму проверит сеть",
+    // ── night-review-lib ──
+    simTronEstimateRevert: 'Сеть отклонит этот перевод USDT (пробный запуск не прошёл, например не хватает USDT). Отправка заблокирована, чтобы не сжечь TRX на комиссию.',
   },
   en: {
     // ── Landing / onboarding carousel (pages/index.tsx) ──────────────────────
@@ -1155,6 +1157,8 @@ export const translations = {
     secEvent_session_started: 'Account sign-in',
     csWarnBalanceUnknown: "Your balance did not load right now, so we could not check that you have enough. If you do not, the network will simply reject the transfer.",
     csBalanceUnknownInline: "Balance did not load, the network will check the amount",
+    // ── night-review-lib ──
+    simTronEstimateRevert: 'The network would reject this USDT transfer (the dry run failed, e.g. not enough USDT). Sending is blocked so no TRX is burned on fees.',
   },
 } as const;
 

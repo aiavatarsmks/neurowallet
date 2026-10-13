@@ -17,6 +17,7 @@ import {
   isValidTronAddress,
   toTronBaseUnits,
 } from '@/lib/crypto/tron-tx';
+import { BroadcastOutcomeUnknownError, isBroadcastOutcomeUnknown } from '@/lib/crypto/broadcast-error';
 
 // Count signatures without changing them (the noble curve object is frozen, so no spyOn).
 const signCalls = vi.hoisted(() => ({ n: 0 }));
@@ -237,9 +238,37 @@ describe('verifyTronTransaction: TRX (createtransaction)', () => {
     expectReject(() => verifyTronTransaction(tx, TRX_EXP, TRX_NOW), 'fee_limit');
   });
 
-  it('rejects expired and too-far-future transactions', () => {
-    expectReject(() => verifyTronTransaction(TRX_TX, TRX_EXP, TRX_TX.raw_data.expiration + 10 * 60_000), 'expiration');
-    expectReject(() => verifyTronTransaction(TRX_TX, TRX_EXP, TRX_TX.raw_data.expiration - 25 * 3600_000), 'expiration');
+  it('device clock far off (expired by > 6 h, or > 25 h ahead) → rejected', () => {
+    expectReject(() => verifyTronTransaction(TRX_TX, TRX_EXP, TRX_TX.raw_data.expiration + 7 * 3600_000), 'expiration');
+    expectReject(() => verifyTronTransaction(TRX_TX, TRX_EXP, TRX_TX.raw_data.expiration - 26 * 3600_000), 'expiration');
+  });
+
+  it('a phone clock minutes or hours off does not block a fresh tx (expiration is checked against raw.timestamp)', () => {
+    const exp = TRX_TX.raw_data.expiration;
+    // TronGrid: expiration ≈ head block time + 60 s. A phone 3+ min fast used to fail every send.
+    for (const now of [exp + 3 * 60_000, exp + 10 * 60_000, exp + 2 * 3600_000, exp - 20 * 3600_000]) {
+      expect(verifyTronTransaction(TRX_TX, TRX_EXP, now).txID).toBe(TRX_TX.txID);
+    }
+  });
+
+  it('expiration must be after the build timestamp and at most 24 h later; the timestamp must be present', () => {
+    const t = TRX_TX.raw_data;
+    const v = t.contract[0].parameter.value;
+    const contract = buildContract(1, TRANSFER_URL, fBytes(1, v.owner_address) + fBytes(2, v.to_address) + fVar(3, v.amount));
+    const base = { refBlockBytes: t.ref_block_bytes, refBlockHash: t.ref_block_hash, contract };
+    const at = (expiration: number, timestamp: number) => asTx(buildRaw({ ...base, expiration, timestamp }));
+    // the genuine pair is accepted
+    expect(() => verifyTronTransaction(at(t.expiration, t.timestamp), TRX_EXP, TRX_NOW)).not.toThrow();
+    // expiration not after the build time
+    expectReject(() => verifyTronTransaction(at(t.expiration, t.expiration), TRX_EXP, TRX_NOW), 'expiration');
+    expectReject(() => verifyTronTransaction(at(t.expiration, t.expiration + 1000), TRX_EXP, TRX_NOW), 'expiration');
+    // a signed tx that would stay valid for more than the protocol's 24 h
+    const farTs = t.expiration - 24 * 3600_000 - 1;
+    expectReject(() => verifyTronTransaction(at(t.expiration, farTs), TRX_EXP, TRX_NOW), 'expiration');
+    expect(() => verifyTronTransaction(at(t.expiration, farTs + 1), TRX_EXP, TRX_NOW)).not.toThrow();
+    // no timestamp field at all
+    const noTs = fBytes(1, t.ref_block_bytes) + fBytes(4, t.ref_block_hash) + fVar(8, t.expiration) + fBytes(11, contract);
+    expectReject(() => verifyTronTransaction(asTx(noTs), TRX_EXP, TRX_NOW), 'expiration');
   });
 
   it('rejects a USDT contract call presented for a TRX send', () => {
@@ -411,6 +440,103 @@ describe('sendTrxRaw / sendUsdtTrc20Raw', () => {
     await expect(sendUsdtTrc20Raw(PRIV, usdtFx.to, 2.5)).rejects.toMatchObject({ reason: 'call_data' });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(signCalls.n).toBe(0);
+  });
+});
+
+// ─── broadcast: lost answers are looked up, never turned into a retryable error ─
+
+describe('TRON broadcast outcome', () => {
+  type Reply = Response | Promise<Response> | (() => Promise<Response>);
+  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+  const text = (body: string, status = 200) => new Response(body, { status });
+
+  /** Build → the fixture tx (re-owned to the test key); broadcast / lookup → the given replies. */
+  function tronGrid(broadcast: Reply, lookup: Reply = json({})) {
+    const tx = ownedBy(TRX_TX, TRX_EXP.ownerHex);
+    const reply = (r: Reply) => (typeof r === 'function' ? r() : r);
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
+      if (url.endsWith('/wallet/createtransaction')) return json(tx);
+      if (url.endsWith('/wallet/broadcasttransaction')) return reply(broadcast);
+      if (url.endsWith('/wallet/gettransactionbyid')) return reply(lookup);
+      throw new Error(`unexpected ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(Date, 'now').mockReturnValue(TRX_NOW);
+    return { tx, fetchMock };
+  }
+  const paths = (f: ReturnType<typeof vi.fn>) => f.mock.calls.map((c) => String(c[0]).replace('https://api.trongrid.io', ''));
+  const send = () => sendTrxRaw(PRIV, trxFx.to, 1.234567);
+
+  it('network error, the node has the tx by id → success with the signed txID', async () => {
+    const tx = ownedBy(TRX_TX, TRX_EXP.ownerHex);
+    const { fetchMock } = tronGrid(() => Promise.reject(new TypeError('Failed to fetch')), json({ txID: tx.txID, raw_data_hex: tx.raw_data_hex }));
+    await expect(send()).resolves.toBe(tx.txID);
+    expect(paths(fetchMock)).toEqual(['/wallet/createtransaction', '/wallet/broadcasttransaction', '/wallet/gettransactionbyid']);
+    expect(JSON.parse(String(fetchMock.mock.calls[2][1]?.body))).toEqual({ value: tx.txID });
+  });
+
+  it('a lookup answer for a different txID does not count as found', async () => {
+    tronGrid(() => Promise.reject(new TypeError('Failed to fetch')), json({ txID: 'f'.repeat(64) }));
+    await expect(send()).rejects.toBeInstanceOf(BroadcastOutcomeUnknownError);
+  });
+
+  it.each([
+    ['503', () => Promise.resolve(text('Service Unavailable', 503))],
+    ['429', () => Promise.resolve(json({ Error: 'rate limited' }, 429))],
+    ['non-JSON 200', () => Promise.resolve(text('<html>gateway</html>'))],
+    ['200 without result or code', () => Promise.resolve(json({}))],
+  ])('%s and the tx is not found → BroadcastOutcomeUnknownError(txID)', async (_name, broadcast) => {
+    const { tx } = tronGrid(broadcast);
+    const err = await send().catch((e) => e);
+    expect(isBroadcastOutcomeUnknown(err)).toBe(true);
+    expect(err.hash).toBe(tx.txID);
+    expect(err.hash).toMatch(/^[0-9a-f]{64}$/); // what tx-status getTxStatus('TRX', hash) expects
+  });
+
+  it('broadcast hangs → times out (20 s) → lookup → unknown', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const { tx } = tronGrid(() => new Promise<Response>(() => { /* never answers */ }));
+      const p = send().catch((e) => e);
+      await vi.advanceTimersByTimeAsync(20_000);
+      const err = await p;
+      expect(err).toMatchObject({ name: 'BroadcastOutcomeUnknownError', hash: tx.txID });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('{result:false, code, message} stays a definitive error with the decoded node text; no lookup', async () => {
+    const msg = Buffer.from('Validate TransferContract error, balance is not sufficient.').toString('hex');
+    const { fetchMock } = tronGrid(json({ code: 'CONTRACT_VALIDATE_ERROR', txid: 'x', message: msg }));
+    const err = await send().catch((e) => e);
+    expect(isBroadcastOutcomeUnknown(err)).toBe(false);
+    expect(err.message).toContain('balance is not sufficient');
+    expect(paths(fetchMock)).not.toContain('/wallet/gettransactionbyid');
+  });
+
+  it('{Error} (thrown before the node broadcasts) and a plain 4xx are definitive too', async () => {
+    tronGrid(json({ Error: 'class org.tron.core.services.http.JsonFormat$ParseException : bad' }));
+    await expect(send()).rejects.toThrow(/ParseException/);
+    tronGrid(text('Forbidden', 403));
+    await expect(send()).rejects.not.toBeInstanceOf(BroadcastOutcomeUnknownError);
+  });
+
+  it('DUP_TRANSACTION_ERROR = the node already holds this exact txID → success', async () => {
+    const { tx } = tronGrid(json({ code: 'DUP_TRANSACTION_ERROR', txid: 'x', message: '' }));
+    await expect(send()).resolves.toBe(tx.txID);
+  });
+
+  it('USDT path: same rules (lost answer + lookup miss → unknown with the verified txID)', async () => {
+    const tx = ownedBy(USDT_TX, USDT_EXP.ownerHex);
+    vi.spyOn(Date, 'now').mockReturnValue(USDT_NOW);
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('/wallet/triggersmartcontract')) return json({ result: { result: true }, transaction: tx });
+      if (url.endsWith('/wallet/broadcasttransaction')) return text('Bad Gateway', 502);
+      if (url.endsWith('/wallet/gettransactionbyid')) throw new TypeError('Failed to fetch');
+      throw new Error(`unexpected ${url}`);
+    }));
+    await expect(sendUsdtTrc20Raw(PRIV, usdtFx.to, 2.5)).rejects.toMatchObject({ name: 'BroadcastOutcomeUnknownError', hash: tx.txID });
   });
 });
 

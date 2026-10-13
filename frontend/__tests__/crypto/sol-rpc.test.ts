@@ -36,6 +36,15 @@ describe('solRpc (browser)', () => {
     await expect(solRpc('getBalance', ['addr'], { getProxyToken: async () => 't' })).resolves.toEqual({ value: 1 });
   });
 
+  it('-32603 "Internal error" is the RPC twin of a 5xx: fail over, never a definitive answer', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(res(200, { jsonrpc: '2.0', id: 1, error: { code: -32603, message: 'Internal error' } }))
+      .mockResolvedValueOnce(OK('sig'));
+    vi.stubGlobal('fetch', f);
+    await expect(solRpc('sendTransaction', ['tx'], { getProxyToken: async () => 't' })).resolves.toBe('sig');
+    expect(f.mock.calls[1][0]).toBe(SOL_PROXY_PATH);
+  });
+
   it('a real node error is surfaced at once, no failover (same signed tx → same answer)', async () => {
     const f = vi.fn().mockResolvedValueOnce(res(200, { jsonrpc: '2.0', id: 1, error: { code: -32002, message: 'Transaction simulation failed: insufficient funds for rent' } }));
     vi.stubGlobal('fetch', f);

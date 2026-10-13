@@ -22,6 +22,7 @@ import {
 import { decryptBytes } from './aes';
 import { getEthProvider } from './eth-provider';
 import { solRpc } from './sol-rpc';
+import { BroadcastOutcomeUnknownError } from './broadcast-error';
 
 // ETH RPC: shared FallbackProvider over keyless public endpoints (eth-provider.ts).
 const USDT_ADDR = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
@@ -150,6 +151,7 @@ export async function sendSol(
     // 5. Build message and sign
     const message   = buildSolMessage(fromPubkey, toPubkey, lamports, blockhashBytes);
     const signature = ed25519.sign(message, solPrivKey); // Uint8Array(64)
+    solPrivKey.fill(0); // not needed past this point (finally zeroes it again)
 
     // 6. Assemble: [num_sigs=1][signature 64 bytes][message]
     const tx = new Uint8Array(1 + 64 + message.length);
@@ -157,17 +159,59 @@ export async function sendSol(
     tx.set(signature, 1);
     tx.set(message, 65);
 
+    // The tx id (base58 signature, Solana explorer format) is known before
+    // broadcast: it is what the status poller and a lookup use.
+    const sig58 = bs58.encode(signature);
+
     // 7. Broadcast
     const txBase64 = btoa(String.fromCharCode(...tx));
     // Failover is safe: the same signed bytes give the same signature on any
     // node. A real node error (e.g. rent-exempt preflight) surfaces as is.
-    await solRpc('sendTransaction', [txBase64, { encoding: 'base64', preflightCommitment: 'finalized' }]);
-
-    // Return tx signature as base58 string (Solana explorer format)
-    return bs58.encode(signature);
+    try {
+      await solRpc('sendTransaction', [txBase64, { encoding: 'base64', preflightCommitment: 'finalized' }]);
+    } catch (e) {
+      await settleSolSendFailure(e, sig58);
+    }
+    return sig58;
   } finally {
     solPrivKey.fill(0);
   }
+}
+
+/** "This transaction has already been processed": these exact bytes landed (an earlier relay whose answer was lost). */
+const SOL_ALREADY_PROCESSED_RE = /already been processed|AlreadyProcessed/i;
+
+/** Has the cluster seen this signature (processed, confirmed, finalized or failed)? false if unsure. */
+async function solSignatureSeen(sig58: string): Promise<boolean> {
+  try {
+    const r = await solRpc<{ value?: unknown }>('getSignatureStatuses', [[sig58], { searchTransactionHistory: true }]);
+    const first: unknown = Array.isArray(r?.value) ? r.value[0] : null;
+    return !!first && typeof first === 'object';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * sendTransaction failed. Returns normally when the tx is known to be on the
+ * network (the caller then returns the signature); otherwise throws:
+ *  - a real node answer (SolRpcError: preflight failure, blockhash not found)
+ *    is a definitive rejection and is rethrown as is;
+ *  - no endpoint answered (SolRpcUnavailableError): one of them may still have
+ *    relayed the signed bytes. Found by signature → success; otherwise
+ *    BroadcastOutcomeUnknownError(signature), so the UI polls, not re-sends.
+ */
+async function settleSolSendFailure(err: unknown, sig58: string): Promise<void> {
+  const name = (err as { name?: unknown } | null)?.name;
+  if (name === 'SolRpcError') {
+    if (SOL_ALREADY_PROCESSED_RE.test((err as Error).message)) return;
+    throw err;
+  }
+  if (name === 'SolRpcUnavailableError') {
+    if (await solSignatureSeen(sig58)) return;
+    throw new BroadcastOutcomeUnknownError(sig58, 'SOL broadcast outcome unknown: no Solana RPC answered.');
+  }
+  throw err;
 }
 
 // ─── Send USDT TRC-20 (Tron) ─────────────────────────────────────────────────

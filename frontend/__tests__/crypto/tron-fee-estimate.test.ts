@@ -190,9 +190,15 @@ describe('fallback to the static estimate', () => {
     expectFallback(await sim('TRC20'), 14);
   });
 
-  it('dry run reverted → static', async () => {
-    mockTronGrid({ '/wallet/triggerconstantcontract': ok(reverted.response) });
-    expectFallback(await sim('TRC20'), 14);
+  it('a dry run that failed for another reason (CPU timeout) → static, non-blocking', async () => {
+    const cpuTimeout = {
+      ...reverted.response,
+      result: { result: true, message: Buffer.from("CPU timeout for 'PUSH1' operation executing").toString('hex') },
+    };
+    mockTronGrid({ '/wallet/triggerconstantcontract': ok(cpuTimeout) });
+    const r = await sim('TRC20');
+    expectFallback(r, 14);
+    expect(r.tron?.unavailableReason).toBe('TRON_ESTIMATE_DRY_RUN_FAILED');
   });
 
   it('API error body / malformed resource → static', async () => {
@@ -304,5 +310,128 @@ describe('wiring', () => {
 
   it('estimateTronFee throws (caller falls back) on a bad sender address', async () => {
     await expect(estimateTronFee({ kind: 'usdt', from: 'nope', to: FRESH, amount: 1 })).rejects.toThrow();
+  });
+});
+
+// ─── TRC-20 burn-on-revert: a reverting dry run blocks the send ──────────────
+
+describe('USDT dry run reverted → BLOCKING', () => {
+  it('real revert sample ("REVERT opcode executed", e.g. USDT below the amount) blocks with tron_estimate_revert', async () => {
+    mockTronGrid({ '/wallet/triggerconstantcontract': ok(reverted.response) });
+    const r = await sim('TRC20', { balances: { ...BALANCES, TRX: 1000 } });
+    expect(r.warnings).toContainEqual({ level: 'block', code: 'simulation_failed', detail: 'tron_estimate_revert' });
+    expect(r.warnings.some((w) => w.detail === 'tron_fee_estimate_unavailable')).toBe(false);
+    expect(r.warnings.filter((w) => w.code === 'simulation_failed')).toHaveLength(1);
+    expect(isBlocked(r)).toBe(true);
+    expect(r.tron).toMatchObject({ source: 'static', unavailableReason: 'TRON_ESTIMATE_REVERT' });
+    expect(r.feeNative).toBe(14); // the static fee is still shown
+  });
+
+  it('an assert failure (INVALID opcode) counts as a contract refusal too', async () => {
+    const invalid = { ...reverted.response, result: { result: true, message: Buffer.from('Invalid operation code: opCode[fe];').toString('hex') } };
+    mockTronGrid({ '/wallet/triggerconstantcontract': ok(invalid) });
+    expect(isBlocked(await sim('TRC20', { balances: { ...BALANCES, TRX: 1000 } }))).toBe(true);
+  });
+
+  it('the revert text has RU and EN copy', () => {
+    expect(SIM_DETAIL_I18N.tron_estimate_revert).toBe('simTronEstimateRevert');
+    expect(translations.ru.simTronEstimateRevert).toContain('Отправка заблокирована');
+    expect(translations.en.simTronEstimateRevert).toContain('Sending is blocked');
+  });
+});
+
+// ─── TRX balance unknown to the caller: read it on chain inside the estimate ─
+
+describe('TRX balance did not load (unknownBalances: TRX)', () => {
+  /** Like mockTronGrid, but /wallet/getaccount answers per address (sender vs recipient). */
+  function mockWithSender(sender: Reply, over: Record<string, Reply> = {}) {
+    const recipient = ok({ address: HOLDER, balance: 5_000_000, create_time: 1629452451000 });
+    const replies: Record<string, Reply> = {
+      '/wallet/getchainparameters': ok(chainParams),
+      '/wallet/getaccountresource': ok(USER_RESOURCE),
+      '/wallet/triggerconstantcontract': ok(newHolder.response),
+      ...over,
+    };
+    const fn = vi.fn((url: string, init?: RequestInit) => {
+      const path = new URL(url).pathname;
+      if (path === '/wallet/getaccount') {
+        const { address } = JSON.parse(String(init?.body)) as { address: string };
+        return address === SENDER ? sender() : recipient();
+      }
+      const reply = replies[path];
+      if (!reply) throw new Error(`unexpected call ${path}`);
+      return reply();
+    });
+    vi.stubGlobal('fetch', fn);
+    return fn;
+  }
+  const senderAccount = (sun: number) => ok({ address: SENDER, balance: sun, create_time: 1629452451000 });
+  const senderReads = (fn: ReturnType<typeof vi.fn>) =>
+    fn.mock.calls.filter((c) => (c[0] as string).endsWith('/wallet/getaccount') && JSON.parse(String(c[1]!.body)).address === SENDER);
+  const unknownTrx = { unknownBalances: ['TRX'] as SimCoin[], balances: { ...BALANCES, TRX: 0 } };
+
+  it('TRC-20: chain says 2 TRX, the live fee is 13.03 TRX → insufficient_fee_balance BLOCK, no balance_unknown', async () => {
+    const fn = mockWithSender(senderAccount(2_000_000));
+    const r = await sim('TRC20', unknownTrx);
+    expect(r.warnings).toContainEqual({ level: 'block', code: 'insufficient_fee_balance' });
+    expect(r.warnings.some((w) => w.code === 'balance_unknown')).toBe(false);
+    expect(isBlocked(r)).toBe(true);
+    expect(senderReads(fn)).toHaveLength(1);
+    expect(JSON.parse(String(senderReads(fn)[0][1]!.body))).toEqual({ address: SENDER, visible: true });
+  });
+
+  it('TRC-20: chain says 20 TRX → not blocked, no balance_unknown', async () => {
+    mockWithSender(senderAccount(20_000_000));
+    const r = await sim('TRC20', unknownTrx);
+    expect(r.warnings).toEqual([]);
+    expect(isBlocked(r)).toBe(false);
+  });
+
+  it('TRC-20: sender account not activated ({}) = 0 TRX → BLOCK', async () => {
+    mockWithSender(ok(notActivated));
+    expect((await sim('TRC20', unknownTrx)).warnings).toContainEqual({ level: 'block', code: 'insufficient_fee_balance' });
+  });
+
+  it('TRC-20: live estimate down (static 14 TRX) but the balance read works (2 TRX) → still BLOCK', async () => {
+    mockWithSender(senderAccount(2_000_000), { '/wallet/getchainparameters': httpError(503) });
+    const r = await sim('TRC20', unknownTrx);
+    expect(r.feeNative).toBe(14);
+    expect(r.warnings).toContainEqual({ level: 'block', code: 'insufficient_fee_balance' });
+  });
+
+  it('the balance read fails too → the old non-blocking balance_unknown warning', async () => {
+    mockWithSender(httpError(503));
+    const r = await sim('TRC20', unknownTrx);
+    expect(r.warnings).toContainEqual({ level: 'warn', code: 'balance_unknown' });
+    expect(r.warnings.some((w) => w.code === 'insufficient_fee_balance')).toBe(false);
+    expect(isBlocked(r)).toBe(false);
+  });
+
+  it('a hanging balance read does not hang the review', async () => {
+    mockWithSender(hang);
+    const r = await sim('TRC20', { ...unknownTrx, timeoutMs: 200 });
+    expect(r.status).toBe('ok');
+    expect(r.warnings).toContainEqual({ level: 'warn', code: 'balance_unknown' });
+  });
+
+  it('TRX send: chain balance 3 TRX, amount 5 → insufficient_funds BLOCK (same-currency rule)', async () => {
+    mockWithSender(senderAccount(3_000_000));
+    const r = await sim('TRX', { ...unknownTrx, toAddress: HOLDER, amount: 5 });
+    expect(r.warnings).toContainEqual({ level: 'block', code: 'insufficient_funds' });
+    expect(r.warnings.some((w) => w.code === 'balance_unknown')).toBe(false);
+    expect(r.balanceAfter).toBeNull();
+  });
+
+  it('TRX send: chain balance 50 TRX → ok, balanceAfter from the chain balance', async () => {
+    mockWithSender(senderAccount(50_000_000));
+    const r = await sim('TRX', { ...unknownTrx, toAddress: HOLDER, amount: 5 });
+    expect(isBlocked(r)).toBe(false);
+    expect(r.balanceAfter).toBeCloseTo(45, 9);
+  });
+
+  it('only TRC20 unknown (TRX loaded): no extra balance read', async () => {
+    const fn = mockWithSender(senderAccount(1));
+    await sim('TRC20', { unknownBalances: ['TRC20'] });
+    expect(senderReads(fn)).toHaveLength(0);
   });
 });

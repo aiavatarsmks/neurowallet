@@ -20,6 +20,7 @@ import * as ecc from '@bitcoinerlab/secp256k1';
 import { secp256k1 } from '@noble/curves/secp256k1';
 import { Buffer } from 'buffer';
 import { decryptBytes } from './aes';
+import { BroadcastOutcomeUnknownError } from './broadcast-error';
 import { amountToDecimalString } from '@/lib/display-format';
 
 // Без ECC-библиотеки bitcoinjs не умеет taproot: toOutputScript('bc1p…') бросает
@@ -48,6 +49,8 @@ export type BtcErrorCode =
   | 'BTC_UTXO_FETCH_FAILED'
   | 'BTC_RAW_TX_FETCH_FAILED'
   | 'BTC_BROADCAST_REJECTED'
+  // Kept for the UI map; a broadcast with no definitive answer now throws
+  // BroadcastOutcomeUnknownError (broadcast-error.ts) instead.
   | 'BTC_BROADCAST_UNAVAILABLE';
 
 export class BtcTxError extends Error {
@@ -209,10 +212,35 @@ async function fetchRawTx(txid: string): Promise<Buffer> {
 const ALREADY_KNOWN_RE = /already in block chain|txn-already-in-mempool|txn-already-known|transaction already exists/i;
 
 /**
+ * Does an explorer know this txid (mempool or chain)? GET /tx/{txid} answers
+ * 200 with the transaction JSON (its `txid` included) for a known tx and 404
+ * "Transaction not found" otherwise. Not /tx/{txid}/status: both explorers
+ * answer that with 200 {"confirmed":false} even for a txid they never saw
+ * (checked 2026-10-13). Only a 200 echoing this txid counts; a captive portal
+ * or an error page is "not known".
+ */
+async function btcExplorerKnowsTx(txid: string): Promise<boolean> {
+  for (const base of [BLOCKSTREAM, MEMPOOL]) {
+    try {
+      const res = await fetch(`${base}/tx/${txid}`);
+      if (res.status !== 200) continue;
+      const body = await res.json() as { txid?: unknown } | null;
+      if (body && typeof body === 'object' && body.txid === txid) return true;
+    } catch {
+      // network error / bad JSON → ask the next explorer
+    }
+  }
+  return false;
+}
+
+/**
  * Broadcast a signed transaction. Blockstream first; on a network error, 5xx or
  * 429 the same bytes go once to mempool.space (identical txid, so a second
  * broadcast can never pay twice). Any other 4xx is the network rejecting the
  * transaction (invalid, fee too low, …): surfaced, not retried elsewhere.
+ * When both explorers fail at the transport level the POST may still have
+ * reached a node, so the txid is looked up: known → success; otherwise
+ * BroadcastOutcomeUnknownError(txid) (the UI polls instead of re-sending).
  * Returns the txid computed from the signed bytes.
  */
 export async function broadcastBtcTx(rawHex: string): Promise<string> {
@@ -239,7 +267,9 @@ export async function broadcastBtcTx(rawHex: string): Promise<string> {
     if (res.status >= 500 || res.status === 429) continue;
     throw new BtcTxError('BTC_BROADCAST_REJECTED', 'BTC broadcast rejected: ' + text, text);
   }
-  throw new BtcTxError('BTC_BROADCAST_UNAVAILABLE', 'BTC broadcast failed: Blockstream and mempool.space unavailable.');
+  // BTC_BROADCAST_UNAVAILABLE case: no explorer gave a definitive answer.
+  if (await btcExplorerKnowsTx(txid)) return txid;
+  throw new BroadcastOutcomeUnknownError(txid, 'BTC broadcast outcome unknown: Blockstream and mempool.space did not answer.');
 }
 
 // ─── vsize model (shared by the review and the signer) ───────────────────────
