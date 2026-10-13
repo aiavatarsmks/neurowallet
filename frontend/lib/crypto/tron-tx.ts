@@ -18,6 +18,7 @@
 import { secp256k1 } from '@noble/curves/secp256k1';
 import { ethers } from 'ethers';
 import bs58 from 'bs58';
+import { BroadcastOutcomeUnknownError } from './broadcast-error';
 
 export const USDT_TRC20_CONTRACT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
 const TRONGRID = 'https://api.trongrid.io';
@@ -478,9 +479,17 @@ export interface VerifiedTronTx {
 }
 
 const MAX_RAW_BYTES = 2048;                         // a USDT transfer is ~211 bytes
-const MAX_EXPIRATION_AHEAD_MS = 24 * 60 * 60 * 1000; // TRON protocol maximum
-/** A phone clock running a little fast must not make every fresh tx look expired. */
-const EXPIRATION_CLOCK_SKEW_MS = 2 * 60 * 1000;
+/** TRON protocol maximum for expiration − build time. */
+const MAX_EXPIRATION_AHEAD_MS = 24 * 60 * 60 * 1000;
+/**
+ * Sanity bounds against the DEVICE clock only. Phone clocks are often minutes
+ * or hours off, and TronGrid sets expiration ≈ head block time + 60 s, so a
+ * tight device-clock check (it was now − 2 min) failed every TRON send on a
+ * phone running 3+ minutes fast. The real check is against the transaction's
+ * own build timestamp; these only catch a node answer that is wildly off.
+ */
+const DEVICE_CLOCK_PAST_MS = 6 * 60 * 60 * 1000;
+const DEVICE_CLOCK_FUTURE_MS = 25 * 60 * 60 * 1000;
 const USDT_TRC20_CONTRACT_HEX = '41a614f803b6fd780986a42c78ec9c7f77e6ded13c';
 const ZERO_PAD_12 = '0'.repeat(24);
 
@@ -512,10 +521,15 @@ export function verifyTronTransaction(
   if (raw.contracts.length !== 1) fail('contract_count');
   if (raw.refBlockBytesHex?.length !== 4 || raw.refBlockHashHex?.length !== 16) fail('format');
 
+  // Expiration vs the tx's own build time (raw.timestamp, set by the node):
+  // after it, and at most the protocol's 24 h later. The device clock only
+  // gets a generous sanity bound (see DEVICE_CLOCK_*).
   const expiration = raw.expiration;
-  if (expiration === undefined) return fail('expiration');
-  if (expiration <= BigInt(Math.floor(nowMs - EXPIRATION_CLOCK_SKEW_MS))
-      || expiration > BigInt(Math.floor(nowMs + MAX_EXPIRATION_AHEAD_MS))) {
+  const timestamp = raw.timestamp;
+  if (expiration === undefined || timestamp === undefined || timestamp <= 0n) return fail('expiration');
+  if (expiration <= timestamp || expiration - timestamp > BigInt(MAX_EXPIRATION_AHEAD_MS)) fail('expiration');
+  if (expiration < BigInt(Math.floor(nowMs - DEVICE_CLOCK_PAST_MS))
+      || expiration > BigInt(Math.floor(nowMs + DEVICE_CLOCK_FUTURE_MS))) {
     fail('expiration');
   }
   const feeLimit = raw.feeLimit ?? 0n;
@@ -555,20 +569,104 @@ function signVerified(verified: VerifiedTronTx, privKey: Uint8Array): string {
   return bytesToHex(sig.toCompactRawBytes()) + sig.recovery.toString(16).padStart(2, '0');
 }
 
+const BROADCAST_TIMEOUT_MS = 20_000;
+const LOOKUP_TIMEOUT_MS = 10_000;
+
+/** fetch with a hard timeout (rejects 'TRON_TIMEOUT'), also when the abort signal is ignored. */
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      fetch(url, { ...init, signal: controller?.signal }),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          controller?.abort();
+          reject(new Error('TRON_TIMEOUT'));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+type TronBroadcastAnswer =
+  | { kind: 'accepted' }
+  | { kind: 'rejected'; message: string }
+  | { kind: 'no_answer' };
+
+/**
+ * java-tron answers HTTP 200 with {result: true} or {code, message}: both are
+ * definitive, as is {Error} (thrown before the node broadcasts) and any 4xx
+ * other than 429. DUP_TRANSACTION_ERROR means the node already holds this
+ * txID: accepted. A network error, timeout, 5xx, 429, a non-JSON body or a
+ * body that says neither is no answer: the tx may or may not be out.
+ */
+async function postTronBroadcast(body: string): Promise<TronBroadcastAnswer> {
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(`${TRONGRID}/wallet/broadcasttransaction`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body,
+    }, BROADCAST_TIMEOUT_MS);
+  } catch {
+    return { kind: 'no_answer' };
+  }
+  const status = typeof res.status === 'number' ? res.status : (res.ok ? 200 : 0);
+  if (status === 429 || status >= 500 || status === 0) return { kind: 'no_answer' };
+  let json: unknown;
+  try {
+    json = await res.json();
+  } catch {
+    json = undefined;
+  }
+  const obj = json && typeof json === 'object' && !Array.isArray(json) ? (json as Record<string, unknown>) : null;
+  if (obj?.result === true) return { kind: 'accepted' };
+  if (obj?.code === 'DUP_TRANSACTION_ERROR') return { kind: 'accepted' };
+  if (obj && (typeof obj.code === 'string' || obj.result === false)) {
+    return { kind: 'rejected', message: tronBroadcastError(obj) };
+  }
+  if (obj && typeof obj.Error === 'string') return { kind: 'rejected', message: obj.Error.slice(0, 200) };
+  if (!res.ok) return { kind: 'rejected', message: `Ошибка отправки в сеть Tron (HTTP ${status}).` };
+  return { kind: 'no_answer' };
+}
+
+/** /wallet/gettransactionbyid: `{}` until the node has the tx, the tx (with txID) after. */
+async function tronNodeHasTx(txID: string): Promise<boolean> {
+  try {
+    const res = await fetchWithTimeout(`${TRONGRID}/wallet/gettransactionbyid`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ value: txID }),
+    }, LOOKUP_TIMEOUT_MS);
+    if (!res.ok) return false;
+    const json = await res.json() as { txID?: unknown } | null;
+    return !!json && typeof json === 'object' && typeof json.txID === 'string' && json.txID.toLowerCase() === txID;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Broadcast the signed, verified tx. Returns the txID we signed (never the
+ * node's echo). Throws an Error with the node text on a definitive rejection,
+ * and BroadcastOutcomeUnknownError(txID) when TronGrid gave no answer and the
+ * tx cannot be found by id (it may still be out: the UI polls, no re-send).
+ */
 async function broadcastVerified(
   tx: Record<string, unknown>,
   verified: VerifiedTronTx,
   sigHex: string,
 ): Promise<string> {
-  const broadcastRes = await fetch(`${TRONGRID}/wallet/broadcasttransaction`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ ...tx, txID: verified.txID, raw_data_hex: verified.rawDataHex, signature: [sigHex] }),
-  });
-  const broadcastJson = await broadcastRes.json();
-  if (!broadcastJson.result) throw new Error(tronBroadcastError(broadcastJson));
-  // The id of what we signed, not whatever the node echoes back.
-  return verified.txID;
+  const answer = await postTronBroadcast(
+    JSON.stringify({ ...tx, txID: verified.txID, raw_data_hex: verified.rawDataHex, signature: [sigHex] }),
+  );
+  if (answer.kind === 'accepted') return verified.txID;
+  if (answer.kind === 'rejected') throw new Error(answer.message);
+  if (await tronNodeHasTx(verified.txID)) return verified.txID;
+  throw new BroadcastOutcomeUnknownError(verified.txID, 'TRON broadcast outcome unknown: TronGrid did not answer.');
 }
 
 // ─── Send USDT TRC-20 ─────────────────────────────────────────────────────────
