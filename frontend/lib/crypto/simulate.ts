@@ -139,7 +139,7 @@ export async function estimateFeeNative(params: Pick<SimulateParams, 'coin' | 'a
 export async function estimateBtcFee(
   params: Pick<SimulateParams, 'amount' | 'fromBtcAddress'> & { toAddress?: string },
 ): Promise<{ feeNative: number; feeRateSatVb: number | null }> {
-  // Без собственного адреса реальный подбор UTXO невозможен — грубая оценка.
+  // Без собственного адреса реальный подбор UTXO невозможен: грубая оценка.
   if (!params.fromBtcAddress) return { feeNative: 0.00002, feeRateSatVb: null };
   const [utxos, feeRate] = await Promise.all([
     fetchUTXOs(params.fromBtcAddress),
