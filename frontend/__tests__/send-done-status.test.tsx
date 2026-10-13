@@ -47,6 +47,7 @@ vi.mock('@/lib/risk/engine', () => ({ assessRecipient: () => ({ level: 'ok', rea
 vi.mock('@/hooks/useTxStatus', () => ({ useTxStatus: H.useTxStatus }));
 vi.mock('@/lib/crypto/balances', () => ({
   MARKET_REFRESH_MS: 60_000,
+  resetSharedBalances: vi.fn(),
   fetchRealBalances: vi.fn(async () => ({
     eth: 1, btc: 0.01, sol: 0, usdt: 0, trx: 100, usdtTrc: 50, ton: 10, usdtTon: 0,
     ethEur: 2800, btcEur: 55000, solEur: 120, trxEur: 0.22, tonEur: 3.5,
@@ -80,6 +81,7 @@ vi.mock('@/lib/crypto/btc-tx', () => ({
 }));
 
 import { CryptoSendScreen, describeSendError } from '@/components/CryptoSendScreen';
+import { resetSendLockForTests } from '@/lib/send-lock';
 
 const fetchMock = vi.fn(async (_url: unknown, _init?: unknown) => new Response('{}', { status: 200 }));
 
@@ -103,6 +105,7 @@ async function sendThrough(coin: 'TRC20' | 'TON' | 'BTC', to: string, amount: st
 
 describe('CryptoSendScreen done screen: on-chain status', () => {
   beforeEach(() => {
+    resetSendLockForTests();
     localStorage.clear();
     localStorage.setItem('wallet_eth_address', '0x' + '1'.repeat(40));
     localStorage.setItem('wallet_keystore', '{"fake":"keystore"}');

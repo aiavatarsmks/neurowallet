@@ -39,6 +39,7 @@ vi.mock('@/lib/policies-client', () => ({ fetchPolicies: vi.fn() }));
 vi.mock('@/lib/risk/engine', () => ({ assessRecipient: () => ({ level: 'ok', reasons: [], overridable: true }) }));
 vi.mock('@/lib/crypto/balances', () => ({
   MARKET_REFRESH_MS: 60_000,
+  resetSharedBalances: vi.fn(),
   fetchRealBalances: vi.fn(async () => ({
     eth: 1, btc: 0, sol: 0, usdt: 0, trx: 100, usdtTrc: 50, ton: 0, usdtTon: 0,
     ethEur: 2800, btcEur: 55000, solEur: 120, trxEur: 0.22, tonEur: 3.5,
@@ -68,6 +69,7 @@ vi.mock('@/lib/crypto/transactions', () => ({
 vi.mock('@/lib/crypto/btc-tx', () => ({ sendBtc: vi.fn(), btcErrorCode: () => null, BTC_MAX_FEE_RATE_SAT_VB: 500 }));
 
 import { CryptoSendScreen } from '@/components/CryptoSendScreen';
+import { resetSendLockForTests } from '@/lib/send-lock';
 
 /** form → review → password step, with the password typed in. */
 async function reachPasswordStep(coin: 'TRC20' | 'TRX') {
@@ -98,6 +100,9 @@ function click(el: Element) {
 
 describe('CryptoSendScreen double-submit guard', () => {
   beforeEach(() => {
+    // The app-wide send lock is module state: a send left pending by the
+    // previous case (it never resolves) would still hold it.
+    resetSendLockForTests();
     localStorage.clear();
     localStorage.setItem('wallet_eth_address', '0x' + '1'.repeat(40));
     localStorage.setItem('wallet_tron_address', 'TXYZ');

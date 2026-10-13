@@ -578,6 +578,18 @@ export const translations = {
     // ── night-integration ──
     csWarnBalanceUnknown: "Баланс сейчас не загрузился, поэтому проверить, хватает ли средств, не получилось. Если не хватит, сеть просто отклонит перевод.",
     csBalanceUnknownInline: "Баланс не загрузился, сумму проверит сеть",
+    // ── night-review-ui ──
+    csSendInProgress: 'Предыдущий перевод ещё отправляется. Дождитесь результата.',
+    csOutcomeUnknownTitle: 'Результат отправки пока неизвестен',
+    csOutcomeUnknownText: 'Сеть не подтвердила приём, но перевод мог уйти. Не отправляйте повторно, пока статус ниже не прояснится.',
+    csOutcomeUnknownCheckHistory: 'Статус так и не прояснился. Прежде чем отправлять снова, проверьте историю транзакций на главном экране или в обозревателе.',
+    csLastSendLine: 'Предыдущий перевод: {amt} {coin} → {to}. Статус: {status}',
+    csLastSendStatusPending: '⏳ ожидает подтверждения',
+    csLastSendStatusConfirmed: '✅ подтверждён',
+    csLastSendStatusProcessed: '✅ обработан кошельком',
+    csLastSendStatusFailed: '❌ не прошёл',
+    csLastSendStatusUnknown: '⚠️ неизвестен, проверьте в обозревателе',
+    csLastSendDismiss: 'Скрыть',
   },
   en: {
     // ── Landing / onboarding carousel (pages/index.tsx) ──────────────────────
@@ -1155,6 +1167,18 @@ export const translations = {
     secEvent_session_started: 'Account sign-in',
     csWarnBalanceUnknown: "Your balance did not load right now, so we could not check that you have enough. If you do not, the network will simply reject the transfer.",
     csBalanceUnknownInline: "Balance did not load, the network will check the amount",
+    // ── night-review-ui ──
+    csSendInProgress: 'The previous transfer is still being sent. Wait for the result.',
+    csOutcomeUnknownTitle: 'Send result not known yet',
+    csOutcomeUnknownText: "The network didn't confirm receipt, but the transfer may have gone through. Don't send again until the status below is clear.",
+    csOutcomeUnknownCheckHistory: 'The status is still not clear. Before sending again, check the transaction history on the home screen or in the explorer.',
+    csLastSendLine: 'Previous transfer: {amt} {coin} → {to}. Status: {status}',
+    csLastSendStatusPending: '⏳ waiting for confirmation',
+    csLastSendStatusConfirmed: '✅ confirmed',
+    csLastSendStatusProcessed: '✅ processed by the wallet',
+    csLastSendStatusFailed: '❌ failed',
+    csLastSendStatusUnknown: '⚠️ unknown, check the explorer',
+    csLastSendDismiss: 'Dismiss',
   },
 } as const;
 

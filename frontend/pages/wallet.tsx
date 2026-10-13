@@ -21,6 +21,7 @@ import { CardsScreen } from '@/components/CardsScreen';
 import { WalletScreen } from '@/components/WalletScreen';
 import { ReceiveScreen, type ReceiveNetwork } from '@/components/ReceiveScreen';
 import { CryptoSendScreen } from '@/components/CryptoSendScreen';
+import { useSendLocked } from '@/lib/send-lock';
 
 // Static stand-in for the 3D avatar: shown while the three.js chunk loads and
 // instead of it when the user prefers reduced motion. No three.js here.
@@ -251,6 +252,10 @@ export default function WalletPage() {
   const { t } = useLanguage();
   const { user, isDemo, isLoading, enterDemo } = useAuth();
   const reducedMotion = usePrefersReducedMotion();
+  // A transfer is being signed / broadcast (lib/send-lock.ts): every way off
+  // the send screen is disabled until it ends, so the result is never lost in
+  // an unmounted screen and a second send cannot start from a fresh one.
+  const sendLocked = useSendLocked();
   const HEADER_TITLES: Record<Tab, string> = {
     home:          t('headerHome'),
     send:          t('headerSend'),
@@ -321,6 +326,21 @@ export default function WalletPage() {
     if (activeTab === 'wallet') completeDemoTask('view_portfolio');
     if (activeTab === 'receive') completeDemoTask('open_receive');
   }, [isDemo, activeTab]);
+
+  // Same reason, Telegram side: closing the Mini App mid-send asks first
+  // (Bot API 6.2+). The app does not wire Telegram's BackButton, so there is
+  // nothing to disable there. Declared before the early returns (hook order).
+  useEffect(() => {
+    if (!sendLocked || typeof window === 'undefined') return;
+    const wa = window.Telegram?.WebApp;
+    let supported = false;
+    try { supported = !!wa?.isVersionAtLeast?.('6.2'); } catch { supported = false; }
+    if (!wa || !supported) return;
+    try { wa.enableClosingConfirmation(); } catch { /* unsupported client */ }
+    return () => {
+      try { wa.disableClosingConfirmation(); } catch { /* unsupported client */ }
+    };
+  }, [sendLocked]);
 
   // Fail-closed loading gate: render the placeholder — never wallet content —
   // until BOTH auth is resolved AND the PIN gate status is known ('checking').
@@ -421,8 +441,9 @@ export default function WalletPage() {
       <header className="flex items-center justify-between px-6 pt-14 pb-0">
         {showBack ? (
           <button
-            onClick={() => setActiveTab('home')}
-            className="w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-90"
+            onClick={() => { if (!sendLocked) setActiveTab('home'); }}
+            disabled={sendLocked}
+            className="w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-90 disabled:opacity-40"
             style={{ backgroundColor: '#0D1A10', border: '1px solid rgba(0,255,127,0.15)', color: '#00FF7F' }}
             aria-label={t('ariaBack')}
           >
@@ -443,8 +464,9 @@ export default function WalletPage() {
         {/* Profile / Settings toggle */}
         <button
           type="button"
-          onClick={() => setActiveTab(activeTab === 'profile' ? 'home' : 'profile')}
-          className="w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-90"
+          onClick={() => { if (!sendLocked) setActiveTab(activeTab === 'profile' ? 'home' : 'profile'); }}
+          disabled={sendLocked}
+          className="w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-90 disabled:opacity-40"
           style={{
             backgroundColor: activeTab === 'profile' ? 'rgba(0,255,127,0.15)' : '#0D1A10',
             border: '1px solid rgba(0,255,127,0.15)',
@@ -562,7 +584,11 @@ export default function WalletPage() {
       )}
 
       {/* ── Bottom Nav ─────────────────────────────────────── */}
-      <BottomNav active={navActive} onTabChange={(t) => setActiveTab(t)} />
+      <BottomNav
+        active={navActive}
+        disabled={sendLocked}
+        onTabChange={(tab) => { if (!sendLocked) setActiveTab(tab); }}
+      />
     </div>
   );
 }
