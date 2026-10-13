@@ -25,6 +25,10 @@ import { getEthProvider } from './eth-provider';
 import { SUPPORTED_ASSETS, type AssetSymbol } from './assets';
 import { coinLabel } from '@/lib/coin-labels';
 import type { BalancesResponse } from '@/lib/balances-types';
+import { PRICE_CACHE_KEY, PRICES_UPDATED_EVENT, usdPerEurOrNull, getCachedUsdPerEur } from '@/lib/price-rate';
+
+// Re-exported for existing importers; the light module keeps _app small.
+export { PRICES_UPDATED_EVENT, getCachedUsdPerEur };
 
 const SOL_RPC    = 'https://api.mainnet-beta.solana.com';
 const USDT_ADDR  = '0xdAC17F958D2ee523a2206206994597C13D831ec7'; // ERC-20 Mainnet
@@ -38,13 +42,10 @@ const PRICES_URL =
   '&vs_currencies=eur,usd&include_24hr_change=true&include_last_updated_at=true';
 
 /** v2: the v1 key ('nw_prices_cache') may hold fallback constants written as if fresh. */
-const PRICE_CACHE_KEY = 'nw_prices_cache_v2';
 const LEGACY_PRICE_CACHE_KEY = 'nw_prices_cache';
 const LAST_BALANCES_KEY = 'nw_last_balances_v1';
 export const MARKET_REFRESH_MS = 30_000; // near-real-time without hammering public APIs
 const PRICE_TTL_MS    = MARKET_REFRESH_MS;
-/** Fired on window after fresh prices are cached (DisplayCurrencyContext listens). */
-export const PRICES_UPDATED_EVENT = 'nw:prices-updated';
 
 export interface WalletBalances {
   eth:      number;
@@ -153,9 +154,6 @@ const positive = (v: unknown): v is number => finite(v) && v > 0;
 const PRICE_FIELDS = ['ethEur', 'solEur', 'btcEur', 'trxEur', 'tonEur', 'usdtEur'] as const;
 
 /** A sane EUR→USD multiplier, or null. */
-function usdPerEurOrNull(v: unknown): number | null {
-  return finite(v) && v > 0.5 && v < 2 ? v : null;
-}
 
 /**
  * CoinGecko body → prices. Throws unless every coin has a numeric EUR price
@@ -226,10 +224,6 @@ function writePriceCache(p: PriceData): void {
   } catch { /* SSR / old WebView */ }
 }
 
-/** Live USD per 1 EUR from the price cache (any age), or null. For DisplayCurrencyContext. */
-export function getCachedUsdPerEur(): number | null {
-  return readPriceCache()?.usdPerEur ?? null;
-}
 
 async function refreshPrices(cached: PriceData | null): Promise<PriceData> {
   try {

@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { getCachedUsdPerEur, PRICES_UPDATED_EVENT } from '@/lib/crypto/balances';
+// Light module: importing lib/crypto/balances here pulled the chain libs into _app.
+import { getCachedUsdPerEur, PRICES_UPDATED_EVENT } from '@/lib/price-rate';
 
 export type DisplayCurrency = 'EUR' | 'USD';
 
