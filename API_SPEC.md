@@ -21,6 +21,7 @@
 | `/api/risk-event` | POST, PATCH | Supabase JWT | 30/мин/user | `risk_flagged`, `risk_override_confirmed` |
 | `/api/contacts` | GET, POST, PATCH, DELETE | Supabase JWT | 30/мин/user | `contact_saved/updated/deleted` (только id+монета) |
 | `/api/payment-request` | GET (аноним), POST, PATCH | GET: rate limit по IP; POST/PATCH: JWT | 30/мин/IP; 20/мин/user | `payment_request_created/updated` |
+| `/api/health` | GET | — (для uptime-мониторов) | 30/мин/IP | — |
 
 Общие правила:
 - **Auth**: заголовок `Authorization: Bearer <supabase_access_token>`; невалидный/отсутствующий → `401`.
@@ -164,3 +165,22 @@ Telegram выполняется ДО ответа на webhook (ограниче
 Защита: 10/мин/IP, body ≤ 10 КБ, лог с дедупликацией — пара
 (директива, blocked-uri) логируется не чаще раза в час. Всегда `204`
 (даже на мусор), `405` на не-POST. Смотреть: Vercel → Functions → `[csp-report]`.
+
+## GET /api/health
+
+Проба готовности для uptime-мониторов. Без auth, 30/мин/IP,
+`Cache-Control: no-store`. Значения env никогда не возвращаются, только флаги.
+
+```json
+{ "ok": true, "time": "2026-10-13T08:00:00.000Z",
+  "checks": { "supabase": "ok", "rateLimitStore": "durable", "auditLog": "on" } }
+```
+
+- `supabase`: `ok` | `fail`. Пинг PostgREST с anon-ключом
+  (`GET /rest/v1/profiles?select=id&limit=1`, RLS отдаёт `[]`), таймаут 2 с.
+- `rateLimitStore`: `durable` если заданы `UPSTASH_REDIS_REST_URL` и
+  `UPSTASH_REDIS_REST_TOKEN`, иначе `memory`.
+- `auditLog`: `on` если задан `SUPABASE_SERVICE_ROLE_KEY`, иначе `off`.
+
+Ответы: `200` при `ok: true`; `503` с тем же телом при `ok: false`
+(Supabase недоступен); `405` не-GET; `429`.
