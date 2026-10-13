@@ -22,6 +22,7 @@ import {
   type UTXO,
 } from '@/lib/crypto/btc-tx';
 import { estimateBtcFee, simulateTransfer, type SimCoin } from '@/lib/crypto/simulate';
+import { BroadcastOutcomeUnknownError, isBroadcastOutcomeUnknown } from '@/lib/crypto/broadcast-error';
 
 const NET = bitcoin.networks.bitcoin;
 const PRIV = new Uint8Array(32).fill(1);
@@ -178,6 +179,21 @@ describe('sendBtc: signs at the reviewed fee rate', () => {
     expect(keyCopy.every((b) => b === 0)).toBe(true);
   });
 
+  it('broadcast outcome unknown reaches the caller with the txid, and the key is still wiped', async () => {
+    const posted: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith(`/address/${FROM_WPKH}/utxo`)) return new Response(JSON.stringify(UTXOS));
+      if (init?.method === 'POST') { posted.push(String(init.body)); throw new TypeError('Failed to fetch'); }
+      if (url.endsWith('/status')) return textResponse('Transaction not found', 404);
+      throw new Error(`unexpected fetch ${url}`);
+    }));
+    const err = await sendBtc('blob', 'pw', TO_WPKH, 0.0006, FROM_WPKH, { feeRateSatVb: 12 }).catch((e) => e);
+    expect(err).toBeInstanceOf(BroadcastOutcomeUnknownError);
+    expect(err.hash).toBe(bitcoin.Transaction.fromHex(posted[0]).getId());
+    expect(posted).toEqual([posted[0], posted[0]]); // same bytes to both explorers, nothing rebuilt
+    expect(keyCopy.every((b) => b === 0)).toBe(true);
+  });
+
   it('rate above the cap is refused before decrypting the key', async () => {
     const { posted } = chainFetch();
     await expect(sendBtc('blob', 'pw', TO_WPKH, 0.0006, FROM_WPKH, { feeRateSatVb: 600 }))
@@ -257,10 +273,79 @@ describe('broadcastBtcTx: one fallback on network error / 5xx, never on a reject
     await expect(broadcastBtcTx(rawHex)).resolves.toBe(txid);
   });
 
-  it('both unreachable → BTC_BROADCAST_UNAVAILABLE after exactly one retry', async () => {
+  it('both unreachable and the txid unknown → BroadcastOutcomeUnknownError(txid) after one retry and a lookup', async () => {
     const f = vi.fn().mockRejectedValue(new TypeError('offline'));
     vi.stubGlobal('fetch', f);
-    await expect(broadcastBtcTx(rawHex)).rejects.toMatchObject({ code: 'BTC_BROADCAST_UNAVAILABLE' });
+    const err = await broadcastBtcTx(rawHex).catch((e) => e);
+    expect(err).toBeInstanceOf(BroadcastOutcomeUnknownError);
+    expect(isBroadcastOutcomeUnknown(err)).toBe(true);
+    expect(err.hash).toBe(txid);
+    expect(f.mock.calls.map((c) => c[0])).toEqual([
+      'https://blockstream.info/api/tx',
+      'https://mempool.space/api/tx',
+      `https://blockstream.info/api/tx/${txid}/status`,
+      `https://mempool.space/api/tx/${txid}/status`,
+    ]);
+    expect(f.mock.calls.filter((c) => c[1]?.method === 'POST')).toHaveLength(2); // never a third POST
+  });
+});
+
+describe('broadcastBtcTx: both explorers failed at the transport level → look the txid up', () => {
+  let rawHex = '';
+  let txid = '';
+  beforeEach(async () => {
+    rawHex = await buildSignedTx(PRIV, UTXOS, TO_WPKH, FROM_WPKH, 60_000n, 10);
+    txid = bitcoin.Transaction.fromHex(rawHex).getId();
+  });
+
+  const statusJson = (confirmed: boolean) => new Response(JSON.stringify({ confirmed }), { status: 200 });
+
+  it('POST lost on both, Blockstream knows the txid (mempool) → success', async () => {
+    const f = vi.fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(textResponse('Service Unavailable', 503))
+      .mockResolvedValueOnce(statusJson(false));
+    vi.stubGlobal('fetch', f);
+    await expect(broadcastBtcTx(rawHex)).resolves.toBe(txid);
+    expect(f.mock.calls[2][0]).toBe(`https://blockstream.info/api/tx/${txid}/status`);
+  });
+
+  it('429 + 502, Blockstream 404, mempool.space knows it → success', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(textResponse('Too Many Requests', 429))
+      .mockResolvedValueOnce(textResponse('Bad Gateway', 502))
+      .mockResolvedValueOnce(textResponse('Transaction not found', 404))
+      .mockResolvedValueOnce(statusJson(true));
+    vi.stubGlobal('fetch', f);
+    await expect(broadcastBtcTx(rawHex)).resolves.toBe(txid);
+    expect(f.mock.calls[3][0]).toBe(`https://mempool.space/api/tx/${txid}/status`);
+  });
+
+  it('both explorers answer 404 for the txid → unknown, not an ordinary error', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(textResponse('upstream', 500))
+      .mockResolvedValueOnce(textResponse('upstream', 500))
+      .mockResolvedValue(textResponse('Transaction not found', 404));
+    vi.stubGlobal('fetch', f);
+    await expect(broadcastBtcTx(rawHex)).rejects.toMatchObject({ name: 'BroadcastOutcomeUnknownError', hash: txid });
+  });
+
+  it('a 200 that is not the explorer status JSON (captive portal) does not count as found', async () => {
+    const f = vi.fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValue(textResponse('<html>Login to Wi-Fi</html>', 200));
+    vi.stubGlobal('fetch', f);
+    await expect(broadcastBtcTx(rawHex)).rejects.toBeInstanceOf(BroadcastOutcomeUnknownError);
+  });
+
+  it('a 4xx rejection stays a definitive error and is not looked up', async () => {
+    const reason = 'sendrawtransaction RPC error: {"code":-25,"message":"bad-txns-inputs-missingorspent"}';
+    const f = vi.fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(textResponse(reason, 400));
+    vi.stubGlobal('fetch', f);
+    await expect(broadcastBtcTx(rawHex)).rejects.toMatchObject({ code: 'BTC_BROADCAST_REJECTED', detail: reason });
     expect(f).toHaveBeenCalledTimes(2);
   });
 });
