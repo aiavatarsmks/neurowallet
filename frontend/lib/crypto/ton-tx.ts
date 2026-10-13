@@ -75,8 +75,9 @@ export function isValidTonAddress(addr: string): boolean {
 // ─── Balances ─────────────────────────────────────────────────────────────────
 
 /**
- * Native TON balance. Бросает при сетевой ошибке/не-2xx (см. fetchTonBalance
- * для варианта с 0). `apiKey` — только server-side.
+ * Native TON balance. Бросает при сетевой ошибке, не-2xx (в т.ч. 429) и
+ * кривом ответе: сбой провайдера никогда не превращается в 0. `apiKey` —
+ * только server-side.
  */
 export async function fetchTonBalanceStrict(address: string, apiKey?: string): Promise<number> {
   if (!address || !isValidTonAddress(address)) return 0;
@@ -86,8 +87,10 @@ export async function fetchTonBalanceStrict(address: string, apiKey?: string): P
   );
   if (!res.ok) throw new Error(`toncenter ${res.status}`);
   const data = await res.json();
-  if (data.error || data.result === undefined) throw new Error('toncenter: bad response');
-  return parseInt(data.result, 10) / 1e9;
+  if (data?.error || data?.ok === false || data?.result === undefined) throw new Error('toncenter: bad response');
+  const nano = Number(data.result);
+  if (!Number.isFinite(nano)) throw new Error('toncenter: bad response');
+  return nano / 1e9;
 }
 
 /** USDT (jetton) on TON. Бросает при ошибке. `apiKey` — только server-side. */
@@ -108,20 +111,20 @@ export async function fetchUsdtTonBalanceStrict(address: string, apiKey?: string
   }
 }
 
+/**
+ * Client-side (keyless) TON balance. Rejects on any provider failure, incl.
+ * toncenter 429: balances.ts then marks TON unavailable instead of showing 0.
+ */
 export async function fetchTonBalance(address: string): Promise<number> {
-  try {
-    return await fetchTonBalanceStrict(address);
-  } catch {
-    return 0;
-  }
+  return fetchTonBalanceStrict(address);
 }
 
+/**
+ * Client-side (keyless) USDT-TON balance. Rejects on provider failure; an
+ * undeployed jetton wallet (USDT never received) is a real 0.
+ */
 export async function fetchUsdtTonBalance(address: string): Promise<number> {
-  try {
-    return await fetchUsdtTonBalanceStrict(address);
-  } catch {
-    return 0;
-  }
+  return fetchUsdtTonBalanceStrict(address);
 }
 
 // ─── Transaction history ──────────────────────────────────────────────────────
