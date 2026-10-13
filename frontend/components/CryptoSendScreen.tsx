@@ -451,8 +451,23 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
     setTxHash('');
   };
 
-  // ─── Real ETH send ────────────────────────────────────────────────────────
+  // ─── Send (all chains) ────────────────────────────────────────────────────
+  // Re-entrancy guard: decrypting takes seconds (scrypt N=2^17) while the UI
+  // stays responsive, so a double Enter / key repeat / double tap used to start
+  // parallel sends (two distinct TRX / USDT TRC-20 transfers). The ref is set
+  // synchronously, before any await, and cleared only when the attempt ends.
+  const sendInFlightRef = useRef(false);
   const handleConfirmSend = async () => {
+    if (sendInFlightRef.current) return;
+    sendInFlightRef.current = true;
+    try {
+      await confirmSendOnce();
+    } finally {
+      sendInFlightRef.current = false;
+    }
+  };
+
+  const confirmSendOnce = async () => {
     if (isDemo || !data.implemented) {
       // Placeholder for BTC/SOL/USDT — show success screen (no real tx)
       setTxHash(`demo-${coin.toLowerCase()}-${Date.now().toString(36)}`);
@@ -755,9 +770,12 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
               type="password"
               value={password}
               onChange={(e) => { setPassword(e.target.value); setPwError(''); }}
-              onKeyDown={(e) => e.key === 'Enter' && password && handleConfirmSend()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && password && !sending && !e.repeat) void handleConfirmSend();
+              }}
+              disabled={sending}
               placeholder={t('csPasswordPlaceholder')}
-              className="w-full bg-transparent text-white text-sm outline-none placeholder:text-[#3A6045]"
+              className="w-full bg-transparent text-white text-sm outline-none placeholder:text-[#3A6045] disabled:opacity-50"
               style={{ caretColor: '#00FF7F' }}
             />
           </div>
