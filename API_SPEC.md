@@ -8,7 +8,7 @@
 | Endpoint | Метод | Auth | Rate limit | Audit-события |
 |---|---|---|---|---|
 | `/api/tg-auth` | POST | HMAC initData (login) | 10/мин/IP | `tg_auth_login` |
-| `/api/neura-chat` | POST | Supabase JWT | 20/мин/user | `ai_chat_requested`, `ai_chat_completed`, `ai_chat_failed` |
+| `/api/neura-chat` | POST | Supabase JWT | 20/мин/user, 200/сутки/user, глобально `NEURA_CHAT_DAILY_MAX` | `ai_chat_requested`, `ai_chat_completed`, `ai_chat_failed` |
 | `/api/tx-history` | GET | Supabase JWT | 30/мин/user | `tx_history_requested` |
 | `/api/balances` | GET | Supabase JWT | 40/мин/user | — (read-only, опрос каждые 30 с) |
 | `/api/tg-notify` | POST | Supabase JWT | 10/мин/user | `telegram_notification_requested/sent/failed` |
@@ -56,10 +56,28 @@ freshness `auth_date` ≤ 15 минут, наличие `user.id`.
 
 Прокси к OpenRouter (`openai/gpt-4o-mini`), персона «Нейра». Body:
 `{ messages: [{role,content}], walletContext?: {балансы/публичные адреса}, lang?: 'ru'|'en' }`.
-История обрезается до последних 12 сообщений, `max_tokens: 500`.
+`max_tokens: 500`.
+
+Фильтрация входа (`lib/server/neura-chat-input.ts`):
+- `messages`: только `role` = `user` | `assistant` и строковый `content`
+  (клиентский `system` выкидывается), последние 12, каждое **обрезается** до
+  2000 символов (не 400: клиент шлёт весь чат целиком).
+- `walletContext`: allowlist. Балансы `eth, btc, sol, trx, ton, usdt, usdtTrc,
+  usdtTon` и цены `ethEur, btcEur, solEur, trxEur, tonEur` принимаются только
+  как конечные числа (clamp 0..1e12 и 0..1e7), адреса `ethAddr, btcAddr,
+  solAddr, tronAddr, tonAddr` только по regex своего чейна (как в tx-history).
+  Всё остальное отбрасывается.
+- Тело запроса ≤ 256 КБ (Next.js bodyParser, больше → `413`).
+
+Лимиты: 20/мин на пользователя; 200/сутки на пользователя
+(`checkDailyBudget('neura-chat-user:<id>')`); глобально
+`NEURA_CHAT_DAILY_MAX`/сутки (по умолчанию 5000). Дневные счётчики тратятся
+только валидными запросами.
 
 Ответы: `200 { reply }` либо `200 { error }` (дружелюбная ошибка апстрима);
-`400` пустые messages; `401`; `429`; `500` нет ключа.
+`400` нет валидных messages; `401`; `429 { error }` (минутный лимит, дневной
+лимит пользователя или глобальный бюджет; `error`: готовый RU/EN текст для
+показа); `500` нет ключа.
 `OPENROUTER_API_KEY` — server-only, в браузер не попадает.
 
 ## GET /api/tx-history
