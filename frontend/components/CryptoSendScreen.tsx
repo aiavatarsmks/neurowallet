@@ -7,6 +7,7 @@ import { coinLabel, COIN_PICKER_ORDER } from '@/lib/coin-labels';
 import { DEMO_HOLDING } from '@/lib/demo-data';
 import { sanitizeAmountInput, COIN_DECIMALS, amountToDecimalString } from '@/lib/display-format';
 import { emitNotification } from '@/lib/notifications-client';
+import { buildTxSentNotice, postTxSentNotice } from '@/lib/tg-notify-client';
 import { looksLikeTonDnsName, resolveName, type ResolvableChain } from '@/lib/name-resolvers';
 import { simulateTransfer, isBlocked, estimateFeeNative, FEE_CURRENCY, type SimulationResult, type SimWarning } from '@/lib/crypto/simulate';
 import { assessRecipient, type RiskAssessment } from '@/lib/risk/engine';
@@ -147,7 +148,10 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   useEffect(() => {
     setCoin(initialCoin);
     setAddress(initialAddress);
-    setAmount(initialAmount);
+    // Same precision rule as typing: the review must show exactly what gets
+    // signed (the libs truncate to the chain's decimals). A non-plain decimal
+    // (e.g. exponent form) is dropped rather than "sanitized" into another number.
+    setAmount(/^\d*\.?\d*$/.test(initialAmount) ? sanitizeAmountInput(initialAmount, COIN_DECIMALS[initialCoin]) : '');
     setStep('form');
     setPassword('');
     setPwError('');
@@ -451,6 +455,24 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
     setTxHash('');
   };
 
+  /**
+   * Best-effort Telegram notice in the /api/tg-notify contract:
+   * { kind: 'tx_sent', coin, amount, to, hash, lang }. `amount` is the decimal
+   * string the user typed (never String(number): 1e-7 fails validation). If a
+   * field does not fit the server format, the notice is skipped. Never throws.
+   */
+  const notifyTelegramTxSent = async (hash: string, traceId: string) => {
+    try {
+      if (!localStorage.getItem('tg_user_id')) return;
+      const body = buildTxSentNotice({ coin, amount, to: address.trim(), hash, lang });
+      if (!body) return;
+      const { data: s } = await supabase.auth.getSession();
+      const token = s.session?.access_token;
+      if (!token) return;
+      await postTxSentNotice(body, token, traceId);
+    } catch { /* уведомление не критично */ }
+  };
+
   // ─── Send (all chains) ────────────────────────────────────────────────────
   // Re-entrancy guard: decrypting takes seconds (scrypt N=2^17) while the UI
   // stays responsive, so a double Enter / key repeat / double tap used to start
@@ -558,27 +580,10 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       // Fire-and-forget — never blocks or breaks the send flow.
       void upgradeStoredKeystoreIfWeak(password);
 
-      // Push-уведомление в Telegram (если пользователь залогинен через TG)
-      const tgId = typeof window !== 'undefined' ? localStorage.getItem('tg_user_id') : null;
-      if (tgId) {
-        const { data } = await supabase.auth.getSession();
-        const token = data.session?.access_token;
-        const shortAddr = address.trim().slice(0, 6) + '...' + address.trim().slice(-4);
-        const msg = lang === 'en'
-          ? `✅ <b>Transaction sent</b>\n\n💸 ${amountNum} ${coinLabel(coin)}\n📤 To address: <code>${shortAddr}</code>\n🔗 TX: <code>${hash.slice(0, 16)}...</code>`
-          : `✅ <b>Транзакция отправлена</b>\n\n💸 ${amountNum} ${coinLabel(coin)}\n📤 На адрес: <code>${shortAddr}</code>\n🔗 TX: <code>${hash.slice(0, 16)}...</code>`;
-        if (token) {
-          fetch('/api/tg-notify', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
-              'x-trace-id': traceId,
-            },
-            body: JSON.stringify({ message: msg }),
-          }).catch(() => {/* silent — уведомление не критично */});
-        }
-      }
+      // Telegram push (only for Telegram logins). The server composes the text
+      // from validated fields; detached so nothing here can reach the catch
+      // below and report an already broadcast transfer as failed.
+      void notifyTelegramTxSent(hash, traceId);
     } catch (e: unknown) {
       track('send_failed', { coin }, traceId);
       finalizeDraft('failed');
