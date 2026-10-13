@@ -54,7 +54,13 @@ UPDATE/DELETE **на уровне БД** — даже для service role.
 **Каталог событий** (что пишет код сейчас):
 `tg_auth_login`, `ai_chat_requested`, `ai_chat_completed`, `ai_chat_failed`,
 `tx_history_requested`, `telegram_notification_requested`,
-`telegram_notification_sent`, `telegram_notification_failed`, `neuro_id_resolved`.
+`telegram_notification_sent`, `telegram_notification_failed`, `neuro_id_resolved`,
+`session_started` (`{ method: 'email' }`, пишет `/api/device-ping` раз на вкладку
+после SIGNED_IN; для Telegram-аккаунтов не пишется, у них есть `tg_auth_login`).
+
+`/api/security-feed` фильтрует allowlist action'ов **в запросе**
+(`.in('action', FEED_ACTIONS)`, limit 30), поэтому частые события
+(`tx_history_requested`, `ai_chat_*`) не вытесняют входы из ленты.
 
 ### public.analytics_events — продуктовая аналитика (задача 1.1)
 Вставка только через `POST /api/track` (service role, allowlist имён событий
