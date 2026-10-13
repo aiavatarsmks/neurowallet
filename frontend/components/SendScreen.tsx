@@ -88,7 +88,8 @@ function persistSavedContacts(contacts: Contact[]): void {
 
 export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCryptoTransfer }) => {
   const { isDemo } = useAuth();
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
+  const numLocale = lang === 'en' ? 'en-US' : 'ru-RU';
   const [step, setStep] = useState<SendStep>('contacts');
   const [selected, setSelected] = useState<Contact | null>(null);
   const [savedContacts, setSavedContacts] = useState<Contact[]>([]);
@@ -391,7 +392,7 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
         </div>
         <div>
           <p className="text-white text-xl font-bold">
-            {t('sendDoneTitle').replace('{amt}', amountNum.toLocaleString('ru-RU', { maximumFractionDigits: 6 })).replace('{currency}', selectedCurrency)}
+            {t('sendDoneTitle').replace('{amt}', amountNum.toLocaleString(numLocale, { maximumFractionDigits: 6 })).replace('{currency}', selectedCurrency)}
           </p>
           <p className="text-[#3A6045] text-sm mt-1">{t('sendDoneJustNow').replace('{name}', selected?.name ?? '')}</p>
         </div>
@@ -660,11 +661,14 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
             <p className="text-[#3A6045] text-xs mt-2">{selectedMeta.short}</p>
           </div>
 
+          {/* Crypto: the note is never sent on-chain (no memo support), so it is
+              labelled as a private note to avoid "I added a comment" confusion. */}
           <input
             type="text"
             value={note}
             onChange={(event) => setNote(event.target.value)}
-            placeholder={t('sendNotePlaceholder')}
+            placeholder={isCrypto(selectedCurrency) ? t('sendPrivateNotePlaceholder') : t('sendNotePlaceholder')}
+            aria-label={isCrypto(selectedCurrency) ? t('sendPrivateNotePlaceholder') : t('sendNotePlaceholder')}
             className="w-full rounded-2xl px-4 py-3.5 text-white text-sm bg-transparent outline-none"
             style={{ background: '#0D1A10', border: '1px solid rgba(0,255,127,0.1)' }}
           />
@@ -714,7 +718,7 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
             <div className="flex justify-between gap-4">
               <span className="text-[#3A6045] text-sm">{t('sendAmountLabel')}</span>
               <span className="text-[#00FF7F] text-sm font-bold">
-                {amountNum.toLocaleString('ru-RU', { maximumFractionDigits: 6 })} {selectedMeta.short}
+                {amountNum.toLocaleString(numLocale, { maximumFractionDigits: 6 })} {selectedMeta.short}
               </span>
             </div>
             {selected.address && (
@@ -725,7 +729,7 @@ export const SendScreen: React.FC<SendScreenProps> = ({ onAvatarState, onSendCry
             )}
             {note && (
               <div className="flex justify-between gap-4">
-                <span className="text-[#3A6045] text-sm">{t('sendNoteLabel')}</span>
+                <span className="text-[#3A6045] text-sm">{isCrypto(selectedCurrency) ? t('sendPrivateNoteLabel') : t('sendNoteLabel')}</span>
                 <span className="text-white text-sm text-right">{note}</span>
               </div>
             )}
