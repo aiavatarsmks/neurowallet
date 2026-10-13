@@ -1,9 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { setupPin } from '@/lib/pin';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 interface PinSetupProps {
-  walletPassword: string;
+  /**
+   * @deprecated Ignored. The PIN no longer wraps the wallet password (lib/pin.ts
+   * stores a verifier only). Callers verify the password before showing this
+   * screen and do not need to keep it in state.
+   */
+  walletPassword?: string;
   onComplete: () => void;
   onSkip?: () => void;
   allowSkip?: boolean;
@@ -11,13 +16,18 @@ interface PinSetupProps {
 
 const DIGITS = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
 
-export const PinSetup: React.FC<PinSetupProps> = ({ walletPassword, onComplete, onSkip, allowSkip = true }) => {
+export const PinSetup: React.FC<PinSetupProps> = ({ onComplete, onSkip, allowSkip = true }) => {
   const { t } = useLanguage();
   const [step,    setStep]    = useState<'enter' | 'confirm'>('enter');
   const [pin,     setPin]     = useState('');
   const [first,   setFirst]   = useState('');
   const [error,   setError]   = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Parents pass inline callbacks; read the latest one from a ref so a parent
+  // re-render while the PIN is being saved does not save (and complete) twice.
+  const onCompleteRef = useRef(onComplete);
+  useEffect(() => { onCompleteRef.current = onComplete; }, [onComplete]);
 
   const handleDigit = useCallback((d: string) => {
     if (loading) return;
@@ -49,8 +59,8 @@ export const PinSetup: React.FC<PinSetupProps> = ({ walletPassword, onComplete, 
 
     // Match — save PIN
     setLoading(true);
-    setupPin(walletPassword, pin)
-      .then(() => onComplete())
+    setupPin(pin)
+      .then(() => onCompleteRef.current())
       .catch(() => {
         setLoading(false);
         setError(t('pinSaveError'));
@@ -58,7 +68,7 @@ export const PinSetup: React.FC<PinSetupProps> = ({ walletPassword, onComplete, 
         setStep('enter');
         setFirst('');
       });
-  }, [pin, step, first, walletPassword, onComplete, t]);
+  }, [pin, step, first, t]);
 
   const dots = Array.from({ length: 4 }, (_, i) => i < pin.length);
 

@@ -1,5 +1,15 @@
 # Задача: починить Demo mode и PIN gate
 
+> **Статус на 2026-10-13: выполнено.**
+> - Fix 1: на экране PIN под разделителем «или» есть кнопка «✦ Войти в демо-режим»
+>   (`components/PinEntry.tsx`, проп `onDemo`; `pages/wallet.tsx` передаёт `enterDemo`
+>   из `useAuth()`). Там же появилось «Забыли PIN?»: пароль кошелька, затем новый PIN.
+> - Fix 2 был сделан раньше.
+> - Описание ниже местами устарело: PIN больше не хранит и не возвращает пароль
+>   кошелька, `onSuccess` вызывается без аргументов, а `wallet.tsx` держит флаг
+>   `unlocked` вместо `walletPassword`. Поэтому `lib/pin.ts` и `PinSetup.tsx` всё же
+>   поменялись (подробности в `KEY_MANAGEMENT.md`, раздел «PIN»).
+
 ## Контекст
 
 NeuroWallet — Telegram Mini App. Фронтенд: Next.js + Supabase auth.

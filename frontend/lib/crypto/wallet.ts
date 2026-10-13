@@ -13,6 +13,7 @@ import { tronAddressFromPrivKey } from './tron-tx';
 import { tonAddressFromPrivKey } from './ton-tx';
 import { btcSegwitAddressFromPrivKey } from './btc-tx';
 import { encryptBytes } from './aes';
+import { clearLegacyXorKeys } from '@/lib/legacy-storage-cleanup';
 import { generateDualValidMnemonic, tonSchemeForPhrase, tonSeedFromMnemonic } from './ton-mnemonic';
 import {
   tonMnemonicEnabled,
@@ -55,15 +56,32 @@ export function validateMnemonic(phrase: string): boolean {
   return bip39.validateMnemonic(phrase.trim().toLowerCase().replace(/\s+/g, ' '));
 }
 
-export async function importWalletFromMnemonic(
-  mnemonic: string,
-  password: string,
-): Promise<CryptoWallet> {
+/** Normalize a user-typed phrase and reject anything that is not a 12/24-word BIP39 phrase. */
+function normalizeValidPhrase(mnemonic: string): string {
   const normalized = mnemonic.trim().toLowerCase().replace(/\s+/g, ' ');
   const wordCount = normalized.split(' ').length;
   if ((wordCount !== 12 && wordCount !== 24) || !bip39.validateMnemonic(normalized)) {
     throw new Error('Неверная мнемоническая фраза. Проверь порядок и написание слов.');
   }
+  return normalized;
+}
+
+/**
+ * ETH address (m/44'/60'/0'/0/0) for a phrase, without encrypting anything.
+ * Cheap enough to call before the password step, so the import flow can warn
+ * when the phrase belongs to a different wallet than the one on this device.
+ * Throws the same error as importWalletFromMnemonic for an invalid phrase.
+ */
+export function ethAddressFromMnemonic(mnemonic: string): string {
+  const normalized = normalizeValidPhrase(mnemonic);
+  return ethers.HDNodeWallet.fromPhrase(normalized, '', "m/44'/60'/0'/0/0").address;
+}
+
+export async function importWalletFromMnemonic(
+  mnemonic: string,
+  password: string,
+): Promise<CryptoWallet> {
+  const normalized = normalizeValidPhrase(mnemonic);
 
   // ETH — BIP44 m/44'/60'/0'/0/0
   const ethWallet = ethers.HDNodeWallet.fromPhrase(normalized, '', "m/44'/60'/0'/0/0");
@@ -174,13 +192,7 @@ export function clearWalletFromStorage(): void {
   clearLegacyXorKeys();
 }
 
-// Legacy XOR-scheme blobs (scheme removed in commit 4b3704e). No code reads
-// them anymore; test wallets from that era must re-import from mnemonic.
-// Purged on every app start so stale key-derived material doesn't linger
-// in localStorage.
-const LEGACY_XOR_KEYS = ['wallet_sol_xor', 'wallet_btc_xor', 'wallet_tron_xor', 'wallet_ton_xor'];
-
-export function clearLegacyXorKeys(): void {
-  if (typeof window === 'undefined') return;
-  LEGACY_XOR_KEYS.forEach((k) => localStorage.removeItem(k));
-}
+// Legacy XOR cleanup lives in a dependency-free module so pages/_app.tsx can
+// run it on every start without pulling this file's crypto stack into the
+// shared chunk. Re-exported here for existing imports.
+export { clearLegacyXorKeys };

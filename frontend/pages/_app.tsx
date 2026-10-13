@@ -8,7 +8,9 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { LanguageProvider } from '@/contexts/LanguageContext';
 import { DisplayCurrencyProvider } from '@/contexts/DisplayCurrencyContext';
 import { useTelegramInit } from '@/hooks/useTelegram';
-import { clearLegacyXorKeys } from '@/lib/crypto/wallet';
+// Light module on purpose: importing lib/crypto/wallet here pulled ethers,
+// bip39, @ton/ton and bitcoinjs-lib into the shared _app chunk of every page.
+import { clearLegacyXorKeys } from '@/lib/legacy-storage-cleanup';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 // Inter self-hosted at build time (next/font): no runtime request to

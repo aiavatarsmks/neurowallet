@@ -176,27 +176,40 @@ export async function fetchTonTxs(address: string): Promise<TonTx[]> {
 
 // ─── Send TON ─────────────────────────────────────────────────────────────────
 
+// Memory hygiene (same rule as the SOL/BTC senders): the Buffer copy of the
+// seed and keyPair.secretKey are zeroed in `finally`, on success and on every
+// error path. The caller (transactions.ts) zeroes tonPrivBytes itself. Copies
+// made inside @ton/crypto / tweetnacl are out of reach (JS limitation).
+
 export async function sendTonRaw(
   tonPrivBytes: Uint8Array,
   toAddress:    string,
   amountTon:    number,
 ): Promise<string> {
-  const keyPair = keyPairFromSeed(Buffer.from(tonPrivBytes));
-  const client  = getTonClient();
-  const wallet  = client.open(
-    WalletContractV4.create({ publicKey: keyPair.publicKey, workchain: 0 }),
-  );
+  const seed = Buffer.from(tonPrivBytes);
+  let secretKey: Buffer | null = null;
+  try {
+    const keyPair = keyPairFromSeed(seed);
+    secretKey = keyPair.secretKey;
+    const client  = getTonClient();
+    const wallet  = client.open(
+      WalletContractV4.create({ publicKey: keyPair.publicKey, workchain: 0 }),
+    );
 
-  const seqno = await wallet.getSeqno();
-  await wallet.sendTransfer({
-    secretKey: keyPair.secretKey,
-    seqno,
-    messages: [
-      internal({ to: toAddress, value: toNano(amountToDecimalString(amountTon, 9)), bounce: false }),
-    ],
-  });
+    const seqno = await wallet.getSeqno();
+    await wallet.sendTransfer({
+      secretKey,
+      seqno,
+      messages: [
+        internal({ to: toAddress, value: toNano(amountToDecimalString(amountTon, 9)), bounce: false }),
+      ],
+    });
 
-  return `ton:seqno:${seqno}`;
+    return `ton:seqno:${seqno}`;
+  } finally {
+    seed.fill(0);
+    secretKey?.fill(0);
+  }
 }
 
 // ─── Send USDT Jetton ─────────────────────────────────────────────────────────
@@ -206,40 +219,48 @@ export async function sendUsdtTonRaw(
   toAddress:    string,
   amountUsdt:   number,
 ): Promise<string> {
-  const keyPair = keyPairFromSeed(Buffer.from(tonPrivBytes));
-  const client  = getTonClient();
-  const walletContract = WalletContractV4.create({ publicKey: keyPair.publicKey, workchain: 0 });
-  const wallet = client.open(walletContract);
+  const seed = Buffer.from(tonPrivBytes);
+  let secretKey: Buffer | null = null;
+  try {
+    const keyPair = keyPairFromSeed(seed);
+    secretKey = keyPair.secretKey;
+    const client  = getTonClient();
+    const walletContract = WalletContractV4.create({ publicKey: keyPair.publicKey, workchain: 0 });
+    const wallet = client.open(walletContract);
 
-  const usdtMaster = client.open(JettonMaster.create(Address.parse(USDT_TON_MASTER)));
-  const jettonWalletAddr = await usdtMaster.getWalletAddress(walletContract.address);
+    const usdtMaster = client.open(JettonMaster.create(Address.parse(USDT_TON_MASTER)));
+    const jettonWalletAddr = await usdtMaster.getWalletAddress(walletContract.address);
 
-  const seqno = await wallet.getSeqno();
+    const seqno = await wallet.getSeqno();
 
-  // Build Jetton transfer body (op 0x0f8a7ea5)
-  const jettonTransferBody = beginCell()
-    .storeUint(0x0f8a7ea5, 32)
-    .storeUint(BigInt(Date.now()), 64)
-    .storeCoins(BigInt(Math.round(amountUsdt * 1e6)))
-    .storeAddress(Address.parse(toAddress))
-    .storeAddress(walletContract.address)
-    .storeBit(false)
-    .storeCoins(toNano('0.01'))
-    .storeBit(false)
-    .endCell();
+    // Build Jetton transfer body (op 0x0f8a7ea5)
+    const jettonTransferBody = beginCell()
+      .storeUint(0x0f8a7ea5, 32)
+      .storeUint(BigInt(Date.now()), 64)
+      .storeCoins(BigInt(Math.round(amountUsdt * 1e6)))
+      .storeAddress(Address.parse(toAddress))
+      .storeAddress(walletContract.address)
+      .storeBit(false)
+      .storeCoins(toNano('0.01'))
+      .storeBit(false)
+      .endCell();
 
-  await wallet.sendTransfer({
-    secretKey: keyPair.secretKey,
-    seqno,
-    messages: [
-      internal({
-        to:     jettonWalletAddr,
-        value:  toNano('0.05'),
-        bounce: true,
-        body:   jettonTransferBody,
-      }),
-    ],
-  });
+    await wallet.sendTransfer({
+      secretKey,
+      seqno,
+      messages: [
+        internal({
+          to:     jettonWalletAddr,
+          value:  toNano('0.05'),
+          bounce: true,
+          body:   jettonTransferBody,
+        }),
+      ],
+    });
 
-  return `ton:seqno:${seqno}`;
+    return `ton:seqno:${seqno}`;
+  } finally {
+    seed.fill(0);
+    secretKey?.fill(0);
+  }
 }
