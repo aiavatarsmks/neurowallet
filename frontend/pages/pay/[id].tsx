@@ -9,6 +9,8 @@ import Head from 'next/head';
 import QRCode from 'qrcode';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { coinLabel } from '@/lib/coin-labels';
+import { amountToDecimalString, COIN_DECIMALS } from '@/lib/display-format';
+import { buildPaymentUri, isPaymentUriCoin } from '@/lib/payment-uri';
 
 interface PayRequest {
   id: string;
@@ -17,6 +19,20 @@ interface PayRequest {
   amount?: number | null;
   address?: string;
   expires_at?: string;
+}
+
+/** Amount from the API (a JSON number) → plain decimal, never exponent form. */
+function payRequestQrPayload(coin: string | undefined, address: string, amount: number | null | undefined): string {
+  if (!isPaymentUriCoin(coin)) return address;
+  let decimal: string | null = null;
+  if (typeof amount === 'number' && Number.isFinite(amount) && amount > 0) {
+    try {
+      decimal = amountToDecimalString(amount, COIN_DECIMALS[coin]);
+    } catch {
+      decimal = null;
+    }
+  }
+  return buildPaymentUri(coin, address, decimal);
 }
 
 export default function PayPage() {
@@ -37,12 +53,15 @@ export default function PayPage() {
       .catch(() => setError(true));
   }, [id]);
 
+  // QR: payment URI with the requested amount (the old QR dropped it); the
+  // text shown and copied below stays the raw address.
+  const qrPayload = req?.address ? payRequestQrPayload(req.coin, req.address, req.amount) : '';
   useEffect(() => {
-    if (!req?.address) return;
-    QRCode.toDataURL(req.address, { errorCorrectionLevel: 'M', margin: 2, width: 190 })
+    if (!qrPayload) return;
+    QRCode.toDataURL(qrPayload, { errorCorrectionLevel: 'M', margin: 2, width: 190 })
       .then(setQr)
       .catch(() => setQr(''));
-  }, [req?.address]);
+  }, [qrPayload]);
 
   const copy = () => {
     if (!req?.address) return;

@@ -541,6 +541,7 @@ export const translations = {
     csErrGenericRetry: 'Ошибка отправки. Попробуй ещё раз.',
     txLoadFailed: 'Не удалось загрузить историю',
     txRetry: 'Повторить',
+    receiveSolSplNote: 'Принимаются только SOL. Токены SPL (USDT/USDC в сети Solana) пока не отображаются.',
   },
   en: {
     // ── Landing / onboarding carousel (pages/index.tsx) ──────────────────────
@@ -1082,6 +1083,7 @@ export const translations = {
     csErrGenericRetry: 'Send error. Please try again.',
     txLoadFailed: "Couldn't load history",
     txRetry: 'Retry',
+    receiveSolSplNote: 'Only SOL is supported. SPL tokens (USDT/USDC on Solana) are not shown yet.',
   },
 } as const;
 
