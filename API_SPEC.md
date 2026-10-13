@@ -22,10 +22,11 @@
 | `/api/contacts` | GET, POST, PATCH, DELETE | Supabase JWT | 30/мин/user | `contact_saved/updated/deleted` (только id+монета) |
 | `/api/payment-request` | GET (аноним), POST, PATCH | GET: rate limit по IP; POST/PATCH: JWT | 30/мин/IP; 20/мин/user | `payment_request_created/updated` |
 | `/api/health` | GET | нет (для uptime-мониторов) | 30/мин/IP | нет |
+| `/api/sol-rpc` | POST | Supabase JWT | 60/мин/user | нет (публичные данные) |
 
 Общие правила:
 - **Auth**: заголовок `Authorization: Bearer <supabase_access_token>`; невалидный/отсутствующий → `401`.
-- **Rate limit** → `429`. Ограничитель in-memory per-instance (см. `lib/server/api-security.ts`) — переезд на durable store запланирован в Фазе 1.1.
+- **Rate limit** → `429`. Ограничитель durable (Upstash Redis, общий для всех инстансов) при заданных `UPSTASH_REDIS_REST_*`, иначе in-memory per-instance (см. `lib/server/api-security.ts`, `/api/health` показывает режим).
 - Приватные ключи, seed, пароли **не принимаются и не возвращаются** ни одним endpoint'ом.
 
 ---
@@ -184,3 +185,20 @@ Telegram выполняется ДО ответа на webhook (ограниче
 
 Ответы: `200` при `ok: true`; `503` с тем же телом при `ok: false`
 (Supabase недоступен); `405` не-GET; `429`.
+
+## POST /api/sol-rpc
+
+Запасной путь браузера к Solana (`lib/crypto/sol-rpc.ts`). Официальный
+`api.mainnet-beta.solana.com` отвечает 403 на любой запрос с заголовком
+Origin (то есть из любого браузера и Telegram WebView), а сервер Origin не
+шлёт. Браузер сначала идёт в `solana-rpc.publicnode.com`, сюда только при сбое.
+
+- Auth: Supabase JWT, 60/мин/user. Тело: `{ method, params }`.
+- Только методы кошелька (`SOL_RPC_METHODS`); `params` массив ≤ 4 элементов, ≤ 8 КБ.
+- `sendTransaction` принимается только в форме, которую строит сам кошелёк
+  (одна подпись, legacy-сообщение с 3 ключами, System Program transfer,
+  валидная ed25519-подпись), иначе `400 {code:-32602, message:'Transaction not allowed'}`.
+- Апстримы по порядку: `SOLANA_RPC_URL` (серверный env, платный провайдер,
+  если задан), `api.mainnet-beta.solana.com`, `solana-rpc.publicnode.com`.
+- Ответ как в JSON-RPC: `{ result }` или `{ error: { code, message } }` (ошибка ноды
+  пробрасывается как есть); все апстримы недоступны → `502`.

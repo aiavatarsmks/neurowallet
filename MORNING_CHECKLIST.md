@@ -157,3 +157,25 @@
        `claim_links`/`claim_events` и `analytics_events` события воронки.
 
 ⚠️ **Real-money (v2 testnet / v3 escrow) НЕ трогал** — только v1 demo, per DECISION_2.8.
+
+
+---
+
+# 🌙 Ночь 2026-10-13: ревизия и починка (ветка `claude/night-audit-2026-10-13`)
+
+Полный отчёт и план: `PROD_READINESS_PLAN.md`. Ничего не влито в main и не выкачено.
+
+## Нужно от тебя
+- [ ] Посмотреть и влить PR `claude/night-audit-2026-10-13` → `main` (превью Vercel по ветке).
+- [ ] Supabase SQL Editor (main PRODUCTION): `0012_neuro_directory_private.sql`, затем `0013_payment_requests_status_only.sql`. Идемпотентные, внутри Verify и ROLLBACK.
+- [ ] Vercel env (Production + Preview): `SUPABASE_SERVICE_ROLE_KEY` (теперь обязателен: NeuroID resolve и защищённый Telegram id), `UPSTASH_REDIS_REST_URL`/`_TOKEN`, `TONCENTER_API_KEY`, `TRONGRID_API_KEY`, `ETHERSCAN_API_KEY`; по желанию `SOLANA_RPC_URL`, `NEURA_CHAT_DAILY_MAX`. Проверка: `GET /api/health`.
+- [ ] Лимит расходов на ключ OpenRouter.
+- [ ] Домен `neurowallet.tg` (служебные email Telegram-аккаунтов): зарегистрировать или убедиться, что в Supabase нет своего SMTP.
+- [ ] BotFather-тексты из `COMPLIANCE_TG.md`.
+- [ ] Смоук в Telegram после деплоя: балансы всех сетей без «не удалось обновить», review SOL и USDT TRC-20, PIN-экран («Забыли PIN?», демо).
+
+## Решения
+- [ ] Модель хранения ключей (CloudStorage сейчас и/или MPC), минимальная длина пароля.
+- [ ] Переделка входа через Telegram (пароль из токена бота).
+- [ ] Включить 24-словную TON-схему после ручной проверки в Tonkeeper.
+- [ ] Мемо для TON, SPL/USDC, ENS, RBF, вкладка «Карты», Sentry, платные RPC.
