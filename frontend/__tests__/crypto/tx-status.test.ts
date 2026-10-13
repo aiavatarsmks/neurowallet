@@ -139,9 +139,10 @@ describe('getTxStatus: SOL (getSignatureStatuses)', () => {
     });
   });
 
-  it('429 → TxStatusFetchError with the status', async () => {
-    stubFetch(json({}, 429));
-    await expect(getTxStatus('SOL', SOL_SIG)).rejects.toMatchObject({ name: 'TxStatusFetchError', status: 429 });
+  it('429 everywhere → TxStatusFetchError (poller backs off)', async () => {
+    // Public RPC rate-limited and no proxy session in tests: sol-rpc gives up.
+    stubFetch(json({}, 429), json({}, 429));
+    await expect(getTxStatus('SOL', SOL_SIG)).rejects.toMatchObject({ name: 'TxStatusFetchError' });
   });
 });
 

@@ -25,6 +25,7 @@ vi.mock('@/lib/supabase', () => ({ supabase: { auth: { getSession: async () => (
 
 import {
   fetchRealBalances,
+  resetSharedBalances,
   fetchPrices,
   fetchBtcBalance,
   fetchSolBalance,
@@ -73,11 +74,12 @@ const USDT_RAW = '0x' + (25_500_000n).toString(16).padStart(64, '0'); // 25.5 US
 
 beforeEach(() => {
   localStorage.clear();
+  resetSharedBalances();
   routes = {
     'api.coingecko.com': { body: COINGECKO_OK },
     'blockstream.info': { body: BTC_STATS },
     'mempool.space': { body: BTC_STATS },
-    'api.mainnet-beta.solana.com': { body: { jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value: 2_500_000_000 } } },
+    'solana-rpc.publicnode.com': { body: { jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value: 2_500_000_000 } } },
   };
   vi.stubGlobal('fetch', fetchMock);
   fetchMock.mockClear();
@@ -113,6 +115,7 @@ describe('fetchRealBalances: honest per-asset failures', () => {
 
   it('a failed fetcher shows the last good value from the previous round', async () => {
     await fetchAll(); // round 1: everything fresh, cached
+    resetSharedBalances(); // next poll, past the shared-result window
     eth.getBalance.mockRejectedValue(new Error('down'));
     tron.fetchTrxBalance.mockRejectedValue(new Error('trongrid 429'));
     ton.fetchTonBalance.mockRejectedValue(new Error('toncenter 429'));
@@ -139,7 +142,7 @@ describe('fetchRealBalances: honest per-asset failures', () => {
       { body: { jsonrpc: '2.0', id: 1, result: {} } },
       { status: 429, body: {} },
     ]) {
-      routes['api.mainnet-beta.solana.com'] = r;
+      routes['solana-rpc.publicnode.com'] = r;
       await expect(fetchSolBalance(ADDR.sol)).rejects.toThrow();
     }
     const b = await fetchAll();
@@ -147,7 +150,7 @@ describe('fetchRealBalances: honest per-asset failures', () => {
   });
 
   it('an empty SOL account is a real 0', async () => {
-    routes['api.mainnet-beta.solana.com'] = { body: { jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value: 0 } } };
+    routes['solana-rpc.publicnode.com'] = { body: { jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value: 0 } } };
     expect(await fetchSolBalance(ADDR.sol)).toBe(0);
   });
 
@@ -286,5 +289,46 @@ describe('ton-tx balance fetchers', () => {
     expect(await real.fetchTonBalance(ADDR.ton)).toBe(2.5);
     routes = { 'toncenter.com': { body: { ok: true, result: '0' } } };
     expect(await real.fetchTonBalance(ADDR.ton)).toBe(0); // empty account = real 0
+  });
+});
+
+describe('fetchRealBalances: shared between screens', () => {
+  it('concurrent callers for the same wallet share one round of provider calls', async () => {
+    const [a, b, c] = await Promise.all([fetchAll(), fetchAll(), fetchAll()]);
+    expect(a).toBe(b);
+    expect(b).toBe(c);
+    expect(eth.getBalance).toHaveBeenCalledTimes(1);
+    expect(tron.fetchTrxBalance).toHaveBeenCalledTimes(1);
+  });
+  it('a different wallet is not served from the shared result', async () => {
+    await fetchAll();
+    await fetchRealBalances('0x' + '2'.repeat(40), ADDR.sol, ADDR.btc, ADDR.tron, ADDR.ton);
+    expect(eth.getBalance).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('prices: Kraken fallback when CoinGecko rate-limits', () => {
+  const KRAKEN_OK = {
+    error: [],
+    result: {
+      XXBTZEUR: { c: ['74753.3', '0.1'] }, XETHZEUR: { c: ['2262.61', '1'] }, SOLEUR: { c: ['96.8', '1'] },
+      TRXEUR: { c: ['0.294718', '1'] }, TONEUR: { c: ['1.233', '1'] }, USDTEUR: { c: ['0.8934', '1'] },
+      ZEURZUSD: { c: ['1.1181', '1'] },
+    },
+  };
+  it('CoinGecko 429 → Kraken prices, fresh, cached, with EUR/USD', async () => {
+    routes['api.coingecko.com'] = { status: 429, body: COINGECKO_429 };
+    routes['api.kraken.com'] = { body: KRAKEN_OK };
+    const p = await fetchPrices();
+    expect(p).toMatchObject({ btcEur: 74753.3, ethEur: 2262.61, trxEur: 0.294718, tonEur: 1.233, usdtEur: 0.8934, usdPerEur: 1.1181, stale: false });
+    expect(JSON.parse(localStorage.getItem(PRICE_CACHE) ?? '{}').btcEur).toBe(74753.3);
+  });
+  it('Kraken missing a coin → not cached, stale path', async () => {
+    routes['api.coingecko.com'] = { status: 429, body: COINGECKO_429 };
+    const partial = { error: [], result: { ...KRAKEN_OK.result, TRXEUR: undefined } };
+    routes['api.kraken.com'] = { body: partial };
+    const p = await fetchPrices();
+    expect(p.stale).toBe(true);
+    expect(localStorage.getItem(PRICE_CACHE)).toBeNull();
   });
 });

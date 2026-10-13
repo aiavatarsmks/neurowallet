@@ -22,6 +22,7 @@ import { ethers } from 'ethers';
 import { fetchUsdtTrc20Balance, fetchTrxBalance } from './tron-tx';
 import { fetchTonBalance, fetchUsdtTonBalance } from './ton-tx';
 import { getEthProvider } from './eth-provider';
+import { solRpc } from './sol-rpc';
 import { SUPPORTED_ASSETS, type AssetSymbol } from './assets';
 import { coinLabel } from '@/lib/coin-labels';
 import type { BalancesResponse } from '@/lib/balances-types';
@@ -30,7 +31,6 @@ import { PRICE_CACHE_KEY, PRICES_UPDATED_EVENT, usdPerEurOrNull, getCachedUsdPer
 // Re-exported for existing importers; the light module keeps _app small.
 export { PRICES_UPDATED_EVENT, getCachedUsdPerEur };
 
-const SOL_RPC    = 'https://api.mainnet-beta.solana.com';
 const USDT_ADDR  = '0xdAC17F958D2ee523a2206206994597C13D831ec7'; // ERC-20 Mainnet
 const ERC20_ABI  = ['function balanceOf(address) view returns (uint256)'];
 /** Blockstream first, mempool.space as fallback: same /address response shape. */
@@ -225,12 +225,76 @@ function writePriceCache(p: PriceData): void {
 }
 
 
+/**
+ * Second keyless price source: Kraken public ticker, one call for all six
+ * coins plus EUR/USD, CORS allowed. CoinGecko's free API answers 429 quickly
+ * for users behind shared mobile IPs; without a second source every such user
+ * saw stale or built-in prices.
+ */
+export const KRAKEN_TICKER_URL =
+  'https://api.kraken.com/0/public/Ticker?pair=XBTEUR,ETHEUR,SOLEUR,TRXEUR,TONEUR,USDTEUR,EURUSD';
+
+/** Kraken names some pairs with X/Z prefixes (XXBTZEUR); match both forms. */
+const KRAKEN_PAIRS = {
+  btcEur:  ['XXBTZEUR', 'XBTEUR'],
+  ethEur:  ['XETHZEUR', 'ETHEUR'],
+  solEur:  ['SOLEUR'],
+  trxEur:  ['TRXEUR'],
+  tonEur:  ['TONEUR'],
+  usdtEur: ['USDTEUR'],
+  eurUsd:  ['ZEURZUSD', 'EURUSD'],
+} as const;
+
+/**
+ * Kraken body → prices. Throws unless every coin has a price. Kraken has no
+ * rolling 24 h change, so the last known change is kept (0 without a cache).
+ */
+export function parseKrakenPrices(data: unknown, now: number, previous: PriceData | null): PriceData {
+  const body = (data ?? {}) as { error?: unknown; result?: Record<string, { c?: unknown }> };
+  if (Array.isArray(body.error) && body.error.length > 0) throw new Error('kraken: error');
+  const result = body.result ?? {};
+  const last = (names: readonly string[]): number => {
+    for (const n of names) {
+      const c = result[n]?.c;
+      const v = Array.isArray(c) ? Number(c[0]) : NaN;
+      if (positive(v)) return v;
+    }
+    throw new Error(`kraken: no price for ${names[0]}`);
+  };
+  let usdPerEur: number | null = null;
+  try { usdPerEur = usdPerEurOrNull(last(KRAKEN_PAIRS.eurUsd)); } catch { /* optional */ }
+  return {
+    btcEur:  last(KRAKEN_PAIRS.btcEur),
+    ethEur:  last(KRAKEN_PAIRS.ethEur),
+    solEur:  last(KRAKEN_PAIRS.solEur),
+    trxEur:  last(KRAKEN_PAIRS.trxEur),
+    tonEur:  last(KRAKEN_PAIRS.tonEur),
+    usdtEur: last(KRAKEN_PAIRS.usdtEur),
+    ethChange24h: previous?.ethChange24h ?? 0,
+    solChange24h: previous?.solChange24h ?? 0,
+    btcChange24h: previous?.btcChange24h ?? 0,
+    trxChange24h: previous?.trxChange24h ?? 0,
+    tonChange24h: previous?.tonChange24h ?? 0,
+    priceUpdatedAt: now,
+    fetchedAt: now,
+    usdPerEur,
+    stale: false,
+  };
+}
+
 async function refreshPrices(cached: PriceData | null): Promise<PriceData> {
   try {
     const res = await fetch(PRICES_URL);
     if (!res.ok) throw new Error(`coingecko ${res.status}`);
     const prices = parsePrices(await res.json(), Date.now());
     writePriceCache(prices);
+    return prices;
+  } catch { /* fall through to Kraken */ }
+  try {
+    const res = await fetch(KRAKEN_TICKER_URL);
+    if (!res.ok) throw new Error(`kraken ${res.status}`);
+    const prices = parseKrakenPrices(await res.json(), Date.now(), cached);
+    writePriceCache(prices); // complete real prices: safe to cache
     return prices;
   } catch {
     if (cached) return { ...cached, stale: true };
@@ -307,20 +371,10 @@ export async function fetchBtcBalance(address: string): Promise<BtcBalance> {
 
 export async function fetchSolBalance(address: string): Promise<number> {
   if (!address) return 0;
-  const res = await fetch(SOL_RPC, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'getBalance',
-      params: [address],
-    }),
-  });
-  if (!res.ok) throw new Error(`solana rpc ${res.status}`);
-  const json = await res.json();
-  if (json?.error) throw new Error(`solana rpc: ${String(json.error.message ?? json.error.code ?? 'error')}`);
-  const lamports = json?.result?.value;
+  // Failover across browser-allowed RPCs and our proxy (lib/crypto/sol-rpc.ts);
+  // any failure rejects, so the asset is reported unavailable, never a fake 0.
+  const value = await solRpc<{ value?: unknown }>('getBalance', [address]);
+  const lamports = value?.value;
   if (!finite(lamports)) throw new Error('solana rpc: malformed body');
   return lamports / 1e9; // lamports → SOL
 }
@@ -387,7 +441,40 @@ function writeLastBalances(key: string, prev: LastBalances['b'], fresh: Partial<
 
 // ─── Public API ────────────────────────────────────────────────────────────
 
-export async function fetchRealBalances(
+/**
+ * Home, Assets, Send and the Neura chat each poll balances every 30 s on their
+ * own. Without sharing, one open screen set made 3-4× the provider calls and
+ * hit the keyless limits (toncenter 1 rps, TronGrid, public Solana RPC) with
+ * 429s, which then showed up as "couldn't refresh". Concurrent callers for the
+ * same address set share one request, and a result is reused for a few seconds.
+ */
+const BALANCES_REUSE_MS = 10_000;
+const balancesShared = new Map<string, { promise: Promise<WalletBalances>; at: number }>();
+
+/** Test hook: forget shared results. */
+export function resetSharedBalances(): void {
+  balancesShared.clear();
+}
+
+export function fetchRealBalances(
+  ethAddress:  string,
+  solAddress:  string,
+  btcAddress   = '',
+  tronAddress  = '',
+  tonAddress   = '',
+): Promise<WalletBalances> {
+  const key = [ethAddress, solAddress, btcAddress, tronAddress, tonAddress].join('|');
+  const now = Date.now();
+  const hit = balancesShared.get(key);
+  if (hit && now - hit.at < BALANCES_REUSE_MS) return hit.promise;
+  const promise = fetchRealBalancesUncached(ethAddress, solAddress, btcAddress, tronAddress, tonAddress);
+  balancesShared.set(key, { promise, at: now });
+  // A rejected round must not be reused.
+  promise.catch(() => { if (balancesShared.get(key)?.promise === promise) balancesShared.delete(key); });
+  return promise;
+}
+
+async function fetchRealBalancesUncached(
   ethAddress:  string,
   solAddress:  string,
   btcAddress   = '',

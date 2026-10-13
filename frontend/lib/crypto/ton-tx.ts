@@ -119,12 +119,43 @@ export async function fetchTonBalance(address: string): Promise<number> {
   return fetchTonBalanceStrict(address);
 }
 
+const TONAPI = 'https://tonapi.io/v2';
+
 /**
- * Client-side (keyless) USDT-TON balance. Rejects on provider failure; an
- * undeployed jetton wallet (USDT never received) is a real 0.
+ * USDT-TON balance from tonapi in ONE request (keyless). The toncenter path
+ * needs 2-3 jsonRPC calls, and keyless toncenter allows 1 rps, so together
+ * with the TON balance it hit 429 on almost every page load. tonapi has its
+ * own budget. 404 "has no jetton wallet" = USDT never received = real 0.
+ */
+export async function fetchUsdtTonBalanceTonapi(address: string): Promise<number> {
+  if (!address || !isValidTonAddress(address)) return 0;
+  const raw = Address.parse(address).toRawString();
+  const res = await fetch(`${TONAPI}/accounts/${encodeURIComponent(raw)}/jettons/${USDT_TON_MASTER}`);
+  if (res.status === 404) {
+    const body = await res.json().catch(() => null) as { error?: unknown } | null;
+    if (typeof body?.error === 'string' && body.error.includes('has no jetton wallet')) return 0;
+    throw new Error('tonapi 404');
+  }
+  if (!res.ok) throw new Error(`tonapi ${res.status}`);
+  const data = await res.json() as { balance?: unknown; jetton?: { decimals?: unknown } };
+  const decimals = typeof data?.jetton?.decimals === 'number' ? data.jetton.decimals : 6;
+  if (typeof data?.balance !== 'string' || !/^\d+$/.test(data.balance) || decimals !== 6) {
+    throw new Error('tonapi: bad response');
+  }
+  return Number(BigInt(data.balance)) / 1e6;
+}
+
+/**
+ * Client-side (keyless) USDT-TON balance: tonapi first (one call), toncenter
+ * as the fallback. Rejects when both fail; an undeployed jetton wallet (USDT
+ * never received) is a real 0.
  */
 export async function fetchUsdtTonBalance(address: string): Promise<number> {
-  return fetchUsdtTonBalanceStrict(address);
+  try {
+    return await fetchUsdtTonBalanceTonapi(address);
+  } catch {
+    return fetchUsdtTonBalanceStrict(address);
+  }
 }
 
 // ─── Transaction history ──────────────────────────────────────────────────────

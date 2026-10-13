@@ -24,11 +24,14 @@ const connectSrc = [
   'https://ethereum-rpc.publicnode.com',
   'https://1rpc.io',
   'https://eth.drpc.org',
-  'https://api.mainnet-beta.solana.com',
+  // Solana: the official api.mainnet-beta RPC answers 403 to any browser
+  // Origin, so the browser uses publicnode and falls back to /api/sol-rpc.
+  'https://solana-rpc.publicnode.com',
   'https://blockstream.info',
   'https://mempool.space',
   'https://api.etherscan.io',
   'https://api.coingecko.com',
+  'https://api.kraken.com', // price fallback when CoinGecko rate-limits
   'https://api.trongrid.io',
   'https://toncenter.com',
   'https://tonapi.io',

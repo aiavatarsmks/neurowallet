@@ -60,6 +60,7 @@ describe('next.config.js security headers', () => {
       'https://gonkabroker.com',
       'https://*.gonkabroker.com',
       'https://cloudflare-eth.com',
+      'https://api.mainnet-beta.solana.com', // 403 to any browser Origin
     ]) {
       expect(connect).not.toContain(gone);
     }
@@ -68,7 +69,7 @@ describe('next.config.js security headers', () => {
       'https://ethereum-rpc.publicnode.com',
       'https://1rpc.io',
       'https://eth.drpc.org',
-      'https://api.mainnet-beta.solana.com',
+      'https://solana-rpc.publicnode.com',
       'https://blockstream.info',
       'https://mempool.space',
       'https://api.etherscan.io',

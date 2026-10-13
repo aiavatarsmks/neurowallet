@@ -13,7 +13,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import { getEthProvider } from '@/lib/crypto/eth-provider';
-import { fetchRealBalances, fetchPrices } from '@/lib/crypto/balances';
+import { fetchRealBalances, fetchPrices, parseKrakenPrices, KRAKEN_TICKER_URL } from '@/lib/crypto/balances';
+import { solRpc } from '@/lib/crypto/sol-rpc';
 import { estimateFeeNative, simulateTransfer, type SimCoin } from '@/lib/crypto/simulate';
 import { estimateTronFee } from '@/lib/crypto/tron-tx';
 import { getTxStatus } from '@/lib/crypto/tx-status';
@@ -56,6 +57,28 @@ describe.skipIf(!LIVE)('live: every chain answers through our code', () => {
     for (const k of ['ethEur', 'btcEur', 'solEur', 'trxEur', 'tonEur', 'usdtEur'] as const) {
       expect(p[k], k).toBeGreaterThan(0);
     }
+  }, TIMEOUT);
+
+  it('prices: Kraken fallback answers with every coin', async () => {
+    const res = await fetch(KRAKEN_TICKER_URL);
+    expect(res.ok).toBe(true);
+    const p = parseKrakenPrices(await res.json(), Date.now(), null);
+    expect(p.btcEur).toBeGreaterThan(1000);
+    expect(p.trxEur).toBeGreaterThan(0);
+  }, TIMEOUT);
+
+  it('Solana: the browser RPC (publicnode) answers with a browser Origin', async () => {
+    const res = await fetch('https://solana-rpc.publicnode.com', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://neurowallet.tech' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getBalance', params: [ADDR.sol] }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.result?.value).toBeGreaterThanOrEqual(0);
+    // and the shared client path
+    const r = await solRpc<{ value: number }>('getLatestBlockhash', [{ commitment: 'finalized' }]);
+    expect(r).toBeTruthy();
   }, TIMEOUT);
 
   it('fee estimates answer for every coin', async () => {

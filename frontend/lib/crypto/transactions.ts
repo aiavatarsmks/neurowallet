@@ -21,9 +21,9 @@ import {
 } from './ton-tx';
 import { decryptBytes } from './aes';
 import { getEthProvider } from './eth-provider';
+import { solRpc } from './sol-rpc';
 
 // ETH RPC: shared FallbackProvider over keyless public endpoints (eth-provider.ts).
-const SOL_RPC   = 'https://api.mainnet-beta.solana.com';
 const USDT_ADDR = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
 const USDT_ABI  = ['function transfer(address to, uint256 amount) returns (bool)'];
 
@@ -76,18 +76,10 @@ export async function sendUsdt(
 // To send: decrypt solEnc blob with password → SOL privkey in memory → zero after use.
 
 async function getSolanaBlockhash(): Promise<string> {
-  const res = await fetch(SOL_RPC, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      jsonrpc: '2.0', id: 1,
-      method: 'getLatestBlockhash',
-      params: [{ commitment: 'finalized' }],
-    }),
-  });
-  const data = await res.json();
-  if (data.error) throw new Error('Solana RPC: ' + data.error.message);
-  return data.result.value.blockhash as string;
+  const r = await solRpc<{ value?: { blockhash?: unknown } }>('getLatestBlockhash', [{ commitment: 'finalized' }]);
+  const blockhash = r?.value?.blockhash;
+  if (typeof blockhash !== 'string' || !blockhash) throw new Error('Solana RPC: malformed blockhash');
+  return blockhash;
 }
 
 /**
@@ -167,18 +159,9 @@ export async function sendSol(
 
     // 7. Broadcast
     const txBase64 = btoa(String.fromCharCode(...tx));
-    const res = await fetch(SOL_RPC, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0', id: 1,
-        method: 'sendTransaction',
-        params: [txBase64, { encoding: 'base64', preflightCommitment: 'finalized' }],
-      }),
-    });
-
-    const data = await res.json();
-    if (data.error) throw new Error(data.error.message || 'Solana RPC error');
+    // Failover is safe: the same signed bytes give the same signature on any
+    // node. A real node error (e.g. rent-exempt preflight) surfaces as is.
+    await solRpc('sendTransaction', [txBase64, { encoding: 'base64', preflightCommitment: 'finalized' }]);
 
     // Return tx signature as base58 string (Solana explorer format)
     return bs58.encode(signature);

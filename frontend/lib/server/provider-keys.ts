@@ -8,6 +8,8 @@
  *   TONCENTER_API_KEY  → заголовок X-API-Key       (toncenter.com)
  *   TRONGRID_API_KEY   → заголовок TRON-PRO-API-KEY (api.trongrid.io)
  *   ETHERSCAN_API_KEY  → query-параметр apikey      (api.etherscan.io v2)
+ *   SOLANA_RPC_URL     → полный URL платного Solana RPC (Helius/QuickNode/…),
+ *                        ключ обычно внутри URL; используется /api/sol-rpc первым
  *
  * Ключ не задан → пустые заголовки / undefined: поведение как раньше
  * (бесплатные лимиты провайдера).
@@ -28,6 +30,12 @@ export function trongridApiKey(): string | undefined {
 
 export function etherscanApiKey(): string | undefined {
   return readKey('ETHERSCAN_API_KEY');
+}
+
+/** Keyed Solana RPC URL (https only), or undefined. The key usually sits in the URL. */
+export function solanaRpcUrl(): string | undefined {
+  const v = readKey('SOLANA_RPC_URL');
+  return v && v.startsWith('https://') ? v : undefined;
 }
 
 export function toncenterHeaders(): Record<string, string> {

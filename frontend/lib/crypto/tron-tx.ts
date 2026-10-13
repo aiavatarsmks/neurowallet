@@ -189,14 +189,29 @@ export async function fetchTronAccountBalances(
   return parseTronAccount(await res.json());
 }
 
+/**
+ * Keyless browser path: TRX and USDT TRC-20 come from the same /v1/accounts
+ * response, and balances.ts asks for both at once. Share the in-flight request
+ * so a refresh is one TronGrid call, not two (keyless TronGrid answers 429
+ * quickly).
+ */
+const tronAccountInflight = new Map<string, Promise<TronAccountBalances>>();
+function sharedTronAccount(address: string): Promise<TronAccountBalances> {
+  const hit = tronAccountInflight.get(address);
+  if (hit) return hit;
+  const p = fetchTronAccountBalances(address).finally(() => tronAccountInflight.delete(address));
+  tronAccountInflight.set(address, p);
+  return p;
+}
+
 /** Throws on provider failure (no silent 0); a non-activated account is 0. */
 export async function fetchUsdtTrc20Balance(address: string): Promise<number> {
-  return (await fetchTronAccountBalances(address)).usdtTrc;
+  return (await sharedTronAccount(address)).usdtTrc;
 }
 
 /** Throws on provider failure (no silent 0); a non-activated account is 0. */
 export async function fetchTrxBalance(address: string): Promise<number> {
-  return (await fetchTronAccountBalances(address)).trx;
+  return (await sharedTronAccount(address)).trx;
 }
 
 // ─── Local verification of TronGrid-built transactions (no blind signing) ────

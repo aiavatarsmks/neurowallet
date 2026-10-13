@@ -20,6 +20,7 @@
  */
 
 import { ETH_RPC_URLS } from './eth-provider';
+import { solRpc } from './sol-rpc';
 
 export type TxStatusCoin = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TRX' | 'TRC20' | 'TON' | 'USDT_TON';
 export type TxState = 'pending' | 'confirmed' | 'failed' | 'unknown';
@@ -60,7 +61,6 @@ export const BTC_NOT_FOUND_GRACE_MS = 10 * 60_000;
 // with a plain eth_getTransactionReceipt so status polling stays dependency-light.
 const ETH_RPCS: readonly string[] = ETH_RPC_URLS;
 const BTC_APIS = ['https://blockstream.info/api', 'https://mempool.space/api'];
-const SOL_RPC = 'https://api.mainnet-beta.solana.com';
 const TRONGRID = 'https://api.trongrid.io';
 const TONCENTER = 'https://toncenter.com/api/v2';
 
@@ -163,16 +163,14 @@ async function btcStatus(txid: string, ctx: TxStatusContext): Promise<TxStatus> 
 
 async function solStatus(signature: string, ctx: TxStatusContext): Promise<TxStatus> {
   if (!/^[1-9A-HJ-NP-Za-km-z]{64,90}$/.test(signature)) return { state: 'unknown', reason: TX_STATUS_REASON.BAD_HASH };
-  const res = await postJson(SOL_RPC, {
-    jsonrpc: '2.0',
-    id: 1,
-    method: 'getSignatureStatuses',
-    params: [[signature], { searchTransactionHistory: true }],
-  }, ctx.signal);
-  if (!res.ok) throw new TxStatusFetchError(res.status, `Solana RPC HTTP ${res.status}`);
-  const json = asObj(await readJson(res));
-  if (!json || json.error) throw new TxStatusFetchError(res.status, 'Solana RPC error');
-  const value = asObj(json.result)?.value;
+  let result: unknown;
+  try {
+    result = await solRpc('getSignatureStatuses', [[signature], { searchTransactionHistory: true }], { signal: ctx.signal });
+  } catch (e) {
+    if (isAbort(e)) throw e;
+    throw new TxStatusFetchError(null, e instanceof Error ? e.message.slice(0, 120) : 'Solana RPC error');
+  }
+  const value = asObj(result)?.value;
   const st = Array.isArray(value) ? asObj(value[0]) : null;
   if (!st) {
     // Never seen: still propagating, or the blockhash expired and it never landed.
