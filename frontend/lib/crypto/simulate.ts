@@ -19,6 +19,7 @@ import {
   isValidTonAddress,
 } from './transactions';
 import { fetchUTXOs, getBtcFeeRate } from './btc-tx';
+import { getEthProvider } from './eth-provider';
 
 export type SimCoin = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TRX' | 'TRC20' | 'TON' | 'USDT_TON';
 
@@ -55,8 +56,6 @@ export interface SimulateParams {
   /** Таймаут RPC-части симуляции, мс. */
   timeoutMs?: number;
 }
-
-const ETH_RPC = 'https://cloudflare-eth.com';
 
 /** Нативная монета, которой платится комиссия за перевод данной монеты. */
 export const FEE_CURRENCY: Record<SimCoin, { coin: SimCoin; label: string; eurKey: keyof SimulateParams['eurRates'] }> = {
@@ -105,8 +104,7 @@ export async function estimateFeeNative(params: Pick<SimulateParams, 'coin' | 'a
   const { coin } = params;
 
   if (coin === 'ETH' || coin === 'USDT') {
-    const provider = new ethers.JsonRpcProvider(ETH_RPC);
-    const feeData = await provider.getFeeData();
+    const feeData = await getEthProvider().getFeeData();
     // ethers шлёт EIP-1559 tx и проверяет баланс по maxFeePerGas (≈2× base fee).
     // Оценка по legacy gasPrice занижала резерв → «почти MAX» проходил review
     // и падал с insufficient funds. Берём верхнюю границу.

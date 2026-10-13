@@ -1,6 +1,12 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { simulateTransfer, isBlocked, type SimCoin } from '@/lib/crypto/simulate';
 
+// The ETH fee estimate goes through the shared ETH provider. Keep tests off the
+// network: it never answers, like an unreachable RPC.
+vi.mock('@/lib/crypto/eth-provider', () => ({
+  getEthProvider: () => ({ getFeeData: () => new Promise(() => { /* висит вечно */ }) }),
+}));
+
 const BALANCES: Record<SimCoin, number> = {
   ETH: 1, BTC: 0.05, SOL: 10, USDT: 100, TRX: 500, TRC20: 50, TON: 20, USDT_TON: 30,
 };
