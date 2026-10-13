@@ -23,6 +23,7 @@ const DEMO_ASSETS = DEMO_HOLDINGS.map((h) => ({
   priceEUR: h.priceEUR,
 }));
 
+// Decorative sparkline from the demo dataset: not real price history, so demo mode only.
 const CHART_BARS = DEMO_CHART_BARS;
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -152,21 +153,23 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
           </p>
         )}
 
-        {/* Mini chart */}
-        <div className="mt-3 h-12 flex items-end gap-px">
-          {CHART_BARS.map((h, i) => (
-            <div
-              key={i}
-              className="flex-1 rounded-sm"
-              style={{
-                height: `${h}%`,
-                background: i === CHART_BARS.length - 1
-                  ? '#00FF7F'
-                  : `rgba(0,255,127,${0.15 + i * 0.035})`,
-              }}
-            />
-          ))}
-        </div>
+        {/* Mini chart: demo only (decorative bars, not real price history) */}
+        {isDemo && (
+          <div className="mt-3 h-12 flex items-end gap-px">
+            {CHART_BARS.map((h, i) => (
+              <div
+                key={i}
+                className="flex-1 rounded-sm"
+                style={{
+                  height: `${h}%`,
+                  background: i === CHART_BARS.length - 1
+                    ? '#00FF7F'
+                    : `rgba(0,255,127,${0.15 + i * 0.035})`,
+                }}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Fiat row (hidden when real wallet active) */}
