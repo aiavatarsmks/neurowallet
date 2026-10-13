@@ -18,6 +18,8 @@ import { txFacts } from '@/lib/neura/facts';
 import { completeDemoTask } from '@/lib/demo-guide';
 import { fetchExplanation } from '@/lib/neura/explain-client';
 import { supabase } from '@/lib/supabase';
+import { TX_STATUS_REASON } from '@/lib/crypto/tx-status';
+import { useTxStatus } from '@/hooks/useTxStatus';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useDisplayCurrency } from '@/contexts/DisplayCurrencyContext';
@@ -195,8 +197,28 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
 
   const data       = COINS[coin];
   const amountNum  = parseFloat(amount) || 0;
+  // Shown to the user: the typed decimal string, never JS number formatting (1e-7).
+  const displayAmount = amount.replace(/\.$/, '').replace(/^\./, '0.') || '0';
   const available  = balances[coin];
   const insufficient = amountNum > 0 && amountNum > available;
+
+  // ── Post-send on-chain status (done screen) ──────────────────────────────
+  // Broadcast ≠ success: a USDT TRC-20 transfer can fail with OUT_OF_ENERGY
+  // (TRX burned), a SOL tx can expire. Read-only polling; demo never polls.
+  const statusEnabled = step === 'done' && !isDemo && data.implemented && !!txHash;
+  const tonStatusWallet = statusEnabled && (coin === 'TON' || coin === 'USDT_TON')
+    ? localStorage.getItem('wallet_ton_address') ?? undefined
+    : undefined;
+  const txStatus = useTxStatus({ coin, hash: txHash, enabled: statusEnabled, tonWalletAddress: tonStatusWallet });
+
+  const statusTrackedRef = useRef('');
+  useEffect(() => {
+    if (!statusEnabled || (txStatus.state !== 'confirmed' && txStatus.state !== 'failed')) return;
+    const key = `${txHash}:${txStatus.state}`;
+    if (statusTrackedRef.current === key) return;
+    statusTrackedRef.current = key;
+    track(txStatus.state === 'confirmed' ? 'send_confirmed' : 'send_failed_onchain', { coin }, traceRef.current || undefined);
+  }, [statusEnabled, txStatus.state, txHash, coin]);
 
   // MAX: для нативной монеты (комиссия платится ею же) резервируем оценку
   // комиссии, иначе review всегда блокирует «недостаточно средств».
@@ -630,23 +652,79 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   // ─── Done screen ──────────────────────────────────────────────────────────
   if (step === 'done') {
     const shortHash = txHash ? `${txHash.slice(0, 10)}…${txHash.slice(-6)}` : null;
+    const failedOnchain = statusEnabled && txStatus.state === 'failed';
+    const isTonFamily = coin === 'TON' || coin === 'USDT_TON';
+    const isTron = coin === 'TRX' || coin === 'TRC20';
+
+    const failReasonText = (reason?: string): string => {
+      if (reason === 'OUT_OF_ENERGY') return t('csStatusReasonOutOfEnergy');
+      if (reason === 'REVERT' || reason === TX_STATUS_REASON.ETH_REVERTED) return t('csStatusReasonRevert');
+      if (reason === TX_STATUS_REASON.SOL_ERROR) return t('csStatusReasonSol');
+      return t('csStatusReasonCode').replace('{code}', reason || 'FAILED');
+    };
+
+    // Status line under the title. Honest TON wording: seqno moved = the wallet
+    // contract processed the message, not proof the jetton arrived.
+    const statusLine: { text: string; color: string; note?: string } | null = !statusEnabled
+      ? null
+      : txStatus.state === 'confirmed'
+        ? {
+            text: isTonFamily ? t('csStatusProcessed') : t('csStatusConfirmed'),
+            color: '#00FF7F',
+            note: coin === 'USDT_TON' ? t('csStatusUsdtTonNote') : undefined,
+          }
+        : txStatus.state === 'failed'
+          ? {
+              text: t('csStatusFailed').replace('{reason}', failReasonText(txStatus.reason)),
+              color: '#FF5252',
+              note: isTron ? t('csStatusTronFeeSpent') : undefined,
+            }
+          : txStatus.state === 'unknown'
+            ? {
+                text: t('csStatusUnknown'),
+                color: '#F7931A',
+                note: txStatus.reason === TX_STATUS_REASON.SOL_MAYBE_EXPIRED ? t('csStatusSolExpired')
+                  : txStatus.reason === TX_STATUS_REASON.BTC_NOT_FOUND ? t('csStatusNotFound')
+                  : t('csStatusCheckExplorer'),
+              }
+            : {
+                text: t('csStatusPending'),
+                color: '#F7931A',
+                note: txStatus.timedOut ? t('csStatusStopped') : undefined,
+              };
+
+    const accent = failedOnchain ? '#FF5252' : data.color;
     return (
       <div className="flex flex-col items-center justify-center px-6 py-12 text-center gap-6">
         <div
           className="w-20 h-20 rounded-full flex items-center justify-center"
-          style={{ background: data.bgColor, border: `2px solid ${data.color}` }}
+          style={{ background: failedOnchain ? 'rgba(255,82,82,0.12)' : data.bgColor, border: `2px solid ${accent}` }}
         >
-          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke={data.color}
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke={accent}
             strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="20 6 9 17 4 12"/>
+            {failedOnchain
+              ? <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>
+              : <polyline points="20 6 9 17 4 12"/>}
           </svg>
         </div>
 
         <div>
-          <p className="text-white text-xl font-bold">{t('csSent').replace('{amt}', String(amountNum)).replace('{coin}', coinLabel(coin))}</p>
+          <p className="text-white text-xl font-bold">
+            {failedOnchain
+              ? t('csStatusFailedTitle')
+              : t('csSent').replace('{amt}', displayAmount).replace('{coin}', coinLabel(coin))}
+          </p>
           <p className="text-[#3A6045] text-sm mt-1">
             {`${recipientName ? `${recipientName} • ` : ''}${isDemo ? t('csTxSentDemo') : t('csTxSentToNetwork')}`}
           </p>
+          {statusLine && (
+            <div className="mt-3" role="status" aria-live="polite">
+              <p className="text-sm font-semibold" style={{ color: statusLine.color }}>{statusLine.text}</p>
+              {statusLine.note && (
+                <p className="text-xs mt-1 text-[#7FBF9A] leading-relaxed">{statusLine.note}</p>
+              )}
+            </div>
+          )}
         </div>
 
         {txHash && (
@@ -693,7 +771,9 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         >
           <p className="text-[#00FF7F] text-xs font-semibold mb-1">{t('navNeura')}</p>
           <p className="text-white text-xs leading-relaxed">
-            {txHash
+            {failedOnchain
+              ? t('csNeuraFailedOnchain')
+              : txHash
               ? coin === 'TRX'
                 ? t('csNeuraDoneTrx')
                 : coin === 'TRC20'
@@ -740,7 +820,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         >
           <div className="flex justify-between text-xs">
             <span className="text-[#3A6045]">{t('csYouSend')}</span>
-            <span className="text-white font-bold">{amountNum} {coinLabel(coin)}</span>
+            <span className="text-white font-bold">{displayAmount} {coinLabel(coin)}</span>
           </div>
           <div className="flex justify-between text-xs">
             <span className="text-[#3A6045]">{t('csToAddress')}</span>
@@ -887,7 +967,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         >
           {([
             [t('csCoin'),   <span key="c" className="flex items-center gap-1.5"><span className="font-bold" style={{ color: data.color }}>{data.icon}</span><span className="text-white">{coinLabel(coin)}</span></span>],
-            [t('csAmount'),    <span key="a" className="text-white font-bold">{amountNum} {coinLabel(coin)}</span>],
+            [t('csAmount'),    <span key="a" className="text-white font-bold">{displayAmount} {coinLabel(coin)}</span>],
             [t('csFee'), feeNode],
             ...(realReview && sim?.balanceAfter != null
               ? [[t('csBalanceAfter'), <span key="ba" className="text-white">{fmtAmount(sim.balanceAfter)} {coinLabel(coin)}</span>]] as [string, React.ReactNode][]

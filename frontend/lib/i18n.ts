@@ -504,6 +504,25 @@ export const translations = {
     // ── Language switcher ─────────────────────────────────────────────────────
     languageRu: 'RU',
     languageEn: 'EN',
+
+    // ── night-send-flow ──
+    csStatusPending: '⏳ Ожидает подтверждения',
+    csStatusConfirmed: '✅ Подтверждено',
+    csStatusProcessed: '✅ Обработано сетью',
+    csStatusUsdtTonNote: 'Перевод USDT (jetton) завершится вскоре после этого.',
+    csStatusFailedTitle: 'Перевод не прошёл',
+    csStatusFailed: '❌ Не прошла: {reason}',
+    csStatusTronFeeSpent: 'Комиссия сети в TRX при этом списана.',
+    csStatusReasonOutOfEnergy: 'не хватило энергии (OUT_OF_ENERGY)',
+    csStatusReasonRevert: 'контракт отклонил перевод',
+    csStatusReasonSol: 'ошибка выполнения в сети Solana',
+    csStatusReasonCode: 'код {code}',
+    csStatusUnknown: '⚠️ Статус неизвестен',
+    csStatusSolExpired: 'Транзакция не найдена в сети и, возможно, истекла. Проверь историю, прежде чем отправлять ещё раз.',
+    csStatusNotFound: 'Транзакция пока не видна в сети. Проверь обозреватель, прежде чем отправлять ещё раз.',
+    csStatusCheckExplorer: 'Проверь статус в обозревателе.',
+    csStatusStopped: 'Автопроверка остановлена. Статус можно посмотреть в обозревателе.',
+    csNeuraFailedOnchain: 'Перевод не прошёл в сети. Сумма осталась на твоём адресе, списана только комиссия сети. Проверь баланс и причину, прежде чем пробовать снова.',
   },
   en: {
     // ── Landing / onboarding carousel (pages/index.tsx) ──────────────────────
@@ -1008,6 +1027,25 @@ export const translations = {
     // ── Language switcher ─────────────────────────────────────────────────────
     languageRu: 'RU',
     languageEn: 'EN',
+
+    // ── night-send-flow ──
+    csStatusPending: '⏳ Waiting for confirmation',
+    csStatusConfirmed: '✅ Confirmed',
+    csStatusProcessed: '✅ Processed by the network',
+    csStatusUsdtTonNote: 'The USDT (jetton) transfer completes shortly after.',
+    csStatusFailedTitle: 'Transfer failed',
+    csStatusFailed: '❌ Failed: {reason}',
+    csStatusTronFeeSpent: 'The network fee in TRX was still spent.',
+    csStatusReasonOutOfEnergy: 'out of energy (OUT_OF_ENERGY)',
+    csStatusReasonRevert: 'the contract rejected the transfer',
+    csStatusReasonSol: 'execution error on Solana',
+    csStatusReasonCode: 'code {code}',
+    csStatusUnknown: '⚠️ Status unknown',
+    csStatusSolExpired: 'The transaction was not found on the network and may have expired. Check your history before sending again.',
+    csStatusNotFound: 'The transaction is not visible on the network yet. Check the explorer before sending again.',
+    csStatusCheckExplorer: 'Check the status in the explorer.',
+    csStatusStopped: 'Automatic checking has stopped. You can follow the status in the explorer.',
+    csNeuraFailedOnchain: 'The transfer failed on-chain. The amount stayed at your address; only the network fee was spent. Check your balance and the reason before trying again.',
   },
 } as const;
 

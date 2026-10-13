@@ -27,6 +27,9 @@ const EVENTS: Record<string, readonly string[]> = {
   send_initiated: ['coin'],
   send_succeeded: ['coin'],
   send_failed: ['coin', 'reason_code'],
+  // post-send on-chain status (done screen polling) — coin only
+  send_confirmed: ['coin'],
+  send_failed_onchain: ['coin'],
   send_review_shown: ['coin'],
   send_review_blocked: ['coin', 'reason_code'],
   risk_flagged: ['coin', 'level', 'reason_code'],
