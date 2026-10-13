@@ -29,6 +29,7 @@ interface FeedEvent {
 
 const ACTION_ICON: Record<string, string> = {
   tg_auth_login: '🔑',
+  session_started: '🔐', // email sign-in, written by /api/device-ping
   risk_flagged: '🛡',
   risk_override_confirmed: '⚠️',
   tx_draft_created: '📝',
