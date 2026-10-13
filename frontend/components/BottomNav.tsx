@@ -6,6 +6,8 @@ type Tab = 'home' | 'send' | 'add' | 'cards' | 'wallet';
 interface BottomNavProps {
   active?: Tab;
   onTabChange?: (tab: Tab) => void;
+  /** While a transfer is being sent: rendered dimmed, taps ignored. */
+  disabled?: boolean;
 }
 
 const HomeIcon = () => (
@@ -37,8 +39,12 @@ const WalletIcon = () => (
   </svg>
 );
 
-export const BottomNav: React.FC<BottomNavProps> = ({ active = 'home', onTabChange }) => {
+export const BottomNav: React.FC<BottomNavProps> = ({ active = 'home', onTabChange, disabled = false }) => {
   const { t } = useLanguage();
+  const go = (tab: Tab) => {
+    if (disabled) return;
+    onTabChange?.(tab);
+  };
 
   const NAV_ITEMS = [
     { id: 'home'  as Tab, label: t('navHome'),  Icon: HomeIcon  },
@@ -55,7 +61,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({ active = 'home', onTabChan
         backdropFilter: 'blur(12px)',
         borderTop: '1px solid rgba(0,255,127,0.08)',
         zIndex: 50,
+        opacity: disabled ? 0.4 : 1,
+        transition: 'opacity 0.2s ease',
       }}
+      aria-disabled={disabled || undefined}
     >
       {/* Left two */}
       {NAV_ITEMS.slice(0, 2).map(({ id, label, Icon }) => {
@@ -63,8 +72,9 @@ export const BottomNav: React.FC<BottomNavProps> = ({ active = 'home', onTabChan
         return (
           <button
             key={id}
-            onClick={() => onTabChange?.(id)}
-            className="flex flex-col items-center gap-1 transition-all active:scale-90"
+            onClick={() => go(id)}
+            disabled={disabled}
+            className="flex flex-col items-center gap-1 transition-all active:scale-90 disabled:active:scale-100"
             style={{ color: isActive ? '#00FF7F' : '#3A6045' }}
           >
             <Icon />
@@ -76,8 +86,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({ active = 'home', onTabChan
       {/* Center FAB — Нейра */}
       <div className="flex flex-col items-center -mt-4 gap-0.5">
         <button
-          onClick={() => onTabChange?.('add')}
-          className="w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-90"
+          onClick={() => go('add')}
+          disabled={disabled}
+          aria-label={t('navNeura')}
+          className="w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-90 disabled:active:scale-100"
           style={{
             background: active === 'add'
               ? 'linear-gradient(135deg, #00FF7F, #00CC60)'
@@ -98,8 +110,9 @@ export const BottomNav: React.FC<BottomNavProps> = ({ active = 'home', onTabChan
         return (
           <button
             key={id}
-            onClick={() => onTabChange?.(id)}
-            className="flex flex-col items-center gap-1 transition-all active:scale-90"
+            onClick={() => go(id)}
+            disabled={disabled}
+            className="flex flex-col items-center gap-1 transition-all active:scale-90 disabled:active:scale-100"
             style={{ color: isActive ? '#00FF7F' : '#3A6045' }}
           >
             <Icon />

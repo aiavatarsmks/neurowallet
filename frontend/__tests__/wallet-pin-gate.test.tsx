@@ -155,6 +155,7 @@ describe('wallet page gates', () => {
     fireEvent.click(screen.getByRole('button', { name: 'pinSetupResetCta' }));
     expect(screen.getByTestId('reset-confirm')).toBeInTheDocument();
     expect(screen.getByText('keysDeleteWarn')).toBeInTheDocument();
+    expect(screen.getByText('keysDeleteBackupNote')).toBeInTheDocument(); // honest: the backup stays 30 days
     expect(localStorage.getItem('wallet_keystore')).toBe('ks');
 
     fireEvent.click(screen.getByRole('button', { name: 'keysDeleteCancel' }));

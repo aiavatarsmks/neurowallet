@@ -13,7 +13,8 @@
  *      keys from this device and opens the seed re-import (?recover=1).
  *      A crash does not delete anything by itself, and the app never stores
  *      the seed, so only the user's written seed phrase can restore access
- *      after a reset. The copy says exactly that.
+ *      after a reset. The copy says exactly that, and that the encrypted
+ *      backup stays on the device for 30 days before it is purged.
  *
  * Intentionally free of providers/hooks (no LanguageContext, no router) so it
  * still works even if a provider is what threw. Language is detected the same
@@ -131,6 +132,7 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
             }}
           >
             <p style={{ fontSize: 13, color: '#F7931A', lineHeight: 1.45 }}>{t('keysDeleteWarn')}</p>
+            <p style={{ fontSize: 12, color: '#F7931A', lineHeight: 1.45 }}>{t('keysDeleteBackupNote')}</p>
             <button
               onClick={this.safeReset}
               style={{

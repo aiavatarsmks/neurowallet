@@ -183,7 +183,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const enterDemo = () => {
     if (typeof window !== 'undefined') localStorage.setItem(DEMO_KEY, 'true');
-    supabase.auth.signOut();
+    // Local scope: demo (reachable from the PIN screen) ends the session on
+    // THIS device only. The default 'global' scope revoked the user's
+    // sessions on every device.
+    void supabase.auth.signOut({ scope: 'local' });
     setState({ user: null, isDemo: true, isLoading: false });
     track('demo_entered');
   };

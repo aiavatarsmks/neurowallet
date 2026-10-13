@@ -599,6 +599,7 @@ export default function OnboardingWalletPage() {
               </p>
             )}
             <p className="text-[#7FBF9A] text-xs leading-relaxed">{t('onbReplaceKeysWarn')}</p>
+            <p className="text-[#7FBF9A] text-xs leading-relaxed">{t('keysDeleteBackupNote')}</p>
           </div>
 
           <button

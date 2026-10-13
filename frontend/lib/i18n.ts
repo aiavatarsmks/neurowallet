@@ -580,6 +580,19 @@ export const translations = {
     csBalanceUnknownInline: "Баланс не загрузился, сумму проверит сеть",
     // ── night-review-lib ──
     simTronEstimateRevert: 'Сеть отклонит этот перевод USDT (пробный запуск не прошёл, например не хватает USDT). Отправка заблокирована, чтобы не сжечь TRX на комиссию.',
+    // ── night-review-ui ──
+    csSendInProgress: 'Предыдущий перевод ещё отправляется. Дождитесь результата.',
+    csOutcomeUnknownTitle: 'Результат отправки пока неизвестен',
+    csOutcomeUnknownText: 'Сеть не подтвердила приём, но перевод мог уйти. Не отправляйте повторно, пока статус ниже не прояснится.',
+    csOutcomeUnknownCheckHistory: 'Статус так и не прояснился. Прежде чем отправлять снова, проверьте историю транзакций на главном экране или в обозревателе.',
+    csLastSendLine: 'Предыдущий перевод: {amt} {coin} → {to}. Статус: {status}',
+    csLastSendStatusPending: '⏳ ожидает подтверждения',
+    csLastSendStatusConfirmed: '✅ подтверждён',
+    csLastSendStatusProcessed: '✅ обработан кошельком',
+    csLastSendStatusFailed: '❌ не прошёл',
+    csLastSendStatusUnknown: '⚠️ неизвестен, проверьте в обозревателе',
+    csLastSendDismiss: 'Скрыть',
+    keysDeleteBackupNote: 'Зашифрованная резервная копия ключей останется на этом устройстве 30 дней, потом удалится автоматически.',
   },
   en: {
     // ── Landing / onboarding carousel (pages/index.tsx) ──────────────────────
@@ -1159,6 +1172,19 @@ export const translations = {
     csBalanceUnknownInline: "Balance did not load, the network will check the amount",
     // ── night-review-lib ──
     simTronEstimateRevert: 'The network would reject this USDT transfer (the dry run failed, e.g. not enough USDT). Sending is blocked so no TRX is burned on fees.',
+    // ── night-review-ui ──
+    csSendInProgress: 'The previous transfer is still being sent. Wait for the result.',
+    csOutcomeUnknownTitle: 'Send result not known yet',
+    csOutcomeUnknownText: "The network didn't confirm receipt, but the transfer may have gone through. Don't send again until the status below is clear.",
+    csOutcomeUnknownCheckHistory: 'The status is still not clear. Before sending again, check the transaction history on the home screen or in the explorer.',
+    csLastSendLine: 'Previous transfer: {amt} {coin} → {to}. Status: {status}',
+    csLastSendStatusPending: '⏳ waiting for confirmation',
+    csLastSendStatusConfirmed: '✅ confirmed',
+    csLastSendStatusProcessed: '✅ processed by the wallet',
+    csLastSendStatusFailed: '❌ failed',
+    csLastSendStatusUnknown: '⚠️ unknown, check the explorer',
+    csLastSendDismiss: 'Dismiss',
+    keysDeleteBackupNote: 'An encrypted backup of the keys stays on this device for 30 days, then it is deleted automatically.',
   },
 } as const;
 

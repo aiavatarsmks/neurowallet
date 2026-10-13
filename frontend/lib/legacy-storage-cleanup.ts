@@ -12,6 +12,9 @@
  *  - backupWalletStorage(): snapshot of the encrypted key blobs, addresses and
  *    scheme flag into 'nw_wallet_backup_v1' before anything deletes or
  *    overwrites them. Never contains the seed (the app does not store it).
+ *    Kept 30 days (expiresAt), so a mistaken reset can still be undone.
+ *  - purgeExpiredWalletBackup(): drop that snapshot once it has expired
+ *    (run on every app start from pages/_app.tsx).
  *  - importOverwriteKind(): would writing a wallet with this ETH address
  *    replace a different wallet already on this device?
  */
@@ -59,11 +62,26 @@ export const WALLET_STORAGE_KEYS: readonly string[] = [
 
 export const WALLET_BACKUP_STORAGE_KEY = 'nw_wallet_backup_v1';
 
+/**
+ * How long a backup stays on the device. The reset confirmation tells the
+ * user so; purgeExpiredWalletBackup() (run on app start) enforces it.
+ */
+export const WALLET_BACKUP_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
 export interface WalletBackup {
   /** ISO timestamp of the snapshot. */
   at: string;
+  /** ISO timestamp after which the snapshot is deleted (at + 30 days). */
+  expiresAt: string;
   /** localStorage key → value, only keys that were present. */
   keys: Record<string, string>;
+}
+
+/** Expiry of a stored backup; older entries without expiresAt use at + TTL. NaN if unreadable. */
+function backupExpiryMs(b: { at?: unknown; expiresAt?: unknown }): number {
+  if (typeof b.expiresAt === 'string') return Date.parse(b.expiresAt);
+  if (typeof b.at === 'string') return Date.parse(b.at) + WALLET_BACKUP_TTL_MS;
+  return NaN;
 }
 
 /**
@@ -91,7 +109,11 @@ export function backupWalletStorage(now: Date = new Date()): boolean {
       if (v !== null) keys[k] = v;
     }
     if (Object.keys(keys).length === 0) return false; // never clobber a useful backup with an empty one
-    const backup: WalletBackup = { at: now.toISOString(), keys };
+    const backup: WalletBackup = {
+      at: now.toISOString(),
+      expiresAt: new Date(now.getTime() + WALLET_BACKUP_TTL_MS).toISOString(),
+      keys,
+    };
     localStorage.setItem(WALLET_BACKUP_STORAGE_KEY, JSON.stringify(backup));
     return true;
   } catch {
@@ -101,7 +123,10 @@ export function backupWalletStorage(now: Date = new Date()): boolean {
   }
 }
 
-/** Read the last snapshot, or null if there is none or it is malformed. */
+/**
+ * Read the last snapshot, or null if there is none or it is malformed.
+ * Expiry is enforced by purgeExpiredWalletBackup() on app start.
+ */
 export function readWalletBackup(): WalletBackup | null {
   if (typeof window === 'undefined') return null;
   try {
@@ -109,9 +134,38 @@ export function readWalletBackup(): WalletBackup | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<WalletBackup>;
     if (typeof parsed?.at !== 'string' || !parsed.keys || typeof parsed.keys !== 'object') return null;
-    return { at: parsed.at, keys: parsed.keys as Record<string, string> };
+    const expiry = backupExpiryMs(parsed);
+    if (Number.isNaN(expiry)) return null;
+    return { at: parsed.at, expiresAt: new Date(expiry).toISOString(), keys: parsed.keys as Record<string, string> };
   } catch {
     return null;
+  }
+}
+
+/**
+ * Delete the backup once it has expired (expiresAt, or at + 30 days for
+ * snapshots written before expiresAt existed). Called on every app start
+ * (pages/_app.tsx). Keeps a fresh backup and leaves an entry it cannot date
+ * alone. Returns true if a backup was removed. Never throws.
+ */
+export function purgeExpiredWalletBackup(now: Date = new Date()): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const raw = localStorage.getItem(WALLET_BACKUP_STORAGE_KEY);
+    if (!raw) return false;
+    let parsed: { at?: unknown; expiresAt?: unknown } | null = null;
+    try {
+      parsed = JSON.parse(raw) as { at?: unknown; expiresAt?: unknown } | null;
+    } catch {
+      return false; // unreadable: not ours to judge
+    }
+    if (!parsed || typeof parsed !== 'object') return false;
+    const expiry = backupExpiryMs(parsed);
+    if (Number.isNaN(expiry) || expiry > now.getTime()) return false;
+    localStorage.removeItem(WALLET_BACKUP_STORAGE_KEY);
+    return true;
+  } catch {
+    return false; // storage unavailable
   }
 }
 
