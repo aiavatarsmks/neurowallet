@@ -212,17 +212,20 @@ async function fetchRawTx(txid: string): Promise<Buffer> {
 const ALREADY_KNOWN_RE = /already in block chain|txn-already-in-mempool|txn-already-known|transaction already exists/i;
 
 /**
- * Does an explorer know this txid (mempool or chain)? GET /tx/{txid}/status
- * answers 200 with {confirmed: boolean} for a known tx, 404 otherwise. Only a
- * well-formed 200 counts: a captive portal or an error page is "not known".
+ * Does an explorer know this txid (mempool or chain)? GET /tx/{txid} answers
+ * 200 with the transaction JSON (its `txid` included) for a known tx and 404
+ * "Transaction not found" otherwise. Not /tx/{txid}/status: both explorers
+ * answer that with 200 {"confirmed":false} even for a txid they never saw
+ * (checked 2026-10-13). Only a 200 echoing this txid counts; a captive portal
+ * or an error page is "not known".
  */
 async function btcExplorerKnowsTx(txid: string): Promise<boolean> {
   for (const base of [BLOCKSTREAM, MEMPOOL]) {
     try {
-      const res = await fetch(`${base}/tx/${txid}/status`);
+      const res = await fetch(`${base}/tx/${txid}`);
       if (res.status !== 200) continue;
-      const body = await res.json() as { confirmed?: unknown } | null;
-      if (body && typeof body === 'object' && typeof body.confirmed === 'boolean') return true;
+      const body = await res.json() as { txid?: unknown } | null;
+      if (body && typeof body === 'object' && body.txid === txid) return true;
     } catch {
       // network error / bad JSON → ask the next explorer
     }

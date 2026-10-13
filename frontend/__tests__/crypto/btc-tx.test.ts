@@ -184,7 +184,7 @@ describe('sendBtc: signs at the reviewed fee rate', () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
       if (url.endsWith(`/address/${FROM_WPKH}/utxo`)) return new Response(JSON.stringify(UTXOS));
       if (init?.method === 'POST') { posted.push(String(init.body)); throw new TypeError('Failed to fetch'); }
-      if (url.endsWith('/status')) return textResponse('Transaction not found', 404);
+      if (url.endsWith(`/tx/${bitcoin.Transaction.fromHex(posted[0]).getId()}`)) return textResponse('Transaction not found', 404);
       throw new Error(`unexpected fetch ${url}`);
     }));
     const err = await sendBtc('blob', 'pw', TO_WPKH, 0.0006, FROM_WPKH, { feeRateSatVb: 12 }).catch((e) => e);
@@ -283,8 +283,8 @@ describe('broadcastBtcTx: one fallback on network error / 5xx, never on a reject
     expect(f.mock.calls.map((c) => c[0])).toEqual([
       'https://blockstream.info/api/tx',
       'https://mempool.space/api/tx',
-      `https://blockstream.info/api/tx/${txid}/status`,
-      `https://mempool.space/api/tx/${txid}/status`,
+      `https://blockstream.info/api/tx/${txid}`,
+      `https://mempool.space/api/tx/${txid}`,
     ]);
     expect(f.mock.calls.filter((c) => c[1]?.method === 'POST')).toHaveLength(2); // never a third POST
   });
@@ -298,16 +298,17 @@ describe('broadcastBtcTx: both explorers failed at the transport level → look 
     txid = bitcoin.Transaction.fromHex(rawHex).getId();
   });
 
-  const statusJson = (confirmed: boolean) => new Response(JSON.stringify({ confirmed }), { status: 200 });
+  /** GET /tx/{txid} for a tx the explorer has: the full tx JSON. */
+  const txJson = (confirmed: boolean) => new Response(JSON.stringify({ txid, version: 2, status: { confirmed } }), { status: 200 });
 
   it('POST lost on both, Blockstream knows the txid (mempool) → success', async () => {
     const f = vi.fn()
       .mockRejectedValueOnce(new TypeError('Failed to fetch'))
       .mockResolvedValueOnce(textResponse('Service Unavailable', 503))
-      .mockResolvedValueOnce(statusJson(false));
+      .mockResolvedValueOnce(txJson(false));
     vi.stubGlobal('fetch', f);
     await expect(broadcastBtcTx(rawHex)).resolves.toBe(txid);
-    expect(f.mock.calls[2][0]).toBe(`https://blockstream.info/api/tx/${txid}/status`);
+    expect(f.mock.calls[2][0]).toBe(`https://blockstream.info/api/tx/${txid}`);
   });
 
   it('429 + 502, Blockstream 404, mempool.space knows it → success', async () => {
@@ -315,10 +316,10 @@ describe('broadcastBtcTx: both explorers failed at the transport level → look 
       .mockResolvedValueOnce(textResponse('Too Many Requests', 429))
       .mockResolvedValueOnce(textResponse('Bad Gateway', 502))
       .mockResolvedValueOnce(textResponse('Transaction not found', 404))
-      .mockResolvedValueOnce(statusJson(true));
+      .mockResolvedValueOnce(txJson(true));
     vi.stubGlobal('fetch', f);
     await expect(broadcastBtcTx(rawHex)).resolves.toBe(txid);
-    expect(f.mock.calls[3][0]).toBe(`https://mempool.space/api/tx/${txid}/status`);
+    expect(f.mock.calls[3][0]).toBe(`https://mempool.space/api/tx/${txid}`);
   });
 
   it('both explorers answer 404 for the txid → unknown, not an ordinary error', async () => {
@@ -330,7 +331,17 @@ describe('broadcastBtcTx: both explorers failed at the transport level → look 
     await expect(broadcastBtcTx(rawHex)).rejects.toMatchObject({ name: 'BroadcastOutcomeUnknownError', hash: txid });
   });
 
-  it('a 200 that is not the explorer status JSON (captive portal) does not count as found', async () => {
+  it('the /status answer for an unknown txid (200 {"confirmed":false}) or another txid does not count as found', async () => {
+    const f = vi.fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ confirmed: false }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ txid: 'ab'.repeat(32) }), { status: 200 }));
+    vi.stubGlobal('fetch', f);
+    await expect(broadcastBtcTx(rawHex)).rejects.toBeInstanceOf(BroadcastOutcomeUnknownError);
+  });
+
+  it('a 200 that is not the explorer tx JSON (captive portal) does not count as found', async () => {
     const f = vi.fn()
       .mockRejectedValueOnce(new TypeError('Failed to fetch'))
       .mockRejectedValueOnce(new TypeError('Failed to fetch'))
