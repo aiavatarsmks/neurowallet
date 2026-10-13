@@ -526,6 +526,13 @@ export const translations = {
     sendPrivateNotePlaceholder: 'Заметка для себя (не отправляется в сеть)',
     sendPrivateNoteLabel: 'Заметка для себя',
     csTonMemoWarning: 'Перевод на биржу? Мемо/комментарий пока не поддерживается. Не отправляйте на адреса, где биржа требует мемо.',
+    csErrBtcFeeRateTooHigh: 'Комиссия сети Bitcoin сейчас выше {cap} sat/vB. Отправка остановлена, попробуй позже.',
+    csErrBtcFeeVsAmount: 'Комиссия больше половины суммы перевода. Увеличь сумму или отправь позже, когда комиссия снизится.',
+    csErrBtcInvalidFeeRate: 'Некорректная ставка комиссии. Вернись к проверке перевода и попробуй снова.',
+    csErrBtcInsufficient: 'Недостаточно BTC с учётом комиссии сети.',
+    csErrBtcUnsupportedSource: 'Этот тип BTC-адреса отправителя пока не поддерживается. Создай или импортируй обычный кошелёк NeuroWallet.',
+    csErrBtcUnavailable: 'Серверы сети Bitcoin недоступны. Проверь соединение и попробуй позже.',
+    csErrBtcRejected: 'Сеть Bitcoin отклонила транзакцию:',
   },
   en: {
     // ── Landing / onboarding carousel (pages/index.tsx) ──────────────────────
@@ -1052,6 +1059,13 @@ export const translations = {
     sendPrivateNotePlaceholder: 'Private note (not sent on-chain)',
     sendPrivateNoteLabel: 'Private note',
     csTonMemoWarning: "Sending to an exchange? Memo/comment isn't supported yet. Don't send to addresses that require a memo.",
+    csErrBtcFeeRateTooHigh: 'The Bitcoin network fee is above {cap} sat/vB right now. Sending stopped, try again later.',
+    csErrBtcFeeVsAmount: 'The fee is more than half of the amount. Send a larger amount or wait until fees drop.',
+    csErrBtcInvalidFeeRate: 'Invalid fee rate. Go back to the review and try again.',
+    csErrBtcInsufficient: 'Not enough BTC to cover the amount plus the network fee.',
+    csErrBtcUnsupportedSource: "This sender BTC address type isn't supported yet. Create or import a regular NeuroWallet wallet.",
+    csErrBtcUnavailable: 'Bitcoin servers are unavailable. Check your connection and try again later.',
+    csErrBtcRejected: 'The Bitcoin network rejected the transaction:',
   },
 } as const;
 

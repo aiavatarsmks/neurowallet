@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { sendEth, sendUsdt, sendUsdtTrc20, sendTrx, sendSol, sendBtc, sendTon, sendUsdtTon, isValidEthAddress, isValidSolAddress, isValidBtcAddress, isValidTronAddress, isValidTonAddress } from '@/lib/crypto/transactions';
+import { sendEth, sendUsdt, sendUsdtTrc20, sendTrx, sendSol, sendTon, sendUsdtTon, isValidEthAddress, isValidSolAddress, isValidBtcAddress, isValidTronAddress, isValidTonAddress } from '@/lib/crypto/transactions';
+// BTC send lives in btc-tx.ts: it signs at the reviewed fee rate (capped).
+import { sendBtc, btcErrorCode, BTC_MAX_FEE_RATE_SAT_VB, type BtcErrorCode } from '@/lib/crypto/btc-tx';
 import { fetchRealBalances, MARKET_REFRESH_MS } from '@/lib/crypto/balances';
 import { upgradeStoredKeystoreIfWeak } from '@/lib/crypto/keystore-migration';
 import { track, trackOnce, newTraceId } from '@/lib/analytics';
@@ -393,6 +395,20 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
     })();
   };
 
+  const BTC_ERROR_I18N: Record<BtcErrorCode, Parameters<typeof t>[0]> = {
+    BTC_FEE_RATE_TOO_HIGH: 'csErrBtcFeeRateTooHigh',
+    BTC_FEE_TOO_HIGH_VS_AMOUNT: 'csErrBtcFeeVsAmount',
+    BTC_INVALID_FEE_RATE: 'csErrBtcInvalidFeeRate',
+    BTC_DUST: 'csErrDust',
+    BTC_NO_UTXO: 'csErrNoUtxo',
+    BTC_INSUFFICIENT_FUNDS: 'csErrBtcInsufficient',
+    BTC_UNSUPPORTED_SOURCE: 'csErrBtcUnsupportedSource',
+    BTC_UTXO_FETCH_FAILED: 'csErrBtcUnavailable',
+    BTC_RAW_TX_FETCH_FAILED: 'csErrBtcUnavailable',
+    BTC_BROADCAST_REJECTED: 'csErrBtcRejected',
+    BTC_BROADCAST_UNAVAILABLE: 'csErrBtcUnavailable',
+  };
+
   const WARNING_I18N: Record<SimWarning['code'], Parameters<typeof t>[0]> = {
     invalid_address: 'csWarnInvalidAddress',
     invalid_amount: 'csWarnInvalidAmount',
@@ -561,7 +577,11 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         const btcAddr = localStorage.getItem('wallet_btc_address');
         if (!btcEnc)  throw new Error('NO_BTC_ENC');
         if (!btcAddr) throw new Error('NO_KEYSTORE');
-        hash = await sendBtc(btcEnc, password, address.trim(), amountNum, btcAddr);
+        // Sign at the fee rate the review showed (sendBtc refuses > cap or a fee
+        // above half the amount); without a reviewed rate it fetches one, capped.
+        hash = await sendBtc(btcEnc, password, address.trim(), amountNum, btcAddr, {
+          feeRateSatVb: sim?.btcFeeRateSatVb,
+        });
       } else if (coin === 'USDT') {
         hash = await sendUsdt(keystore, password, address.trim(), amountNum);
       } else if (coin === 'TRC20') {
@@ -610,7 +630,12 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       track('send_failed', { coin }, traceId);
       finalizeDraft('failed');
       const msg = (e instanceof Error ? e.message : String(e)).toLowerCase();
-      if (msg.includes('no_keystore')) {
+      const btcCode = btcErrorCode(e);
+      if (btcCode) {
+        const key = BTC_ERROR_I18N[btcCode];
+        const detail = btcCode === 'BTC_BROADCAST_REJECTED' ? (e as { detail?: string }).detail ?? '' : '';
+        setSendErr(`${t(key).replace('{cap}', String(BTC_MAX_FEE_RATE_SAT_VB))}${detail ? ` ${detail.slice(0, 120)}` : ''}`);
+      } else if (msg.includes('no_keystore')) {
         setSendErr(t('csErrNoWallet'));
       } else if (msg.includes('no_sol_enc')) {
         setSendErr(t('csErrNoSol'));

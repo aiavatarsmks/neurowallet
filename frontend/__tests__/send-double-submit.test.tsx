@@ -65,7 +65,7 @@ vi.mock('@/lib/crypto/transactions', () => ({
   isValidTonAddress: () => false,
   isValidTronAddress: (a: string) => a === TRON_TO,
 }));
-vi.mock('@/lib/crypto/btc-tx', () => ({ sendBtc: vi.fn() }));
+vi.mock('@/lib/crypto/btc-tx', () => ({ sendBtc: vi.fn(), btcErrorCode: () => null, BTC_MAX_FEE_RATE_SAT_VB: 500 }));
 
 import { CryptoSendScreen } from '@/components/CryptoSendScreen';
 

@@ -18,7 +18,7 @@ import {
   isValidTronAddress,
   isValidTonAddress,
 } from './transactions';
-import { fetchUTXOs, getBtcFeeRate } from './btc-tx';
+import { fetchUTXOs, getBtcFeeRate, estimateBtcFeeSat } from './btc-tx';
 
 export type SimCoin = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TRX' | 'TRC20' | 'TON' | 'USDT_TON';
 
@@ -40,6 +40,8 @@ export interface SimulationResult {
   feeEur: number | null;
   balanceAfter: number | null; // остаток отправляемой монеты после перевода
   warnings: SimWarning[];
+  /** BTC only: fee rate (sat/vB) the reviewed fee was computed with; passed to sendBtc. */
+  btcFeeRateSatVb?: number;
 }
 
 export interface SimulateParams {
@@ -116,28 +118,39 @@ export async function estimateFeeNative(params: Pick<SimulateParams, 'coin' | 'a
   }
 
   if (coin === 'BTC') {
-    // Без собственного адреса реальный подбор UTXO невозможен — грубая оценка.
-    if (!params.fromBtcAddress) return 0.00002;
-    const [utxos, feeRate] = await Promise.all([
-      fetchUTXOs(params.fromBtcAddress),
-      getBtcFeeRate(),
-    ]);
-    // Жадный подбор UTXO под сумму; vbytes ≈ 10 + 68*inputs + 31*outputs (P2WPKH).
-    const amountSat = Math.round(params.amount * 1e8);
-    let selected = 0;
-    let inputSat = 0;
-    for (const u of utxos.filter((u) => u.status.confirmed).sort((a, b) => b.value - a.value)) {
-      selected += 1;
-      inputSat += u.value;
-      if (inputSat >= amountSat) break;
-    }
-    const vbytes = 10 + 68 * Math.max(selected, 1) + 31 * 2;
-    return (vbytes * feeRate) / 1e8;
+    return (await estimateBtcFee(params)).feeNative;
   }
 
   const staticFee = STATIC_FEE_NATIVE[coin];
   if (staticFee !== undefined) return staticFee;
   throw new Error(`No fee model for ${coin}`);
+}
+
+// ─── BTC ──────────────────────────────────────────────────────────────────────
+
+/**
+ * BTC review fee with the signer's own vsize model and UTXO selection
+ * (btc-tx.ts planBtcTx): P2PKH inputs are 148 vB, not 68, and the recipient
+ * output is sized by its script (P2TR 43 vB). Also returns the fee rate used,
+ * so the send signs at exactly the reviewed rate (sendBtc caps it).
+ * Unknown recipient (MAX before an address is typed): the largest standard
+ * output is assumed.
+ */
+export async function estimateBtcFee(
+  params: Pick<SimulateParams, 'amount' | 'fromBtcAddress'> & { toAddress?: string },
+): Promise<{ feeNative: number; feeRateSatVb: number | null }> {
+  // Без собственного адреса реальный подбор UTXO невозможен — грубая оценка.
+  if (!params.fromBtcAddress) return { feeNative: 0.00002, feeRateSatVb: null };
+  const [utxos, feeRate] = await Promise.all([
+    fetchUTXOs(params.fromBtcAddress),
+    getBtcFeeRate(),
+  ]);
+  const amountSat = Number.isFinite(params.amount) && params.amount > 0
+    ? BigInt(Math.round(params.amount * 1e8))
+    : 0n;
+  const to = params.toAddress?.trim() || undefined;
+  const feeSat = estimateBtcFeeSat(utxos, amountSat, feeRate, params.fromBtcAddress, to);
+  return { feeNative: Number(feeSat) / 1e8, feeRateSatVb: feeRate };
 }
 
 export async function simulateTransfer(params: SimulateParams): Promise<SimulationResult> {
@@ -155,8 +168,14 @@ export async function simulateTransfer(params: SimulateParams): Promise<Simulati
 
   let status: SimulationResult['status'] = 'ok';
   let feeNative: number | null = null;
+  let btcFeeRateSatVb: number | undefined; // BTC: the rate behind the reviewed fee
   try {
-    feeNative = await withTimeout(estimateFeeNative(params), params.timeoutMs ?? 8_000);
+    feeNative = await withTimeout(
+      coin === 'BTC'
+        ? estimateBtcFee(params).then((b) => { btcFeeRateSatVb = b.feeRateSatVb ?? undefined; return b.feeNative; })
+        : estimateFeeNative(params),
+      params.timeoutMs ?? 8_000,
+    );
   } catch (err) {
     status = err instanceof Error && err.message === 'SIM_TIMEOUT' ? 'timeout' : 'error';
     warnings.push({
@@ -192,6 +211,7 @@ export async function simulateTransfer(params: SimulateParams): Promise<Simulati
     feeEur: feeNative !== null ? feeNative * (eurRates[feeCur.eurKey] || 0) : null,
     balanceAfter,
     warnings,
+    ...(btcFeeRateSatVb !== undefined && feeNative !== null ? { btcFeeRateSatVb } : {}),
   };
 }
 

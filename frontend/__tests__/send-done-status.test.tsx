@@ -11,6 +11,7 @@ const H = vi.hoisted(() => ({
   auth: { user: { id: 'u1' }, isDemo: false, isLoading: false },
   sendUsdtTrc20: vi.fn(),
   sendTon: vi.fn(),
+  sendBtc: vi.fn(),
   track: vi.fn(),
   useTxStatus: vi.fn(),
   status: { state: 'pending', polling: true, timedOut: false } as Record<string, unknown>,
@@ -19,6 +20,7 @@ const H = vi.hoisted(() => ({
 const TRON_TO = 'TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH';
 const TON_TO = 'UQD2NmD_lH5f5u1Kj3KfGyTvhZSX0Eg6qp2a5IQUKXxOG3M-';
 const TRON_TXID = 'ab'.repeat(32);
+const BTC_TO = 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu';
 
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => H.auth }));
 vi.mock('@/contexts/LanguageContext', () => ({
@@ -46,7 +48,7 @@ vi.mock('@/hooks/useTxStatus', () => ({ useTxStatus: H.useTxStatus }));
 vi.mock('@/lib/crypto/balances', () => ({
   MARKET_REFRESH_MS: 60_000,
   fetchRealBalances: vi.fn(async () => ({
-    eth: 1, btc: 0, sol: 0, usdt: 0, trx: 100, usdtTrc: 50, ton: 10, usdtTon: 0,
+    eth: 1, btc: 0.01, sol: 0, usdt: 0, trx: 100, usdtTrc: 50, ton: 10, usdtTon: 0,
     ethEur: 2800, btcEur: 55000, solEur: 120, trxEur: 0.22, tonEur: 3.5,
   })),
 }));
@@ -58,7 +60,7 @@ vi.mock('@/lib/crypto/simulate', () => ({
   estimateFeeNative: vi.fn(async () => 0),
   isBlocked: () => false,
   simulateTransfer: vi.fn(async () => ({
-    status: 'ok', feeNative: 14, feeCurrency: 'TRX', feeEur: 3, balanceAfter: 49, warnings: [],
+    status: 'ok', feeNative: 14, feeCurrency: 'TRX', feeEur: 3, balanceAfter: 49, warnings: [], btcFeeRateSatVb: 17,
   })),
 }));
 vi.mock('@/lib/crypto/transactions', () => ({
@@ -67,17 +69,21 @@ vi.mock('@/lib/crypto/transactions', () => ({
   sendTon: H.sendTon,
   isValidEthAddress: () => false,
   isValidSolAddress: () => false,
-  isValidBtcAddress: () => false,
+  isValidBtcAddress: (a: string) => a === BTC_TO,
   isValidTonAddress: (a: string) => a === TON_TO,
   isValidTronAddress: (a: string) => a === TRON_TO,
 }));
-vi.mock('@/lib/crypto/btc-tx', () => ({ sendBtc: vi.fn() }));
+vi.mock('@/lib/crypto/btc-tx', () => ({
+  sendBtc: H.sendBtc,
+  btcErrorCode: (e: { code?: string } | null) => (e?.code?.startsWith('BTC_') ? e.code : null),
+  BTC_MAX_FEE_RATE_SAT_VB: 500,
+}));
 
 import { CryptoSendScreen } from '@/components/CryptoSendScreen';
 
 const fetchMock = vi.fn(async (_url: unknown, _init?: unknown) => new Response('{}', { status: 200 }));
 
-async function sendThrough(coin: 'TRC20' | 'TON', to: string, amount: string) {
+async function sendThrough(coin: 'TRC20' | 'TON' | 'BTC', to: string, amount: string) {
   const view = render(<CryptoSendScreen initialCoin={coin} initialAddress={to} initialAmount={amount} />);
   const cont = await screen.findByText('csContinue');
   await waitFor(() => expect(cont).not.toBeDisabled());
@@ -169,6 +175,24 @@ describe('CryptoSendScreen done screen: on-chain status', () => {
     expect(await screen.findByText('csStatusPending')).toBeInTheDocument();
     await act(async () => { await Promise.resolve(); });
     expect(H.track.mock.calls.some((c) => c[0] === 'send_failed')).toBe(false);
+  });
+
+  it('BTC signs at the fee rate shown on the review', async () => {
+    localStorage.setItem('wallet_btc_enc', 'btc-enc-blob');
+    localStorage.setItem('wallet_btc_address', 'bc1qmine');
+    H.sendBtc.mockReset().mockResolvedValue('cd'.repeat(32));
+    await sendThrough('BTC', BTC_TO, '0.001');
+    expect(H.sendBtc).toHaveBeenCalledTimes(1);
+    expect(H.sendBtc.mock.calls[0]).toEqual(['btc-enc-blob', 'pw', BTC_TO, 0.001, 'bc1qmine', { feeRateSatVb: 17 }]);
+  });
+
+  it('BTC cap refusal is shown as translated text, not the raw lib message', async () => {
+    localStorage.setItem('wallet_btc_enc', 'btc-enc-blob');
+    localStorage.setItem('wallet_btc_address', 'bc1qmine');
+    H.sendBtc.mockReset().mockRejectedValue(Object.assign(new Error('BTC fee rate 900 sat/vB is above the 500 sat/vB cap.'), { code: 'BTC_FEE_RATE_TOO_HIGH' }));
+    await sendThrough('BTC', BTC_TO, '0.001');
+    expect(await screen.findByText('csErrBtcFeeRateTooHigh')).toBeInTheDocument();
+    expect(H.track).toHaveBeenCalledWith('send_failed', { coin: 'BTC' }, 'trace-1');
   });
 
   it('TON / USDT-TON forms warn that memo is not supported; other coins do not', async () => {
