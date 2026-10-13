@@ -510,6 +510,10 @@ export const translations = {
     simTronFeeEstimateUnavailable: 'Не удалось точно рассчитать комиссию Tron, показана примерная оценка. Отправить можно, но держи на балансе запас TRX.',
     simTronRecipientNotActivated: 'Адрес получателя ещё не активирован в сети Tron. Первый перевод TRX его активирует, и сеть дополнительно спишет около 1 TRX. Это уже учтено в комиссии.',
     csErrTronTxMismatch: 'Сеть вернула транзакцию, которая не совпадает с твоим запросом. Подпись отменена, средства не отправлены.',
+    // ── night-eth-balances ──
+    balRefreshFailed: 'Не удалось обновить: {assets}. Показаны последние данные.',
+    balPricesStale: 'Курсы не обновились, показаны последние известные',
+    walletBtcPending: '+{amount} BTC ожидает подтверждения',
   },
   en: {
     // ── Landing / onboarding carousel (pages/index.tsx) ──────────────────────
@@ -1020,6 +1024,10 @@ export const translations = {
     simTronFeeEstimateUnavailable: 'Could not calculate the exact Tron fee, showing a rough estimate. You can still send, but keep some spare TRX.',
     simTronRecipientNotActivated: 'The recipient address is not activated on Tron yet. Your first TRX transfer activates it, and the network charges about 1 TRX extra. This is already included in the fee.',
     csErrTronTxMismatch: 'The network returned a transaction that does not match your request. Signing was cancelled and no funds were sent.',
+    // ── night-eth-balances ──
+    balRefreshFailed: "Couldn't refresh: {assets}. Showing last known data.",
+    balPricesStale: "Prices didn't refresh, showing last known",
+    walletBtcPending: '+{amount} BTC pending confirmation',
   },
 } as const;
 

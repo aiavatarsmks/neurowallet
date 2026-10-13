@@ -26,8 +26,9 @@ import {
   isValidTonAddress as _isValidTonAddress,
 } from './ton-tx';
 import { decryptBytes } from './aes';
+import { getEthProvider } from './eth-provider';
 
-const ETH_RPC   = 'https://cloudflare-eth.com';
+// ETH RPC: shared FallbackProvider over keyless public endpoints (eth-provider.ts).
 const SOL_RPC   = 'https://api.mainnet-beta.solana.com';
 const USDT_ADDR = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
 const USDT_ABI  = ['function transfer(address to, uint256 amount) returns (bool)'];
@@ -47,7 +48,7 @@ export async function estimateEthFee(
   toAddress: string,
   amountEth: number,
 ): Promise<EthFeeEstimate> {
-  const provider  = new ethers.JsonRpcProvider(ETH_RPC);
+  const provider  = getEthProvider();
   const value     = ethers.parseEther(amountToDecimalString(amountEth, 18));
   const [feeData, gasLimit] = await Promise.all([
     provider.getFeeData(),
@@ -76,8 +77,7 @@ export async function sendEth(
   amountEth: number,
 ): Promise<string> {
   const wallet    = await ethers.Wallet.fromEncryptedJson(keystoreJson, password);
-  const provider  = new ethers.JsonRpcProvider(ETH_RPC);
-  const connected = wallet.connect(provider);
+  const connected = wallet.connect(getEthProvider());
 
   const tx = await connected.sendTransaction({
     to:    toAddress,
@@ -87,6 +87,8 @@ export async function sendEth(
   // Возвращаем хеш сразу после broadcast. Раньше ждали tx.wait(): если RPC
   // падал/таймаутил уже ПОСЛЕ отправки, UI показывал ошибку и пользователь
   // мог отправить повторно (двойной платёж). Статус смотрится по хешу.
+  // Broadcast идёт на все ETH-бэкенды сразу; «already known» от отстающего
+  // узла не превращается в ошибку (см. eth-provider.ts).
   return tx.hash;
 }
 
@@ -99,8 +101,7 @@ export async function sendUsdt(
   amountUsdt:  number,
 ): Promise<string> {
   const wallet    = await ethers.Wallet.fromEncryptedJson(keystoreJson, password);
-  const provider  = new ethers.JsonRpcProvider(ETH_RPC);
-  const connected = wallet.connect(provider);
+  const connected = wallet.connect(getEthProvider());
   const usdt      = new ethers.Contract(USDT_ADDR, USDT_ABI, connected);
 
   // USDT has 6 decimals
