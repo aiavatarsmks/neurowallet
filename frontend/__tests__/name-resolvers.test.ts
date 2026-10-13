@@ -13,9 +13,11 @@ vi.mock('ethers', async (orig) => {
     ...actual,
     ethers: {
       ...actual.ethers,
-      JsonRpcProvider: vi.fn().mockImplementation(() => ({
-        resolveName: (n: string) => Promise.resolve(ENS_FIX[n] ?? null),
-      })),
+      // `function`, not an arrow: the code calls it with `new`, and vitest 4
+      // refuses to construct arrow-function mock implementations.
+      JsonRpcProvider: vi.fn().mockImplementation(function () {
+        return { resolveName: (n: string) => Promise.resolve(ENS_FIX[n] ?? null) };
+      }),
     },
   };
 });
