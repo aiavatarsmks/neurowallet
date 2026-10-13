@@ -10,3 +10,6 @@ coverage
 .env*
 .next/
 frontend/.next/
+
+# Argon proposals and spend ledger (local only)
+.argon/

@@ -217,6 +217,8 @@ ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
 
 **Ревизия 2026-10-13:** состояние кода, закрытые и открытые риски, план до прода и чек-лист для Максима в **`PROD_READINESS_PLAN.md`** (читать первым при новой сессии). Живая проверка всех сетей: `cd frontend && LIVE_CHAINS=1 npx vitest run __tests__/live` (и ежедневно в `.github/workflows/chain-health.yml`).
 
+**Аргон (Gemini 4 Argon) как второй разработчик:** задачи в `docs/argon-tasks/`, порядок работы и бюджет в `tools/argon/README.md`. Аргон только предлагает правки (`node tools/argon/argon.mjs propose …`); ты проверяешь каждую по инвариантам этого файла, применяешь, гоняешь tsc + lint + vitest, коммитишь в `argon/<id>` и открываешь PR. В main не вливать.
+
 Актуальный roadmap ведётся в **`IMPLEMENTATION_PLAN.md`**. Читать оба файла вместе: `CLAUDE.md` (инварианты, принципы, «что не делать») + `IMPLEMENTATION_PLAN.md` (фазы, приёмка, порядок работ).
 
 **При конфликте приоритет у инвариантов из `CLAUDE.md`.**
