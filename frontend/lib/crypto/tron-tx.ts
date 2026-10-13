@@ -1,6 +1,6 @@
 /**
  * lib/crypto/tron-tx.ts
- * USDT TRC-20 on Tron via TronGrid public API.
+ * TRX and USDT TRC-20 on Tron via TronGrid public API.
  *
  * Key derivation: BIP44 m/44'/195'/0'/0/0  (secp256k1, same curve as ETH/BTC)
  * Address format: base58check(0x41 || keccak256(uncompressedPub[1:])[12:])
@@ -8,6 +8,9 @@
  * Transport:      TronGrid REST API. Balances go through /api/balances with a
  *                 server-side TRONGRID_API_KEY when configured; direct keyless
  *                 calls are the fallback (and are used for build/broadcast).
+ * No blind signing: TronGrid builds the transaction, but its raw_data_hex is
+ *                 decoded locally (protobuf) and compared with what the user
+ *                 asked for BEFORE the key signs it (verifyTronTransaction).
  *
  * USDT contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t (6 decimals)
  */
@@ -19,7 +22,13 @@ import bs58 from 'bs58';
 export const USDT_TRC20_CONTRACT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
 const TRONGRID = 'https://api.trongrid.io';
 
-// ─── Hashing helpers ──────────────────────────────────────────────────────────
+/** fee_limit of a USDT TRC-20 transfer, in sun (30 TRX). Caps the energy the tx may consume. */
+export const USDT_TRC20_FEE_LIMIT_SUN = 30_000_000;
+
+/** Mainnet address version byte (base58 "T…"). */
+const TRON_ADDRESS_VERSION = 0x41;
+
+// ─── Hashing / hex helpers ────────────────────────────────────────────────────
 
 function sha256b(data: Uint8Array): Uint8Array {
   return ethers.getBytes(ethers.sha256(data));
@@ -27,6 +36,12 @@ function sha256b(data: Uint8Array): Uint8Array {
 
 function keccak256b(data: Uint8Array): Uint8Array {
   return ethers.getBytes(ethers.keccak256(data));
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  let out = '';
+  for (const b of bytes) out += b.toString(16).padStart(2, '0');
+  return out;
 }
 
 // ─── Address derivation ───────────────────────────────────────────────────────
@@ -47,18 +62,22 @@ export function tronAddressFromPrivKey(privKey: Uint8Array): string {
   const uncompressedPub = secp256k1.getPublicKey(privKey, false); // 65 bytes
   const pubHash         = keccak256b(uncompressedPub.slice(1));   // 32 bytes
   const payload         = new Uint8Array(21);
-  payload[0]            = 0x41;                                    // mainnet prefix
+  payload[0]            = TRON_ADDRESS_VERSION;                   // mainnet prefix
   payload.set(pubHash.slice(12), 1);                               // last 20 bytes
   return base58checkEncode(payload);
 }
 
 // ─── Address validation ───────────────────────────────────────────────────────
 
+/**
+ * base58check, "T…", 34 chars, 25 bytes, version byte 0x41. The version check
+ * matters: a 34-char "T…" string with a valid checksum can decode to 0x42–0x44.
+ */
 export function isValidTronAddress(addr: string): boolean {
-  if (!addr || !addr.startsWith('T') || addr.length !== 34) return false;
+  if (typeof addr !== 'string' || !addr.startsWith('T') || addr.length !== 34) return false;
   try {
     const decoded = bs58.decode(addr);
-    if (decoded.length !== 25) return false;
+    if (decoded.length !== 25 || decoded[0] !== TRON_ADDRESS_VERSION) return false;
     const payload   = decoded.slice(0, 21);
     const checksum  = decoded.slice(21);
     const computed  = sha256b(sha256b(payload));
@@ -71,28 +90,37 @@ export function isValidTronAddress(addr: string): boolean {
 
 // ─── Address ↔ hex (TronGrid uses hex for addresses in JSON) ─────────────────
 
+/** "T…" → 21-byte hex "41…" (lowercase). Caller validates the address first. */
 function tronAddrToHex(addr: string): string {
-  return Array.from(bs58.decode(addr).slice(0, 21))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+  return bytesToHex(bs58.decode(addr).slice(0, 21));
+}
+
+// ─── Amounts ──────────────────────────────────────────────────────────────────
+
+/**
+ * Human amount → integer base units (6 decimals: TRX in sun, USDT TRC-20 units).
+ * Throws on NaN/∞, ≤ 0, more than 6 decimals or an amount too large to be exact.
+ * Previously the amount was Math.round-ed silently.
+ */
+export function toTronBaseUnits(amount: number): bigint {
+  if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
+    throw new Error('Сумма должна быть больше нуля.');
+  }
+  const scaled = Math.round(amount * 1e6);
+  if (!Number.isSafeInteger(scaled)) throw new Error('Сумма слишком большая.');
+  if (scaled / 1e6 !== amount) throw new Error('Сумма: не больше 6 знаков после запятой.');
+  return BigInt(scaled);
 }
 
 // ─── ABI-encode transfer(address,uint256) for USDT TRC-20 ────────────────────
 
-function buildTransferData(toAddr: string, amountUsdt: number): string {
+/** @param toHex 21-byte "41…" hex of the recipient; @param units amount in base units. */
+function buildTransferData(toHex: string, units: bigint): string {
   // Function selector: keccak256("transfer(address,uint256)") → a9059cbb
   const selector = 'a9059cbb';
-
-  // Tron address in ABI = strip 0x41 prefix byte → 20 bytes, right-padded to 32
-  const addrBytes = bs58.decode(toAddr).slice(1, 21); // 20 bytes (no 0x41)
-  const paddedAddr =
-    '000000000000000000000000' + // 12 zero bytes
-    Array.from(addrBytes).map((b) => b.toString(16).padStart(2, '0')).join('');
-
-  // Amount: USDT TRC-20 has 6 decimals
-  const amountRaw = BigInt(Math.round(amountUsdt * 1e6));
-  const paddedAmt = amountRaw.toString(16).padStart(64, '0');
-
+  // Tron address in ABI = strip the 0x41 byte → 20 bytes, left-padded to 32
+  const paddedAddr = '0'.repeat(24) + toHex.slice(2);
+  const paddedAmt = units.toString(16).padStart(64, '0');
   return selector + paddedAddr + paddedAmt;
 }
 
@@ -149,13 +177,370 @@ export async function fetchTrxBalance(address: string): Promise<number> {
   }
 }
 
+// ─── Local verification of TronGrid-built transactions (no blind signing) ────
+//
+// Minimal protobuf reader for exactly what a TRON Transaction.raw needs.
+// Field numbers follow java-tron protocol/src/main/protos:
+//   core/Tron.proto                        Transaction.raw, Transaction.Contract
+//   core/contract/balance_contract.proto   TransferContract
+//   core/contract/smart_contract.proto     TriggerSmartContract
+//   google/protobuf/any.proto              Any { type_url = 1; value = 2 }
+// Strict on purpose: unknown fields, unexpected wire types and repeated
+// singular fields are rejected, so the bytes we sign mean what we checked.
+
+export type TronTxMismatchReason =
+  | 'format'          // not hex / not decodable / malformed protobuf
+  | 'txid'            // txID != sha256(raw_data_hex)
+  | 'extra_field'     // memo/data, auths, scripts, provider, permission, unknown fields
+  | 'contract_count'  // not exactly one contract
+  | 'contract_type'   // wrong ContractType / type_url
+  | 'owner'           // signer is not the sender
+  | 'recipient'       // TRX to_address / USDT transfer recipient
+  | 'amount'
+  | 'token_contract'  // USDT: not the USDT TRC-20 contract
+  | 'call_data'       // USDT: not transfer(address,uint256) (e.g. approve 095ea7b3)
+  | 'call_value'      // USDT: TRX or TRC-10 attached to the call
+  | 'fee_limit'
+  | 'expiration';
+
+const MISMATCH_RU: Record<TronTxMismatchReason, string> = {
+  format: 'формат',
+  txid: 'идентификатор',
+  extra_field: 'лишние поля',
+  contract_count: 'число операций',
+  contract_type: 'тип операции',
+  owner: 'отправитель',
+  recipient: 'получатель',
+  amount: 'сумма',
+  token_contract: 'контракт токена',
+  call_data: 'вызов контракта',
+  call_value: 'вложенные монеты',
+  fee_limit: 'лимит комиссии',
+  expiration: 'срок действия',
+};
+
+/** Thrown before signing when the node-built transaction differs from the request. */
+export class TronTxMismatchError extends Error {
+  readonly reason: TronTxMismatchReason;
+  constructor(reason: TronTxMismatchReason) {
+    super(`Подпись отменена: транзакция от узла Tron не совпадает с запросом (${MISMATCH_RU[reason]}).`);
+    this.name = 'TronTxMismatchError';
+    this.reason = reason;
+  }
+}
+
+function fail(reason: TronTxMismatchReason): never {
+  throw new TronTxMismatchError(reason);
+}
+
+/** Strict hex → bytes: even length, [0-9a-f] only. */
+function hexToBytesStrict(hex: string): Uint8Array {
+  if (hex.length % 2 !== 0 || !/^[0-9a-fA-F]*$/.test(hex)) fail('format');
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  return out;
+}
+
+function readVarint(buf: Uint8Array, pos: number): [bigint, number] {
+  let value = 0n;
+  for (let i = 0; i < 10; i++) {
+    const p = pos + i;
+    if (p >= buf.length) fail('format');
+    const byte = buf[p];
+    if (i === 9 && byte > 1) fail('format'); // more than 64 bits
+    value |= BigInt(byte & 0x7f) << BigInt(7 * i);
+    if ((byte & 0x80) === 0) return [value, p + 1];
+  }
+  return fail('format');
+}
+
+type PbKind = 'varint' | 'bytes' | 'repeated_bytes';
+type PbSchema = Record<number, PbKind>;
+interface PbMessage {
+  varints: Map<number, bigint>;
+  bytes: Map<number, Uint8Array>;
+  repeated: Map<number, Uint8Array[]>;
+}
+
+/** Wire types: 0 = varint, 2 = length-delimited. Nothing else occurs in these messages. */
+function parsePb(buf: Uint8Array, schema: PbSchema): PbMessage {
+  const msg: PbMessage = { varints: new Map(), bytes: new Map(), repeated: new Map() };
+  let pos = 0;
+  while (pos < buf.length) {
+    const [key, afterKey] = readVarint(buf, pos);
+    const field = Number(key >> 3n);
+    const wire = Number(key & 7n);
+    const kind = Object.prototype.hasOwnProperty.call(schema, field) ? schema[field] : undefined;
+    if (field === 0 || kind === undefined) fail('extra_field');
+
+    if (kind === 'varint') {
+      if (wire !== 0 || msg.varints.has(field)) fail('format');
+      const [v, next] = readVarint(buf, afterKey);
+      msg.varints.set(field, v);
+      pos = next;
+      continue;
+    }
+
+    if (wire !== 2) fail('format');
+    const [len, start] = readVarint(buf, afterKey);
+    if (len > BigInt(buf.length - start)) fail('format');
+    const end = start + Number(len);
+    const chunk = buf.slice(start, end);
+    if (kind === 'bytes') {
+      if (msg.bytes.has(field)) fail('format');
+      msg.bytes.set(field, chunk);
+    } else {
+      const list = msg.repeated.get(field) ?? [];
+      list.push(chunk);
+      msg.repeated.set(field, list);
+    }
+    pos = end;
+  }
+  return msg;
+}
+
+const RAW_SCHEMA: PbSchema = {
+  1: 'bytes',           // ref_block_bytes
+  3: 'varint',          // ref_block_num
+  4: 'bytes',           // ref_block_hash
+  8: 'varint',          // expiration (ms)
+  9: 'repeated_bytes',  // auths (unused)
+  10: 'bytes',          // data (memo)
+  11: 'repeated_bytes', // contract
+  12: 'bytes',          // scripts (unused)
+  14: 'varint',         // timestamp (ms)
+  18: 'varint',         // fee_limit (sun)
+};
+const CONTRACT_SCHEMA: PbSchema = {
+  1: 'varint',          // type (ContractType enum)
+  2: 'bytes',           // parameter (google.protobuf.Any)
+  3: 'bytes',           // provider
+  4: 'bytes',           // ContractName
+  5: 'varint',          // Permission_id
+};
+const ANY_SCHEMA: PbSchema = { 1: 'bytes', 2: 'bytes' }; // type_url, value
+const TRANSFER_SCHEMA: PbSchema = {
+  1: 'bytes',           // owner_address
+  2: 'bytes',           // to_address
+  3: 'varint',          // amount (sun)
+};
+const TRIGGER_SCHEMA: PbSchema = {
+  1: 'bytes',           // owner_address
+  2: 'bytes',           // contract_address
+  3: 'varint',          // call_value (sun)
+  4: 'bytes',           // data (ABI call data)
+  5: 'varint',          // call_token_value
+  6: 'varint',          // token_id
+};
+
+export const TRON_CONTRACT_TYPE = { TransferContract: 1, TriggerSmartContract: 31 } as const;
+const TYPE_URL_TRANSFER = 'type.googleapis.com/protocol.TransferContract';
+const TYPE_URL_TRIGGER = 'type.googleapis.com/protocol.TriggerSmartContract';
+
+const int64 = (v: bigint | undefined): bigint | undefined => (v === undefined ? undefined : BigInt.asIntN(64, v));
+const hexOf = (b: Uint8Array | undefined): string | undefined => (b === undefined ? undefined : bytesToHex(b));
+
+export interface DecodedTronContract {
+  type: number;
+  typeUrl: string;
+  hasProvider: boolean;
+  hasContractName: boolean;
+  permissionId: number;
+  /** TransferContract (type 1) / TriggerSmartContract (type 31) fields; bytes as lowercase hex. */
+  ownerHex?: string;
+  toHex?: string;
+  amount?: bigint;
+  contractHex?: string;
+  callValue?: bigint;
+  dataHex?: string;
+  callTokenValue?: bigint;
+  tokenId?: bigint;
+}
+
+export interface DecodedTronRaw {
+  refBlockBytesHex?: string;
+  refBlockNum?: bigint;
+  refBlockHashHex?: string;
+  expiration?: bigint;
+  authsCount: number;
+  dataHex?: string;
+  contracts: DecodedTronContract[];
+  scriptsHex?: string;
+  timestamp?: bigint;
+  feeLimit?: bigint;
+}
+
+function decodeContract(bytes: Uint8Array): DecodedTronContract {
+  const c = parsePb(bytes, CONTRACT_SCHEMA);
+  const anyBytes = c.bytes.get(2) ?? fail('format');
+  const any = parsePb(anyBytes, ANY_SCHEMA);
+  let typeUrl = '';
+  try {
+    typeUrl = new TextDecoder('utf-8', { fatal: true }).decode(any.bytes.get(1) ?? new Uint8Array());
+  } catch {
+    fail('format');
+  }
+  const out: DecodedTronContract = {
+    type: Number(BigInt.asIntN(32, c.varints.get(1) ?? 0n)),
+    typeUrl,
+    hasProvider: c.bytes.has(3),
+    hasContractName: c.bytes.has(4),
+    permissionId: Number(BigInt.asIntN(32, c.varints.get(5) ?? 0n)),
+  };
+  const value = any.bytes.get(2) ?? new Uint8Array();
+  if (out.type === TRON_CONTRACT_TYPE.TransferContract) {
+    const p = parsePb(value, TRANSFER_SCHEMA);
+    out.ownerHex = hexOf(p.bytes.get(1));
+    out.toHex = hexOf(p.bytes.get(2));
+    out.amount = int64(p.varints.get(3)) ?? 0n;
+  } else if (out.type === TRON_CONTRACT_TYPE.TriggerSmartContract) {
+    const p = parsePb(value, TRIGGER_SCHEMA);
+    out.ownerHex = hexOf(p.bytes.get(1));
+    out.contractHex = hexOf(p.bytes.get(2));
+    out.callValue = int64(p.varints.get(3)) ?? 0n;
+    out.dataHex = hexOf(p.bytes.get(4));
+    out.callTokenValue = int64(p.varints.get(5)) ?? 0n;
+    out.tokenId = int64(p.varints.get(6)) ?? 0n;
+  }
+  return out;
+}
+
+/** Decode Transaction.raw from raw_data_hex (strict; throws TronTxMismatchError). */
+export function decodeTronRawData(rawDataHex: string): DecodedTronRaw {
+  const raw = parsePb(hexToBytesStrict(rawDataHex), RAW_SCHEMA);
+  return {
+    refBlockBytesHex: hexOf(raw.bytes.get(1)),
+    refBlockNum: int64(raw.varints.get(3)),
+    refBlockHashHex: hexOf(raw.bytes.get(4)),
+    expiration: int64(raw.varints.get(8)),
+    authsCount: raw.repeated.get(9)?.length ?? 0,
+    dataHex: hexOf(raw.bytes.get(10)),
+    contracts: (raw.repeated.get(11) ?? []).map(decodeContract),
+    scriptsHex: hexOf(raw.bytes.get(12)),
+    timestamp: int64(raw.varints.get(14)),
+    feeLimit: int64(raw.varints.get(18)),
+  };
+}
+
+export interface TronTxExpectation {
+  kind: 'trx' | 'usdt';
+  /** Sender, 21-byte "41…" hex. */
+  ownerHex: string;
+  /** Recipient, 21-byte "41…" hex (USDT: the token receiver, not the contract). */
+  toHex: string;
+  /** Sun for TRX, token base units for USDT. */
+  amount: bigint;
+  /** fee_limit the code requested, sun (0n for TRX: TransferContract has none). */
+  feeLimitSun: bigint;
+}
+
+export interface VerifiedTronTx {
+  txID: string;        // lowercase, == sha256(rawBytes)
+  rawDataHex: string;  // lowercase
+  rawBytes: Uint8Array;
+}
+
+const MAX_RAW_BYTES = 2048;                         // a USDT transfer is ~211 bytes
+const MAX_EXPIRATION_AHEAD_MS = 24 * 60 * 60 * 1000; // TRON protocol maximum
+/** A phone clock running a little fast must not make every fresh tx look expired. */
+const EXPIRATION_CLOCK_SKEW_MS = 2 * 60 * 1000;
+const USDT_TRC20_CONTRACT_HEX = '41a614f803b6fd780986a42c78ec9c7f77e6ded13c';
+const ZERO_PAD_12 = '0'.repeat(24);
+
+/**
+ * Verify a TronGrid-built, unsigned transaction against what the wallet asked
+ * for. Throws TronTxMismatchError on ANY difference; the caller must not sign
+ * in that case. Returns the exact bytes to sign (sha256(rawBytes) == txID).
+ */
+export function verifyTronTransaction(
+  tx: unknown,
+  exp: TronTxExpectation,
+  nowMs: number = Date.now(),
+): VerifiedTronTx {
+  const t = tx as { txID?: unknown; raw_data_hex?: unknown } | null;
+  if (!t || typeof t !== 'object' || typeof t.raw_data_hex !== 'string' || typeof t.txID !== 'string') {
+    return fail('format');
+  }
+  const rawDataHex = t.raw_data_hex.toLowerCase();
+  if (rawDataHex.length === 0 || rawDataHex.length > MAX_RAW_BYTES * 2) fail('format');
+  const rawBytes = hexToBytesStrict(rawDataHex);
+
+  // 1. txID must be the hash of exactly these bytes.
+  const txID = bytesToHex(sha256b(rawBytes));
+  if (!/^[0-9a-fA-F]{64}$/.test(t.txID) || t.txID.toLowerCase() !== txID) fail('txid');
+
+  // 2. Decode and check the envelope.
+  const raw = decodeTronRawData(rawDataHex);
+  if (raw.authsCount > 0 || raw.scriptsHex !== undefined || raw.dataHex !== undefined) fail('extra_field');
+  if (raw.contracts.length !== 1) fail('contract_count');
+  if (raw.refBlockBytesHex?.length !== 4 || raw.refBlockHashHex?.length !== 16) fail('format');
+
+  const expiration = raw.expiration;
+  if (expiration === undefined) return fail('expiration');
+  if (expiration <= BigInt(Math.floor(nowMs - EXPIRATION_CLOCK_SKEW_MS))
+      || expiration > BigInt(Math.floor(nowMs + MAX_EXPIRATION_AHEAD_MS))) {
+    fail('expiration');
+  }
+  const feeLimit = raw.feeLimit ?? 0n;
+  if (feeLimit < 0n || feeLimit > exp.feeLimitSun) fail('fee_limit');
+
+  // 3. The single contract.
+  const c = raw.contracts[0];
+  if (c.hasProvider || c.hasContractName || c.permissionId !== 0) fail('extra_field');
+  const ownerHex = exp.ownerHex.toLowerCase();
+  const toHex = exp.toHex.toLowerCase();
+
+  if (exp.kind === 'trx') {
+    if (c.type !== TRON_CONTRACT_TYPE.TransferContract || c.typeUrl !== TYPE_URL_TRANSFER) fail('contract_type');
+    if (c.ownerHex !== ownerHex) fail('owner');
+    if (c.toHex !== toHex) fail('recipient');
+    if (c.amount !== exp.amount) fail('amount');
+  } else {
+    if (c.type !== TRON_CONTRACT_TYPE.TriggerSmartContract || c.typeUrl !== TYPE_URL_TRIGGER) fail('contract_type');
+    if (c.ownerHex !== ownerHex) fail('owner');
+    if (c.contractHex !== USDT_TRC20_CONTRACT_HEX) fail('token_contract');
+    if (c.callValue !== 0n || c.callTokenValue !== 0n || c.tokenId !== 0n) fail('call_value');
+    // transfer(address,uint256) = a9059cbb ‖ 12 zero bytes ‖ 20-byte recipient ‖ uint256 amount
+    const data = c.dataHex ?? '';
+    if (data.length !== 8 + 64 + 64 || data.slice(0, 8) !== 'a9059cbb') fail('call_data');
+    if (data.slice(8, 32) !== ZERO_PAD_12 || data.slice(32, 72) !== toHex.slice(2)) fail('recipient');
+    if (BigInt('0x' + data.slice(72)) !== exp.amount) fail('amount');
+  }
+
+  return { txID, rawDataHex, rawBytes };
+}
+
+// ─── Signing + broadcast ──────────────────────────────────────────────────────
+
+/** Tron signature = 64-byte compact + 1-byte recovery (v), over sha256(raw). */
+function signVerified(verified: VerifiedTronTx, privKey: Uint8Array): string {
+  const sig = secp256k1.sign(sha256b(verified.rawBytes), privKey, { lowS: true });
+  return bytesToHex(sig.toCompactRawBytes()) + sig.recovery.toString(16).padStart(2, '0');
+}
+
+async function broadcastVerified(
+  tx: Record<string, unknown>,
+  verified: VerifiedTronTx,
+  sigHex: string,
+): Promise<string> {
+  const broadcastRes = await fetch(`${TRONGRID}/wallet/broadcasttransaction`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ ...tx, txID: verified.txID, raw_data_hex: verified.rawDataHex, signature: [sigHex] }),
+  });
+  const broadcastJson = await broadcastRes.json();
+  if (!broadcastJson.result) throw new Error(tronBroadcastError(broadcastJson));
+  // The id of what we signed, not whatever the node echoes back.
+  return verified.txID;
+}
+
 // ─── Send USDT TRC-20 ─────────────────────────────────────────────────────────
 
 /**
- * Build, sign and broadcast a USDT TRC-20 transfer.
+ * Build (TronGrid), verify locally, sign and broadcast a USDT TRC-20 transfer.
  * @param privKey  32-byte secp256k1 private key (Tron BIP44 derived)
  * @param toAddr   Recipient Tron address (T…)
- * @param amount   USDT amount (human-readable, e.g. 10.5)
+ * @param amount   USDT amount (human-readable, e.g. 10.5), ≤ 6 decimals
  * @returns        Transaction ID (txid)
  */
 export async function sendUsdtTrc20Raw(
@@ -163,10 +548,14 @@ export async function sendUsdtTrc20Raw(
   toAddr:  string,
   amount:  number,
 ): Promise<string> {
+  if (!isValidTronAddress(toAddr)) throw new Error('Неверный TRON-адрес получателя.');
+  const units = toTronBaseUnits(amount);
+
   const fromAddr    = tronAddressFromPrivKey(privKey);
   const fromHex     = tronAddrToHex(fromAddr);
+  const toHex       = tronAddrToHex(toAddr);
   const contractHex = tronAddrToHex(USDT_TRC20_CONTRACT);
-  const callData    = buildTransferData(toAddr, amount);
+  const callData    = buildTransferData(toHex, units);
 
   // 1. Ask TronGrid to build the transaction
   const buildRes = await fetch(`${TRONGRID}/wallet/triggersmartcontract`, {
@@ -175,10 +564,10 @@ export async function sendUsdtTrc20Raw(
     body: JSON.stringify({
       owner_address:    fromHex,
       contract_address: contractHex,
-      data:             callData,        // full ABI call data (selector + params)
-      fee_limit:        30_000_000,      // max 30 TRX for energy/bandwidth
+      data:             callData,                  // full ABI call data (selector + params)
+      fee_limit:        USDT_TRC20_FEE_LIMIT_SUN,  // max 30 TRX for energy
       call_value:       0,
-      visible:          false,           // hex addresses mode
+      visible:          false,                     // hex addresses mode
     }),
   });
 
@@ -195,34 +584,17 @@ export async function sendUsdtTrc20Raw(
     throw new Error(msg);
   }
 
-  const rawDataHex: string = buildJson.transaction.raw_data_hex;
-
-  // 2. Sign: SHA256(raw_data_bytes)  — Tron uses SHA256, not keccak256
-  const rawBytes = new Uint8Array(
-    rawDataHex.match(/.{2}/g)!.map((h) => parseInt(h, 16)),
-  );
-  const msgHash = sha256b(rawBytes);
-  const sig     = secp256k1.sign(msgHash, privKey, { lowS: true });
-
-  // Tron signature = 64-byte compact + 1-byte recovery (v)
-  const sigHex =
-    Array.from(sig.toCompactRawBytes())
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('') +
-    sig.recovery.toString(16).padStart(2, '0');
-
-  // 3. Broadcast
-  const broadcastRes = await fetch(`${TRONGRID}/wallet/broadcasttransaction`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ ...buildJson.transaction, signature: [sigHex] }),
+  // 2. Verify what TronGrid built BEFORE signing (throws → nothing is signed).
+  const verified = verifyTronTransaction(buildJson.transaction, {
+    kind: 'usdt',
+    ownerHex: fromHex,
+    toHex,
+    amount: units,
+    feeLimitSun: BigInt(USDT_TRC20_FEE_LIMIT_SUN),
   });
 
-  const broadcastJson = await broadcastRes.json();
-
-  if (!broadcastJson.result) throw new Error(tronBroadcastError(broadcastJson));
-
-  return broadcastJson.txid as string;
+  // 3. Sign: SHA256(raw_data_bytes) — Tron uses SHA256, not keccak256. 4. Broadcast.
+  return broadcastVerified(buildJson.transaction, verified, signVerified(verified, privKey));
 }
 
 export async function sendTrxRaw(
@@ -231,18 +603,19 @@ export async function sendTrxRaw(
   amount:  number,
 ): Promise<string> {
   if (!isValidTronAddress(toAddr)) throw new Error('Неверный TRX-адрес получателя.');
+  const amountSun = toTronBaseUnits(amount);
 
   const fromAddr = tronAddressFromPrivKey(privKey);
-  const amountSun = Math.round(amount * 1e6);
-  if (amountSun <= 0) throw new Error('Сумма должна быть больше нуля.');
+  const fromHex = tronAddrToHex(fromAddr);
+  const toHex = tronAddrToHex(toAddr);
 
   const buildRes = await fetch(`${TRONGRID}/wallet/createtransaction`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({
-      owner_address: tronAddrToHex(fromAddr),
-      to_address:    tronAddrToHex(toAddr),
-      amount:        amountSun,
+      owner_address: fromHex,
+      to_address:    toHex,
+      amount:        Number(amountSun),
       visible:       false,
     }),
   });
@@ -256,27 +629,15 @@ export async function sendTrxRaw(
     throw new Error(tx?.Error ?? 'Ошибка построения TRX-транзакции.');
   }
 
-  const rawBytes = new Uint8Array(
-    (tx.raw_data_hex as string).match(/.{2}/g)!.map((h) => parseInt(h, 16)),
-  );
-  const msgHash = sha256b(rawBytes);
-  const sig = secp256k1.sign(msgHash, privKey, { lowS: true });
-  const sigHex =
-    Array.from(sig.toCompactRawBytes())
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('') +
-    sig.recovery.toString(16).padStart(2, '0');
-
-  const broadcastRes = await fetch(`${TRONGRID}/wallet/broadcasttransaction`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ ...tx, signature: [sigHex] }),
+  const verified = verifyTronTransaction(tx, {
+    kind: 'trx',
+    ownerHex: fromHex,
+    toHex,
+    amount: amountSun,
+    feeLimitSun: 0n,
   });
 
-  const broadcastJson = await broadcastRes.json();
-  if (!broadcastJson.result) throw new Error(tronBroadcastError(broadcastJson));
-
-  return broadcastJson.txid as string;
+  return broadcastVerified(tx, verified, signVerified(verified, privKey));
 }
 
 /**
