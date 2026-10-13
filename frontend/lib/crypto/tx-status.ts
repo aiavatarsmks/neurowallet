@@ -138,13 +138,17 @@ async function btcStatus(txid: string, ctx: TxStatusContext): Promise<TxStatus> 
   let lastErr: unknown = null;
   for (const base of BTC_APIS) {
     try {
-      const res = await request(`${base}/tx/${txid}/status`, { method: 'GET' }, ctx.signal);
+      // GET /tx/{txid}, not /tx/{txid}/status: the /status endpoint answers
+      // 200 {"confirmed":false} even for a txid the explorer has never seen
+      // (checked 2026-10-13), which would show a lost tx as "pending" forever.
+      const res = await request(`${base}/tx/${txid}`, { method: 'GET' }, ctx.signal);
       if (res.status === 404) { notFound = true; continue; }
       if (!res.ok) throw new TxStatusFetchError(res.status, `BTC explorer HTTP ${res.status}`);
       const json = asObj(await readJson(res));
-      if (!json) throw new TxStatusFetchError(res.status, 'BTC explorer: bad body');
+      const status = asObj(json?.status);
+      if (!json || !status) throw new TxStatusFetchError(res.status, 'BTC explorer: bad body');
       // Known to the explorer: in a block → confirmed, otherwise waiting in the mempool.
-      return json.confirmed === true ? { state: 'confirmed' } : { state: 'pending' };
+      return status.confirmed === true ? { state: 'confirmed' } : { state: 'pending' };
     } catch (e) {
       if (isAbort(e)) throw e;
       lastErr = e;

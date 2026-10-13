@@ -73,18 +73,19 @@ describe('getTxStatus: ETH / USDT ERC-20 (eth_getTransactionReceipt)', () => {
 
 describe('getTxStatus: BTC (blockstream, fallback mempool.space)', () => {
   it('confirmed:true → confirmed; in mempool → pending', async () => {
-    const f = stubFetch(json({ confirmed: true, block_height: 900000 }));
+    const f = stubFetch(json({ txid: HEX_TXID, status: { confirmed: true, block_height: 900000 } }));
     await expect(getTxStatus('BTC', HEX_TXID)).resolves.toEqual({ state: 'confirmed' });
-    expect(f.mock.calls[0][0]).toBe(`https://blockstream.info/api/tx/${HEX_TXID}/status`);
+    // /tx/{txid}, not /status: /status answers 200 {confirmed:false} for unknown txids.
+    expect(f.mock.calls[0][0]).toBe(`https://blockstream.info/api/tx/${HEX_TXID}`);
 
-    stubFetch(json({ confirmed: false }));
+    stubFetch(json({ txid: HEX_TXID, status: { confirmed: false } }));
     await expect(getTxStatus('BTC', HEX_TXID)).resolves.toEqual({ state: 'pending' });
   });
 
   it('blockstream 5xx → mempool.space', async () => {
-    const f = stubFetch(new Response('', { status: 502 }), json({ confirmed: true }));
+    const f = stubFetch(new Response('', { status: 502 }), json({ txid: HEX_TXID, status: { confirmed: true } }));
     await expect(getTxStatus('BTC', HEX_TXID)).resolves.toEqual({ state: 'confirmed' });
-    expect(f.mock.calls[1][0]).toBe(`https://mempool.space/api/tx/${HEX_TXID}/status`);
+    expect(f.mock.calls[1][0]).toBe(`https://mempool.space/api/tx/${HEX_TXID}`);
   });
 
   it('404 on both → pending in the first minutes, unknown afterwards', async () => {
