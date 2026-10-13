@@ -213,7 +213,6 @@ export default function OnboardingWalletPage() {
   if (step === 'pin-setup') {
     return (
       <PinSetup
-        walletPassword={password}
         onComplete={() => { track('onboarding_completed', { pin: true }); router.push('/wallet'); }}
         allowSkip={false}
       />

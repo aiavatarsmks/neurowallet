@@ -6,6 +6,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { PinEntry } from '@/components/PinEntry';
 import { PinSetup } from '@/components/PinSetup';
 import { hasPinSetup, verifyWalletPassword } from '@/lib/pin';
+import { removeWalletFromDevice } from '@/lib/legacy-storage-cleanup';
 import { BalanceCard } from '@/components/BalanceCard';
 import { DemoGuide } from '@/components/DemoGuide';
 import { completeDemoTask } from '@/lib/demo-guide';
@@ -54,22 +55,24 @@ const BackIcon = () => (
   </svg>
 );
 
-const WALLET_RESET_KEYS = [
-  'wallet_eth_address', 'wallet_sol_address', 'wallet_btc_address',
-  'wallet_tron_address', 'wallet_ton_address', 'wallet_keystore',
-  'wallet_sol_enc', 'wallet_btc_enc', 'wallet_tron_enc', 'wallet_ton_enc',
-  'wallet_ton_scheme',
-  'wallet_pin_blob', 'wallet_pin_attempts', 'wallet_pin_lockout_until',
-  'wallet_sol_xor', 'wallet_btc_xor', 'wallet_tron_xor', 'wallet_ton_xor',
-];
+type PasswordGateMode = 'required' | 'forgot';
 
-const RequiredPinSetupGate: React.FC<{ onReady: (walletPassword: string) => void }> = ({ onReady }) => {
+/**
+ * Wallet password, then a new PIN. Two entry points:
+ *  - 'required': a wallet exists on this device but no PIN is set yet;
+ *  - 'forgot':   "Forgot PIN?" on the lock screen.
+ * The password is only checked (verifyWalletPassword) and then dropped: the
+ * PIN blob no longer stores it (lib/pin.ts).
+ */
+const PasswordPinGate: React.FC<{ mode: PasswordGateMode; onReady: () => void; onBack?: () => void }> = ({ mode, onReady, onBack }) => {
   const router = useRouter();
   const { t } = useLanguage();
   const [password, setPassword] = useState('');
-  const [verifiedPassword, setVerifiedPassword] = useState('');
+  const [verified, setVerified] = useState(false);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const forgot = mode === 'forgot';
 
   const submit = async () => {
     if (!password || checking) return;
@@ -78,29 +81,25 @@ const RequiredPinSetupGate: React.FC<{ onReady: (walletPassword: string) => void
     const ok = await verifyWalletPassword(password);
     setChecking(false);
     if (!ok) { setError(true); return; }
-    setVerifiedPassword(password);
     setPassword('');
+    setVerified(true);
   };
 
+  // Destructive: only after the inline confirmation below. Snapshot first
+  // (nw_wallet_backup_v1), then remove the keys from this device.
   const resetLocalWallet = () => {
-    for (const key of WALLET_RESET_KEYS) localStorage.removeItem(key);
+    removeWalletFromDevice();
     router.push('/onboarding');
   };
 
-  if (verifiedPassword) {
-    return (
-      <PinSetup
-        walletPassword={verifiedPassword}
-        allowSkip={false}
-        onComplete={() => onReady(verifiedPassword)}
-      />
-    );
+  if (verified) {
+    return <PinSetup allowSkip={false} onComplete={onReady} />;
   }
 
   return (
     <main
-      data-testid="pin-setup-required"
-      className="min-h-screen flex flex-col justify-center max-w-[430px] mx-auto px-6"
+      data-testid={forgot ? 'pin-reset' : 'pin-setup-required'}
+      className="min-h-screen flex flex-col justify-center max-w-[430px] mx-auto px-6 py-10"
       style={{ backgroundColor: '#080C09' }}
     >
       <div className="flex flex-col gap-6">
@@ -114,8 +113,8 @@ const RequiredPinSetupGate: React.FC<{ onReady: (walletPassword: string) => void
         </div>
 
         <div>
-          <h1 className="text-white text-2xl font-bold leading-tight">{t('pinSetupRequiredTitle')}</h1>
-          <p className="text-[#3A6045] text-sm leading-relaxed mt-2">{t('pinSetupRequiredText')}</p>
+          <h1 className="text-white text-2xl font-bold leading-tight">{forgot ? t('pinResetTitle') : t('pinSetupRequiredTitle')}</h1>
+          <p className="text-[#3A6045] text-sm leading-relaxed mt-2">{forgot ? t('pinResetText') : t('pinSetupRequiredText')}</p>
         </div>
 
         <div className="flex flex-col gap-3">
@@ -140,24 +139,60 @@ const RequiredPinSetupGate: React.FC<{ onReady: (walletPassword: string) => void
             className="w-full py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95 disabled:opacity-40"
             style={{ background: '#00FF7F', color: '#080C09', boxShadow: '0 0 24px rgba(0,255,127,0.28)' }}
           >
-            {checking ? '…' : t('pinSetupRequiredCta')}
+            {checking ? '…' : forgot ? t('pinResetCta') : t('pinSetupRequiredCta')}
           </button>
 
+          {/* Password forgotten too: re-import the seed. Nothing is deleted
+              here; onboarding asks before replacing a different wallet. */}
           <button
             onClick={() => router.push('/onboarding?recover=1')}
             className="w-full py-3.5 rounded-2xl font-semibold text-sm transition-all active:scale-95"
             style={{ background: 'transparent', border: '1px solid rgba(0,255,127,0.18)', color: '#00FF7F' }}
           >
-            {t('pinSetupRecoverCta')}
+            {forgot ? t('pinResetRecoverCta') : t('pinSetupRecoverCta')}
           </button>
 
-          <button
-            onClick={resetLocalWallet}
-            className="w-full py-3 text-xs font-semibold"
-            style={{ color: '#F7931A' }}
-          >
-            {t('pinSetupResetCta')}
-          </button>
+          {forgot && onBack && (
+            <button
+              onClick={onBack}
+              className="w-full py-3 text-xs font-semibold"
+              style={{ color: '#3A6045' }}
+            >
+              {t('pinResetBack')}
+            </button>
+          )}
+
+          {!forgot && (confirmReset ? (
+            <div
+              data-testid="reset-confirm"
+              className="rounded-2xl p-4 flex flex-col gap-3"
+              style={{ background: 'rgba(247,147,26,0.08)', border: '1px solid rgba(247,147,26,0.3)' }}
+            >
+              <p className="text-sm leading-relaxed" style={{ color: '#F7931A' }}>{t('keysDeleteWarn')}</p>
+              <button
+                onClick={resetLocalWallet}
+                className="w-full py-3 rounded-xl text-sm font-semibold transition-all active:scale-95"
+                style={{ background: '#F7931A', color: '#080C09' }}
+              >
+                {t('keysDeleteConfirm')}
+              </button>
+              <button
+                onClick={() => setConfirmReset(false)}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold"
+                style={{ border: '1px solid rgba(0,255,127,0.18)', color: '#00FF7F' }}
+              >
+                {t('keysDeleteCancel')}
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmReset(true)}
+              className="w-full py-3 text-xs font-semibold"
+              style={{ color: '#F7931A' }}
+            >
+              {t('pinSetupResetCta')}
+            </button>
+          ))}
         </div>
       </div>
     </main>
@@ -167,7 +202,7 @@ const RequiredPinSetupGate: React.FC<{ onReady: (walletPassword: string) => void
 export default function WalletPage() {
   const router = useRouter();
   const { t } = useLanguage();
-  const { user, isDemo, isLoading } = useAuth();
+  const { user, isDemo, isLoading, enterDemo } = useAuth();
   const HEADER_TITLES: Record<Tab, string> = {
     home:          t('headerHome'),
     send:          t('headerSend'),
@@ -185,7 +220,10 @@ export default function WalletPage() {
   // loading placeholder, NEVER wallet content (deny-by-default per CLAUDE.md).
   // Only ever moves to 'open' after localStorage has been read on the client.
   const [pinGate, setPinGate] = useState<PinGate>('checking');
-  const [walletPassword, setWalletPassword] = useState<string | null>(null);
+  // UI unlock flag. The PIN never yields the wallet password any more; every
+  // send asks for the password itself (CryptoSendScreen).
+  const [unlocked, setUnlocked] = useState(false);
+  const [forgotPin, setForgotPin] = useState(false);
   // 2.10 TON-native positioning: Receive defaults to TON (per-coin taps override).
   const [receiveCoin, setReceiveCoin] = useState<ReceiveNetwork>('TON');
   const [cryptoSendCoin, setCryptoSendCoin] = useState<CryptoSendCoin>('ETH');
@@ -222,8 +260,8 @@ export default function WalletPage() {
       setPinGate('setup-required');
       return;
     }
-    setPinGate(walletPassword === null ? 'locked' : 'open');
-  }, [isDemo, walletPassword, user, isLoading, router]);
+    setPinGate(unlocked ? 'open' : 'locked');
+  }, [isDemo, unlocked, user, isLoading, router]);
 
   // Demo-воронка (задача 1.8): отметки задач гида при посещении экранов.
   // ВАЖНО: этот хук ОБЯЗАН объявляться ДО любых ранних return ниже. Иначе
@@ -250,23 +288,39 @@ export default function WalletPage() {
     );
   }
 
-  // PIN gate — shown when the wallet is locked (PIN configured, not unlocked).
-  if (!isDemo && pinGate === 'locked' && walletPassword === null) {
+  // PIN gate: shown when the wallet is locked (PIN configured, not unlocked).
+  if (!isDemo && pinGate === 'locked' && !unlocked) {
+    if (forgotPin) {
+      return (
+        <PasswordPinGate
+          mode="forgot"
+          onReady={() => {
+            setForgotPin(false);
+            setUnlocked(true);
+            setPinGate('open');
+          }}
+          onBack={() => setForgotPin(false)}
+        />
+      );
+    }
     return (
       <PinEntry
-        onSuccess={(pwd) => {
-          setWalletPassword(pwd);
+        onSuccess={() => {
+          setUnlocked(true);
           setPinGate('open');
         }}
+        onDemo={enterDemo}
+        onForgotPin={() => setForgotPin(true)}
       />
     );
   }
 
   if (!isDemo && pinGate === 'setup-required') {
     return (
-      <RequiredPinSetupGate
-        onReady={(pwd) => {
-          setWalletPassword(pwd);
+      <PasswordPinGate
+        mode="required"
+        onReady={() => {
+          setUnlocked(true);
           setPinGate('open');
         }}
       />
