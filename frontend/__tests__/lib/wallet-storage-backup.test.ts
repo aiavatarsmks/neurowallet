@@ -12,7 +12,9 @@ import {
   removeWalletFromDevice,
   importOverwriteKind,
   clearLegacyXorKeys,
+  purgeExpiredWalletBackup,
   WALLET_BACKUP_STORAGE_KEY,
+  WALLET_BACKUP_TTL_MS,
   WALLET_STORAGE_KEYS,
 } from '@/lib/legacy-storage-cleanup';
 
@@ -38,15 +40,16 @@ describe('backupWalletStorage', () => {
   beforeEach(() => localStorage.clear());
   afterEach(() => vi.restoreAllMocks());
 
-  it('snapshots addresses, encrypted blobs and the TON scheme as {at, keys}', () => {
+  it('snapshots addresses, encrypted blobs and the TON scheme as {at, expiresAt, keys}', () => {
     seedWallet();
     const at = new Date('2026-10-13T01:02:03.000Z');
     expect(backupWalletStorage(at)).toBe(true);
 
     const raw = JSON.parse(localStorage.getItem(WALLET_BACKUP_STORAGE_KEY)!);
     expect(raw.at).toBe('2026-10-13T01:02:03.000Z');
+    expect(raw.expiresAt).toBe('2026-11-12T01:02:03.000Z'); // at + 30 days
     expect(raw.keys).toEqual(WALLET);
-    expect(readWalletBackup()).toEqual({ at: raw.at, keys: WALLET });
+    expect(readWalletBackup()).toEqual({ at: raw.at, expiresAt: raw.expiresAt, keys: WALLET });
   });
 
   it('does not copy the PIN blob, the XOR-era blobs or unrelated keys', () => {
@@ -100,6 +103,47 @@ describe('backupWalletStorage', () => {
   it('readWalletBackup returns null for a malformed entry', () => {
     localStorage.setItem(WALLET_BACKUP_STORAGE_KEY, '{not json');
     expect(readWalletBackup()).toBeNull();
+  });
+});
+
+describe('purgeExpiredWalletBackup (run on app start)', () => {
+  const AT = new Date('2026-10-13T00:00:00.000Z');
+  const day = 24 * 60 * 60 * 1000;
+  beforeEach(() => localStorage.clear());
+
+  it('keeps a backup younger than 30 days, deletes it once expired', () => {
+    seedWallet();
+    backupWalletStorage(AT);
+    expect(purgeExpiredWalletBackup(new Date(AT.getTime() + 29 * day))).toBe(false);
+    expect(localStorage.getItem(WALLET_BACKUP_STORAGE_KEY)).not.toBeNull();
+    expect(purgeExpiredWalletBackup(new Date(AT.getTime() + WALLET_BACKUP_TTL_MS))).toBe(true);
+    expect(localStorage.getItem(WALLET_BACKUP_STORAGE_KEY)).toBeNull();
+  });
+
+  it('a backup written before expiresAt existed expires at + 30 days', () => {
+    localStorage.setItem(WALLET_BACKUP_STORAGE_KEY, JSON.stringify({ at: AT.toISOString(), keys: WALLET }));
+    expect(readWalletBackup()!.expiresAt).toBe('2026-11-12T00:00:00.000Z');
+    expect(purgeExpiredWalletBackup(new Date(AT.getTime() + 10 * day))).toBe(false);
+    expect(purgeExpiredWalletBackup(new Date(AT.getTime() + 31 * day))).toBe(true);
+    expect(localStorage.getItem(WALLET_BACKUP_STORAGE_KEY)).toBeNull();
+  });
+
+  it('leaves an entry it cannot date alone and never throws', () => {
+    localStorage.setItem(WALLET_BACKUP_STORAGE_KEY, '{not json');
+    expect(purgeExpiredWalletBackup(new Date('2030-01-01T00:00:00.000Z'))).toBe(false);
+    localStorage.setItem(WALLET_BACKUP_STORAGE_KEY, JSON.stringify({ keys: WALLET }));
+    expect(purgeExpiredWalletBackup(new Date('2030-01-01T00:00:00.000Z'))).toBe(false);
+    expect(localStorage.getItem(WALLET_BACKUP_STORAGE_KEY)).not.toBeNull();
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied'); });
+    expect(() => purgeExpiredWalletBackup()).not.toThrow();
+    vi.restoreAllMocks();
+  });
+
+  it('touches nothing but the backup', () => {
+    seedWallet();
+    backupWalletStorage(AT);
+    purgeExpiredWalletBackup(new Date(AT.getTime() + 60 * day));
+    expect(localStorage.getItem('wallet_keystore')).toBe(WALLET.wallet_keystore);
   });
 });
 

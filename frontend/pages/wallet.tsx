@@ -217,6 +217,7 @@ const PasswordPinGate: React.FC<{ mode: PasswordGateMode; onReady: () => void; o
               style={{ background: 'rgba(247,147,26,0.08)', border: '1px solid rgba(247,147,26,0.3)' }}
             >
               <p className="text-sm leading-relaxed" style={{ color: '#F7931A' }}>{t('keysDeleteWarn')}</p>
+              <p className="text-xs leading-relaxed" style={{ color: '#F7931A' }}>{t('keysDeleteBackupNote')}</p>
               <button
                 onClick={resetLocalWallet}
                 className="w-full py-3 rounded-xl text-sm font-semibold transition-all active:scale-95"

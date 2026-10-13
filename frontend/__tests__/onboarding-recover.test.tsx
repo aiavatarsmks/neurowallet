@@ -94,6 +94,7 @@ describe('onboarding ?recover=1 overwrite protection', () => {
     expect(screen.getByTestId('confirm-replace')).toBeInTheDocument();
     expect(screen.getByText('onbReplaceImportWarn')).toBeInTheDocument();
     expect(screen.getByText('onbReplaceKeysWarn')).toBeInTheDocument();
+    expect(screen.getByText('keysDeleteBackupNote')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'onbBack' }));
     expect(screen.getByRole('textbox')).toBeInTheDocument(); // back on the phrase step

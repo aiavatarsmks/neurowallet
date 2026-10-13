@@ -66,6 +66,7 @@ describe('ErrorBoundary', () => {
 
     expect(screen.getByTestId('eb-reset-confirm')).toBeInTheDocument();
     expect(screen.getByText(RU.keysDeleteWarn)).toBeInTheDocument();
+    expect(screen.getByText(RU.keysDeleteBackupNote)).toBeInTheDocument();
     expect(localStorage.getItem('wallet_keystore')).toBe('ks');
 
     fireEvent.click(screen.getByRole('button', { name: RU.keysDeleteCancel }));

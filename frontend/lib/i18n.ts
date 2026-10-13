@@ -590,6 +590,7 @@ export const translations = {
     csLastSendStatusFailed: '❌ не прошёл',
     csLastSendStatusUnknown: '⚠️ неизвестен, проверьте в обозревателе',
     csLastSendDismiss: 'Скрыть',
+    keysDeleteBackupNote: 'Зашифрованная резервная копия ключей останется на этом устройстве 30 дней, потом удалится автоматически.',
   },
   en: {
     // ── Landing / onboarding carousel (pages/index.tsx) ──────────────────────
@@ -1179,6 +1180,7 @@ export const translations = {
     csLastSendStatusFailed: '❌ failed',
     csLastSendStatusUnknown: '⚠️ unknown, check the explorer',
     csLastSendDismiss: 'Dismiss',
+    keysDeleteBackupNote: 'An encrypted backup of the keys stays on this device for 30 days, then it is deleted automatically.',
   },
 } as const;
 
