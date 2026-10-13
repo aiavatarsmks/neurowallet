@@ -128,26 +128,54 @@ function buildTransferData(toHex: string, units: bigint): string {
 
 export interface TronAccountBalances { trx: number; usdtTrc: number }
 
-/** Parse TronGrid /v1/accounts/{addr} response (unactivated account → zeros). */
+function malformed(what: string): Error {
+  return new Error(`TronGrid: malformed response (${what})`);
+}
+
+/**
+ * Parse TronGrid /v1/accounts/{addr}. A non-activated account (`data: []`)
+ * is a genuine zero. Anything else that does not look like an account
+ * response (API error field, missing `data`, non-numeric balances) THROWS,
+ * so callers can show "unavailable" instead of a fake 0.
+ */
 export function parseTronAccount(data: unknown): TronAccountBalances {
-  const account = ((data as { data?: unknown[] })?.data ?? [])[0] as
-    | { balance?: number; trc20?: Array<Record<string, string>> }
-    | undefined;
-  if (!account) return { trx: 0, usdtTrc: 0 };
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw malformed('body');
+  const body = data as { success?: unknown; error?: unknown; data?: unknown };
+  if (body.success === false || body.error !== undefined) {
+    throw new Error(`TronGrid error: ${String(body.error ?? 'success=false').slice(0, 120)}`);
+  }
+  if (!Array.isArray(body.data)) throw malformed('data');
+  const account = body.data[0] as unknown;
+  if (account === undefined) return { trx: 0, usdtTrc: 0 };          // not activated
+  if (!account || typeof account !== 'object') throw malformed('account');
+
+  const { balance = 0, trc20 = [] } = account as { balance?: unknown; trc20?: unknown };
+  if (typeof balance !== 'number' || !Number.isFinite(balance) || balance < 0) throw malformed('balance');
+  if (!Array.isArray(trc20)) throw malformed('trc20');
+
   // trc20 is an array of {contractAddress: amountString} objects
-  const entry = (account.trc20 ?? []).find(
-    (t) => Object.keys(t)[0]?.toLowerCase() === USDT_TRC20_CONTRACT.toLowerCase(),
+  const entry = trc20.find(
+    (t): t is Record<string, unknown> =>
+      !!t && typeof t === 'object' &&
+      Object.keys(t)[0]?.toLowerCase() === USDT_TRC20_CONTRACT.toLowerCase(),
   );
-  return {
-    trx: (account.balance ?? 0) / 1e6,
-    usdtTrc: entry ? parseInt(Object.values(entry)[0], 10) / 1e6 : 0,
-  };
+  let usdtTrc = 0;
+  if (entry) {
+    const raw = Object.values(entry)[0];
+    const units = typeof raw === 'string' && /^\d+$/.test(raw) ? Number(raw)
+      : typeof raw === 'number' ? raw
+      : NaN;
+    if (!Number.isFinite(units) || units < 0) throw malformed('trc20 amount');
+    usdtTrc = units / 1e6;
+  }
+  return { trx: balance / 1e6, usdtTrc };
 }
 
 /**
  * TRX + USDT TRC-20 одним запросом (раньше — два одинаковых вызова).
  * `headers` — для серверного вызова с TRON-PRO-API-KEY; в браузере не передаётся.
- * Бросает при сетевой ошибке/не-2xx — вызывающий решает, что делать.
+ * Бросает при сетевой ошибке / не-2xx / битом JSON / error-поле API —
+ * вызывающий решает, что делать. Неактивированный аккаунт — честный 0.
  */
 export async function fetchTronAccountBalances(
   address: string,
@@ -161,20 +189,14 @@ export async function fetchTronAccountBalances(
   return parseTronAccount(await res.json());
 }
 
+/** Throws on provider failure (no silent 0); a non-activated account is 0. */
 export async function fetchUsdtTrc20Balance(address: string): Promise<number> {
-  try {
-    return (await fetchTronAccountBalances(address)).usdtTrc;
-  } catch {
-    return 0;
-  }
+  return (await fetchTronAccountBalances(address)).usdtTrc;
 }
 
+/** Throws on provider failure (no silent 0); a non-activated account is 0. */
 export async function fetchTrxBalance(address: string): Promise<number> {
-  try {
-    return (await fetchTronAccountBalances(address)).trx;
-  } catch {
-    return 0;
-  }
+  return (await fetchTronAccountBalances(address)).trx;
 }
 
 // ─── Local verification of TronGrid-built transactions (no blind signing) ────
