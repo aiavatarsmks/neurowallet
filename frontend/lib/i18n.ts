@@ -539,6 +539,8 @@ export const translations = {
     csErrTronBroadcast: 'Сеть Tron не приняла транзакцию. Попробуй ещё раз позже.',
     csErrNetworkBusy: 'Сеть сейчас перегружена или ограничивает запросы. Подожди немного и попробуй снова.',
     csErrGenericRetry: 'Ошибка отправки. Попробуй ещё раз.',
+    txLoadFailed: 'Не удалось загрузить историю',
+    txRetry: 'Повторить',
   },
   en: {
     // ── Landing / onboarding carousel (pages/index.tsx) ──────────────────────
@@ -1078,6 +1080,8 @@ export const translations = {
     csErrTronBroadcast: 'The Tron network did not accept the transaction. Try again later.',
     csErrNetworkBusy: 'The network is busy or rate-limiting requests. Wait a moment and try again.',
     csErrGenericRetry: 'Send error. Please try again.',
+    txLoadFailed: "Couldn't load history",
+    txRetry: 'Retry',
   },
 } as const;
 

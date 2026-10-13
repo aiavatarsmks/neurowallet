@@ -112,6 +112,9 @@ export const TxHistory: React.FC<TxHistoryProps> = ({ limit = 15 }) => {
   const [txs,     setTxs]     = useState<TxRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [noWallet, setNoWallet] = useState(false);
+  // "Couldn't load" (401/429/5xx, offline, no session) ≠ "no transactions".
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   // Neura explainer (задача 1.7)
   const [explainId,   setExplainId]   = useState('');
@@ -130,6 +133,7 @@ export const TxHistory: React.FC<TxHistoryProps> = ({ limit = 15 }) => {
     if (isDemo) {
       setTxs(DEMO_TXS.slice(0, limit));
       setNoWallet(false);
+      setLoadError(false);
       setLoading(false);
       return;
     }
@@ -142,6 +146,7 @@ export const TxHistory: React.FC<TxHistoryProps> = ({ limit = 15 }) => {
 
     if (!eth) {
       setNoWallet(true);
+      setLoadError(false);
       setLoading(false);
       return;
     }
@@ -153,28 +158,46 @@ export const TxHistory: React.FC<TxHistoryProps> = ({ limit = 15 }) => {
     if (tron) params.set('tron', tron);
     if (ton)  params.set('ton',  ton);
 
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(false);
     (async () => {
       try {
         const { data: sessionData } = await supabase.auth.getSession();
         const token = sessionData.session?.access_token;
-        if (!token) {
-          setLoading(false);
-          return;
-        }
+        if (!token) throw new Error('no session');
         const r = await fetch(`/api/tx-history?${params}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
+        if (!r.ok) throw new Error(`tx-history ${r.status}`);
         const data = await r.json();
-        setTxs((data.transactions ?? []).slice(0, limit));
+        if (!Array.isArray(data?.transactions)) throw new Error('tx-history: bad body');
+        if (!cancelled) setTxs(data.transactions.slice(0, limit));
       } catch {
-        /* ignore — show empty state */
+        if (!cancelled) setLoadError(true);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
-  }, [isDemo, limit]);
+    return () => { cancelled = true; };
+  }, [isDemo, limit, reloadKey]);
 
   if (loading) return <TxSkeleton />;
+
+  if (loadError) {
+    return (
+      <div className="py-6 flex flex-col items-center gap-3 text-center" role="alert">
+        <p className="text-[#7FBF9A] text-sm">{t('txLoadFailed')}</p>
+        <button
+          onClick={() => setReloadKey((k) => k + 1)}
+          className="px-4 py-2 rounded-xl text-xs font-semibold transition-all active:scale-95"
+          style={{ background: 'rgba(0,255,127,0.08)', border: '1px solid rgba(0,255,127,0.25)', color: '#00FF7F' }}
+        >
+          {t('txRetry')}
+        </button>
+      </div>
+    );
+  }
 
   if (noWallet) {
     return (
