@@ -1,0 +1,31 @@
+{
+  "_note": "Real unsigned TronGrid response captured 2026-10-13 (read-only call, never signed or broadcast).",
+  "captured_at": 1791870714253,
+  "owner": "TNXoiAJ3dct8Fjg4M9fkLFh9S2v9TXc32G",
+  "to": "TJDENsfBJs4RFETt1X1W8wMDc8M5XnJhCe",
+  "amount_sun": 1234567,
+  "response": {
+    "raw_data": {
+      "ref_block_bytes": "8548",
+      "ref_block_hash": "e8748dbf0f734592",
+      "expiration": 1791870774000,
+      "contract": [
+        {
+          "parameter": {
+            "value": {
+              "owner_address": "4189cbcb2372e1c2fbc00f24895a406a0c722c89f3",
+              "to_address": "415a67fa7cc56bd6d043a98e17d329c1dc9e14753f",
+              "amount": 1234567
+            },
+            "type_url": "type.googleapis.com/protocol.TransferContract"
+          },
+          "type": "TransferContract"
+        }
+      ],
+      "timestamp": 1791870715060
+    },
+    "raw_data_hex": "0a0285482208e8748dbf0f73459240f0d5c89e93345a67080112630a2d747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e5472616e73666572436f6e747261637412320a154189cbcb2372e1c2fbc00f24895a406a0c722c89f31215415a67fa7cc56bd6d043a98e17d329c1dc9e14753f1887ad4b70b489c59e9334",
+    "txID": "33bd56309c22dbf55a512d2fc37645f534e6c715cec3e53423e2c1d340f6dc3f",
+    "visible": false
+  }
+}

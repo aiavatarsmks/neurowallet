@@ -1,0 +1,38 @@
+{
+  "_note": "Real unsigned TronGrid response captured 2026-10-13 (read-only call, never signed or broadcast).",
+  "captured_at": 1791870714253,
+  "owner": "TNXoiAJ3dct8Fjg4M9fkLFh9S2v9TXc32G",
+  "to": "TJDENsfBJs4RFETt1X1W8wMDc8M5XnJhCe",
+  "amount_units": 2500000,
+  "fee_limit": 30000000,
+  "response": {
+    "transaction": {
+      "raw_data": {
+        "ref_block_bytes": "8548",
+        "ref_block_hash": "e8748dbf0f734592",
+        "expiration": 1791870774000,
+        "contract": [
+          {
+            "parameter": {
+              "value": {
+                "owner_address": "4189cbcb2372e1c2fbc00f24895a406a0c722c89f3",
+                "contract_address": "41a614f803b6fd780986a42c78ec9c7f77e6ded13c",
+                "data": "a9059cbb0000000000000000000000005a67fa7cc56bd6d043a98e17d329c1dc9e14753f00000000000000000000000000000000000000000000000000000000002625a0"
+              },
+              "type_url": "type.googleapis.com/protocol.TriggerSmartContract"
+            },
+            "type": "TriggerSmartContract"
+          }
+        ],
+        "timestamp": 1791870716619,
+        "fee_limit": 30000000
+      },
+      "raw_data_hex": "0a0285482208e8748dbf0f73459240f0d5c89e93345aae01081f12a9010a31747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e54726967676572536d617274436f6e747261637412740a154189cbcb2372e1c2fbc00f24895a406a0c722c89f3121541a614f803b6fd780986a42c78ec9c7f77e6ded13c2244a9059cbb0000000000000000000000005a67fa7cc56bd6d043a98e17d329c1dc9e14753f00000000000000000000000000000000000000000000000000000000002625a070cb95c59e933490018087a70e",
+      "txID": "997e5a17c3e27b941b5c409f964a8f8ba29956566acf72cbd510141cce59872e",
+      "visible": false
+    },
+    "result": {
+      "result": true
+    }
+  }
+}
