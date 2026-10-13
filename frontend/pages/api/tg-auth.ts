@@ -13,12 +13,17 @@
  *   - TELEGRAM_BOT_TOKEN is server-only — never NEXT_PUBLIC_
  *   - The derived password is HMAC(telegram_id, bot_token) — deterministic but secret
  *   - initData is validated within 15 min (auth_date freshness check)
+ *   - After the HMAC check the verified Telegram id is written to
+ *     app_metadata.telegram_id (service role only). That is the single source
+ *     the server trusts for bot messages (lib/server/telegram-id.ts);
+ *     user_metadata.telegram_id is user-writable and informational only.
  */
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { checkRateLimit, writeAuditLog } from '@/lib/server/api-security';
+import { syncTelegramAppMetadata } from '@/lib/server/telegram-id';
 
 // ─── HMAC validation ──────────────────────────────────────────────────────────
 
@@ -134,6 +139,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       email,
       password,
       options: {
+        // user_metadata is user-writable: informational only, never trusted
+        // server-side. The trusted copy goes to app_metadata below.
         data: {
           name:        displayName,
           telegram_id: tgUser.id,
@@ -150,7 +157,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     session = signUpData.session;
   }
 
-  // 5. Upsert Telegram profile into public.profiles (uses user JWT — no service role needed)
+  // 5. Record the HMAC-verified Telegram id in app_metadata (service role).
+  //    Best-effort, writes only on change; never blocks the login.
+  await syncTelegramAppMetadata(session.user, tgUser.id);
+
+  // 6. Upsert Telegram profile into public.profiles (uses user JWT — no service role needed)
   try {
     const userClient = createClient(supabaseUrl, supabaseKey, {
       global: { headers: { Authorization: `Bearer ${session.access_token}` } },

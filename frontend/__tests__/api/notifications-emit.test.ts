@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import handler from '@/pages/api/notifications/emit';
 import { requireSupabaseUser, checkRateLimit } from '@/lib/server/api-security';
 import { writeNotification } from '@/lib/server/notifications';
+import { dispatchNotification } from '@/lib/server/notification-engine';
 import { mockReq, mockRes } from './helpers';
 
 vi.mock('@/lib/server/api-security', () => ({
@@ -10,10 +11,12 @@ vi.mock('@/lib/server/api-security', () => ({
   getTraceId: vi.fn(() => null),
 }));
 vi.mock('@/lib/server/notifications', () => ({ writeNotification: vi.fn() }));
+vi.mock('@/lib/server/notification-engine', () => ({ dispatchNotification: vi.fn() }));
 
 const mockedAuth = vi.mocked(requireSupabaseUser);
 const mockedLimit = vi.mocked(checkRateLimit);
 const mockedWrite = vi.mocked(writeNotification);
+const mockedDispatch = vi.mocked(dispatchNotification);
 const USER = { user: { id: 'u1' }, token: 'jwt' } as Awaited<ReturnType<typeof requireSupabaseUser>>;
 
 describe('POST /api/notifications/emit', () => {
@@ -76,5 +79,29 @@ describe('POST /api/notifications/emit', () => {
       await handler(mockReq({ method: 'POST', body: { kind } }), res);
       expect(res.statusCode).toBe(400);
     }
+  });
+});
+
+describe('POST /api/notifications/emit (engine on): Telegram recipient', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.NEXT_PUBLIC_NOTIFICATIONS_ENGINE_ENABLED = 'true';
+    mockedLimit.mockResolvedValue(true);
+  });
+
+  it('uses app_metadata.telegram_id (service-role written by tg-auth)', async () => {
+    mockedAuth.mockResolvedValue({ user: { id: 'u1', app_metadata: { telegram_id: 42 } }, token: 'jwt' } as never);
+    const res = mockRes();
+    await handler(mockReq({ method: 'POST', body: { kind: 'tx_sent', coin: 'ETH' } }), res);
+    expect(res.statusCode).toBe(204);
+    expect(mockedDispatch).toHaveBeenCalledWith(expect.objectContaining({ userId: 'u1', telegramId: 42 }));
+  });
+
+  it('ignores user-writable user_metadata.telegram_id (no Telegram channel)', async () => {
+    mockedAuth.mockResolvedValue({ user: { id: 'u1', app_metadata: {}, user_metadata: { telegram_id: 777 } }, token: 'jwt' } as never);
+    const res = mockRes();
+    await handler(mockReq({ method: 'POST', body: { kind: 'tx_sent', coin: 'ETH' } }), res);
+    expect(res.statusCode).toBe(204);
+    expect(mockedDispatch).toHaveBeenCalledWith(expect.objectContaining({ telegramId: null }));
   });
 });

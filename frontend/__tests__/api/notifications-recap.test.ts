@@ -64,4 +64,16 @@ describe('/api/notifications/recap', () => {
     expect((res.jsonBody as { status: string }).status).toBe('deduped');
     expect(mockedGen).toHaveBeenCalledWith(expect.objectContaining({ userId: 'u1', lang: 'en' }));
   });
+
+  it('passes only the verified app_metadata telegram id to the generator', async () => {
+    mockedAuth.mockResolvedValue({ user: { id: 'u1', app_metadata: {}, user_metadata: { telegram_id: 777 } }, token: 'jwt' } as never);
+    let res = mockRes();
+    await handler(mockReq({ method: 'POST' }), res);
+    expect(mockedGen).toHaveBeenLastCalledWith(expect.objectContaining({ telegramId: null }));
+
+    mockedAuth.mockResolvedValue({ user: { id: 'u1', app_metadata: { telegram_id: 42 } }, token: 'jwt' } as never);
+    res = mockRes();
+    await handler(mockReq({ method: 'POST' }), res);
+    expect(mockedGen).toHaveBeenLastCalledWith(expect.objectContaining({ telegramId: 42 }));
+  });
 });

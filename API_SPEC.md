@@ -41,6 +41,17 @@ freshness `auth_date` ≤ 15 минут, наличие `user.id`.
 `400` нет/битый initData; `401` невалидная подпись или устаревший auth_date;
 `429`; `500` неконфигурирован сервер.
 
+После проверки HMAC сервер записывает проверенный id в
+`app_metadata.telegram_id` (+ `app_metadata.source = 'telegram_mini_app'`)
+через admin API (`SUPABASE_SERVICE_ROLE_KEY`). Пишет только при изменении
+значения; без service key или при ошибке GoTrue логин всё равно проходит
+(лог-предупреждение). `app_metadata` пользователь изменить не может, в отличие
+от `user_metadata` (`supabase.auth.updateUser({ data })`), поэтому сервер
+определяет Telegram-получателя **только** по `app_metadata.telegram_id`
+(`lib/server/telegram-id.ts → getVerifiedTelegramId`; используют
+`/api/tg-notify`, `/api/notifications/emit`, `/api/notifications/recap`).
+`user_metadata.telegram_id` остаётся чисто информационным.
+
 ## POST /api/neura-chat
 
 Прокси к OpenRouter (`openai/gpt-4o-mini`), персона «Нейра». Body:
@@ -74,9 +85,39 @@ Solana RPC, Blockstream, Toncenter. Ответ: `200 { transactions: TxRow[] }`,
 
 ## POST /api/tg-notify
 
-Отправка Telegram-уведомления **самому себе**. Body: `{ message: string }`.
-Получатель — всегда `telegram_id` из `user_metadata` сессии; legacy-поле
-`telegramId` в body игнорируется. Нет привязанного Telegram → `403`.
+Telegram-уведомление **самому себе** об отправленной транзакции, только по
+шаблону. Свободный текст не принимается: прежний контракт `{ message }`
+позволял слать произвольный HTML от официального бота (фишинг) и теперь
+получает `400`.
+
+Body:
+
+```json
+{ "kind": "tx_sent", "coin": "ETH", "amount": "0.015",
+  "to": "0x1234…5678", "hash": "0xabc…", "lang": "ru" }
+```
+
+| Поле | Правило |
+|---|---|
+| `kind` | строго `'tx_sent'` |
+| `coin` | `ETH`, `USDT`, `BTC`, `SOL`, `TRX`, `TRC20`, `TON`, `USDT_TON` |
+| `amount` | **строка**, `/^\d{1,18}(\.\d{1,18})?$/` (без экспоненты, без знака) |
+| `to`, `hash` | строки 1..128 символов из `[A-Za-z0-9:_\-.]` |
+| `lang` | `'en'` → английский шаблон, всё остальное → русский |
+
+Текст собирает сервер (`lib/server/tg-notify-template.ts`), каждое значение
+HTML-экранируется. Подписи монет: USDT → `USDT (ERC-20)`, TRC20 →
+`USDT (TRC-20)`, USDT_TON → `USDT (TON)`, остальные как есть. Адрес
+сокращается до `первые 6...последние 4`, хеш до первых 16 символов.
+
+Получатель — только `app_metadata.telegram_id` сессии (см. tg-auth). Поля
+`telegramId` в body и `user_metadata.telegram_id` игнорируются.
+
+Ответы: `200 { ok: true }`; `400 { error: 'invalid kind' | 'invalid coin' |
+'invalid amount' | 'invalid to' | 'invalid hash' }`; `401`; `403` нет
+проверенного Telegram id; `429`; `500` нет токена бота или ошибка Telegram.
+Audit: `telegram_notification_requested { telegram_id, kind, coin,
+message_chars }`, `..._sent`, `..._failed`; полный адрес и хеш в audit не пишутся.
 
 ## GET /api/neuro-id/resolve
 

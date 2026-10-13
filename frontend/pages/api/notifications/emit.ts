@@ -3,6 +3,7 @@ import { requireSupabaseUser, checkRateLimit, getTraceId } from '@/lib/server/ap
 import { writeNotification, type Lang } from '@/lib/server/notifications';
 import { dispatchNotification } from '@/lib/server/notification-engine';
 import { notificationsEngineEnabled, type NotificationKind } from '@/lib/notifications-config';
+import { getVerifiedTelegramId } from '@/lib/server/telegram-id';
 
 /**
  * POST /api/notifications/emit — record a notification for the caller.
@@ -53,14 +54,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const dedupe = traceId ? `${kind}:${traceId}` : undefined;
 
   if (notificationsEngineEnabled()) {
-    const telegramId = Number(auth.user.user_metadata?.telegram_id);
     await dispatchNotification({
       userId: auth.user.id,
       kind,
       lang,
       meta,
       dedupeKey: dedupe,
-      telegramId: Number.isFinite(telegramId) && telegramId ? telegramId : null,
+      // app_metadata only (service-role written by tg-auth); user_metadata is user-writable.
+      telegramId: getVerifiedTelegramId(auth.user),
       req,
     });
   } else {
