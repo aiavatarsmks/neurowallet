@@ -1,11 +1,29 @@
 /** @type {import('next').NextConfig} */
 
+// Exact Supabase project origin, resolved at build time from the public env
+// (NEXT_PUBLIC_* is inlined into the bundle anyway, nothing secret here).
+// Fallback to the wildcard ONLY when the env is missing or unparsable (e.g. a
+// local build without .env.local), so such a build still talks to Supabase.
+function supabaseOrigin() {
+  const raw = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (raw) {
+    try {
+      const { protocol, origin } = new URL(raw);
+      if (protocol === 'https:') return origin;
+    } catch { /* fall through */ }
+  }
+  return 'https://*.supabase.co';
+}
+
+// Browser-side hosts only. Server-only upstreams (api.telegram.org for the
+// bot, OpenRouter, provider keys) are NOT listed: the browser never calls them.
 const connectSrc = [
   "'self'",
-  'https://*.supabase.co',
-  'https://gonkabroker.com',
-  'https://*.gonkabroker.com',
-  'https://cloudflare-eth.com',
+  supabaseOrigin(),
+  // ETH JSON-RPC (client wallet code)
+  'https://ethereum-rpc.publicnode.com',
+  'https://1rpc.io',
+  'https://eth.drpc.org',
   'https://api.mainnet-beta.solana.com',
   'https://blockstream.info',
   'https://mempool.space',
@@ -14,8 +32,24 @@ const connectSrc = [
   'https://api.trongrid.io',
   'https://toncenter.com',
   'https://tonapi.io',
-  'https://api.telegram.org',
 ].join(' ');
+
+// Images: own assets, data: URLs (QR codes from the qrcode lib) and Telegram
+// avatars (initDataUnsafe.user.photo_url → t.me/i/userpic/..., Telegram CDNs).
+const imgSrc = [
+  "'self'",
+  'data:',
+  'https://t.me',
+  'https://*.t.me',
+  'https://telegram.org',
+  'https://*.telegram.org',
+  'https://*.telesco.pe',
+  'https://*.cdn-telegram.org',
+].join(' ');
+
+// Powerful features the app does not use. QR scanning is not implemented in
+// the web view (no getUserMedia / BarcodeDetector), so camera is off too.
+const permissionsPolicy = 'camera=(), microphone=(), geolocation=(), payment=(), usb=()';
 
 // script-src has no 'unsafe-inline': verified against the production build —
 // the only inline <script> Next.js (Pages Router) emits is __NEXT_DATA__ with
@@ -27,9 +61,12 @@ const csp = [
   "default-src 'self'",
   "script-src 'self' https://telegram.org",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: https:",
+  `img-src ${imgSrc}`,
   `connect-src ${connectSrc}`,
   "font-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
   // Clickjacking protection that still lets Telegram Web (web.telegram.org —
   // K/A clients load Mini Apps in an iframe) embed us. Native Telegram apps use
   // a WebView, not an iframe, so they are unaffected. Replaces the former
@@ -50,6 +87,7 @@ const nextConfig = {
           { key: 'Content-Security-Policy', value: csp },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Permissions-Policy', value: permissionsPolicy },
           { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate' },
         ],
       },
