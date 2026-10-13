@@ -29,8 +29,11 @@ export interface RecapCoinFact {
 
 export interface RecapFacts {
   kind: 'recap';
+  /** Sum over `coins` only: coins whose balance could not be refreshed are not in it. */
   totalEur: number;
   coins: RecapCoinFact[];
+  /** Coins whose balance could not be refreshed: unknown, never stated as 0. */
+  unavailable: FactChain[];
 }
 
 export type NeuraFacts = TxFacts | RecapFacts;
@@ -61,14 +64,28 @@ export function txFacts(row: {
   };
 }
 
-/** Факты recap из снапшота балансов (WalletBalances). */
+/** AssetSymbol (lib/crypto/assets) → FactChain. */
+const ASSET_TO_FACT: Record<string, FactChain> = {
+  BTC: 'BTC', ETH: 'ETH', SOL: 'SOL', USDT: 'USDT', TRX: 'TRX', USDT_TRC: 'TRC20', TON: 'TON', USDT_TON: 'USDT_TON',
+};
+
+/**
+ * Факты recap из снапшота балансов (WalletBalances). Монеты из
+ * `b.unavailable` (провайдер не ответил) не попадают в coins/totalEur: их
+ * число в снапшоте либо последнее известное, либо 0-заглушка, и Нейра не
+ * должна выдавать его за текущий баланс. Они перечислены в `unavailable`.
+ */
 export function recapFacts(b: {
   eth: number; sol: number; btc: number; trx: number; ton: number;
   usdt: number; usdtTrc: number; usdtTon: number;
   ethEur: number; solEur: number; btcEur: number; trxEur: number; tonEur: number;
+  usdtEur?: number;
   ethChange24h?: number; solChange24h?: number; btcChange24h?: number;
   trxChange24h?: number; tonChange24h?: number;
+  unavailable?: readonly string[];
 }): RecapFacts {
+  const unavailable = [...new Set((b.unavailable ?? []).map((s) => ASSET_TO_FACT[s]).filter(Boolean))];
+  const usdtEur = typeof b.usdtEur === 'number' && Number.isFinite(b.usdtEur) && b.usdtEur > 0 ? b.usdtEur : 0.92;
   const coin = (c: FactChain, balance: number, rate: number, change?: number): RecapCoinFact => ({
     coin: c,
     balance: Number.isFinite(balance) ? balance : 0,
@@ -82,14 +99,15 @@ export function recapFacts(b: {
     coin('SOL', b.sol, b.solEur, b.solChange24h),
     coin('TRX', b.trx, b.trxEur, b.trxChange24h),
     coin('TON', b.ton, b.tonEur, b.tonChange24h),
-    coin('USDT', b.usdt, 0.92, undefined),
-    coin('TRC20', b.usdtTrc, 0.92, undefined),
-    coin('USDT_TON', b.usdtTon, 0.92, undefined),
-  ].filter((c) => c.balance > 0);
+    coin('USDT', b.usdt, usdtEur, undefined),
+    coin('TRC20', b.usdtTrc, usdtEur, undefined),
+    coin('USDT_TON', b.usdtTon, usdtEur, undefined),
+  ].filter((c) => c.balance > 0 && !unavailable.includes(c.coin));
 
   return {
     kind: 'recap',
     totalEur: +coins.reduce((s, c) => s + c.eur, 0).toFixed(2),
     coins,
+    unavailable,
   };
 }

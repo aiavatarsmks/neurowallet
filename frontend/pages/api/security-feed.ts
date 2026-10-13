@@ -11,8 +11,11 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
 import { checkRateLimit, requireSupabaseUser } from '@/lib/server/api-security';
 
-const FEED_ACTIONS = new Set([
+// Filtered IN THE QUERY (.in) so noisy actions (tx_history_requested,
+// ai_chat_*, ...) can't push logins out of the window. Exported for tests.
+export const FEED_ACTIONS = [
   'tg_auth_login',
+  'session_started', // email sessions, written by /api/device-ping
   'risk_flagged',
   'risk_override_confirmed',
   'tx_draft_created',
@@ -21,9 +24,11 @@ const FEED_ACTIONS = new Set([
   'payment_request_updated',
   'contact_saved',
   'contact_deleted',
-]);
+] as const;
 
-const SAFE_META_KEYS = new Set(['coin', 'level', 'status', 'reasons']);
+const FEED_LIMIT = 30;
+
+const SAFE_META_KEYS = new Set(['coin', 'level', 'status', 'reasons', 'method']);
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') {
@@ -52,14 +57,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .from('audit_log')
       .select('action, metadata, created_at')
       .eq('user_id', auth.user.id)
+      .in('action', [...FEED_ACTIONS])
       .order('created_at', { ascending: false })
-      .limit(60);
+      .limit(FEED_LIMIT);
 
     if (error || !data) return res.status(200).json({ events: [] });
 
+    // Defence in depth: re-check the allowlist even though the query filters.
+    const allowed = new Set<string>(FEED_ACTIONS);
     const events = data
-      .filter((row) => FEED_ACTIONS.has(row.action))
-      .slice(0, 30)
+      .filter((row) => allowed.has(row.action))
+      .slice(0, FEED_LIMIT)
       .map((row) => ({
         action: row.action,
         created_at: row.created_at,

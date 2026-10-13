@@ -3,12 +3,23 @@
  * Вызывается клиентом раз на вкладку после SIGNED_IN. Сервер сам считает
  * sha256(user-agent) и усечённую метку — клиентскому вводу не доверяем.
  * До миграции 0007 — тихая деградация.
+ *
+ * Audit: email-входы раньше не попадали в audit_log (логин идёт напрямую в
+ * Supabase Auth, мимо нашего API). Этот вызов и есть серверная точка «сессия
+ * началась на устройстве», поэтому здесь пишется `session_started`
+ * { method: 'email' }, его показывает security center. Telegram-аккаунты
+ * пропускаем: для них tg-auth уже пишет `tg_auth_login`.
  */
 
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type User } from '@supabase/supabase-js';
 import { createHash } from 'crypto';
-import { checkRateLimit, requireSupabaseUser } from '@/lib/server/api-security';
+import { checkRateLimit, requireSupabaseUser, writeAuditLog } from '@/lib/server/api-security';
+import { getVerifiedTelegramId } from '@/lib/server/telegram-id';
+
+function isTelegramAccount(user: Pick<User, 'email' | 'app_metadata'>): boolean {
+  return getVerifiedTelegramId(user) !== null || /@neurowallet\.tg$/i.test(user.email ?? '');
+}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -36,7 +47,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const svc = createClient(url, serviceKey);
-    const { error } = await svc.from('devices').upsert(
+    // Ошибка = миграция 0007 не применена: тихо, но audit ниже всё равно пишем.
+    await svc.from('devices').upsert(
       {
         user_id: auth.user.id,
         ua_hash: uaHash,
@@ -45,8 +57,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       },
       { onConflict: 'user_id,ua_hash' },
     );
-    if (error) return res.status(204).end(); // миграция не применена — тихо
   } catch { /* тихо */ }
+
+  if (!isTelegramAccount(auth.user)) {
+    await writeAuditLog(auth.user.id, 'session_started', { method: 'email' }, req);
+  }
 
   return res.status(204).end();
 }

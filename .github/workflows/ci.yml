@@ -22,13 +22,13 @@ jobs:
         working-directory: frontend
         run: |
           npm install
-          npm audit --audit-level=high
+          node ../scripts/audit-gate.mjs
 
       - name: Audit backend
         working-directory: backend
         run: |
           npm install
-          npm audit --audit-level=high
+          node ../scripts/audit-gate.mjs
 
   frontend:
     name: Frontend build & test

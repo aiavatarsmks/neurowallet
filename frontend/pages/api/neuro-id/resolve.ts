@@ -1,7 +1,23 @@
+/**
+ * pages/api/neuro-id/resolve.ts
+ * NeuroID → one address for one coin.
+ *
+ * neuro_directory is private (migration 0012: SELECT own only), so the lookup
+ * runs with the service role, server-side, for ONE exact neuro_id, selecting
+ * only the column for the requested coin. The response never carries the
+ * other chains' addresses or the owner's user_id. Works before and after 0012
+ * (the service role bypasses RLS).
+ *
+ * Anti-impersonation: a legit row always has neuro_id = neuroIdFromUserId(user_id)
+ * (the client derives it). Rows that don't match were forged through the old
+ * open upsert path and are treated as not found, even before 0012's CHECK
+ * is applied.
+ */
+
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
 import { checkRateLimit, requireSupabaseUser, writeAuditLog } from '@/lib/server/api-security';
-import { getAddressForCoin, normalizeNeuroId, type NeuroCoin, type NeuroDirectoryRow } from '@/lib/neuro-id';
+import { addressColumnForCoin, neuroIdFromUserId, normalizeNeuroId, type NeuroCoin } from '@/lib/neuro-id';
 
 const VALID_COINS = new Set<NeuroCoin>(['BTC', 'ETH', 'SOL', 'USDT', 'TRX', 'TRC20', 'TON', 'USDT_TON']);
 
@@ -32,30 +48,37 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) return res.status(500).json({ error: 'Supabase not configured' });
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey) return res.status(503).json({ error: 'NeuroID lookup unavailable' });
 
-  const supabase = createClient(url, anonKey, {
-    global: { headers: { Authorization: `Bearer ${auth.token}` } },
-  });
+  const column = addressColumnForCoin(coin);
+  const svc = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
 
-  const { data, error } = await supabase
-    .from('neuro_directory')
-    .select('user_id, neuro_id, display_name, eth_address, sol_address, btc_address, tron_address, ton_address')
-    .eq('neuro_id', neuroId)
-    .maybeSingle<NeuroDirectoryRow>();
+  let row: Record<string, unknown> | null;
+  try {
+    const { data, error } = await svc
+      .from('neuro_directory')
+      .select(`user_id, neuro_id, display_name, ${column}`)
+      .eq('neuro_id', neuroId)
+      .maybeSingle();
+    if (error) return res.status(500).json({ error: 'NeuroID lookup failed' });
+    row = (data as Record<string, unknown> | null) ?? null;
+  } catch {
+    return res.status(500).json({ error: 'NeuroID lookup failed' });
+  }
 
-  if (error) return res.status(500).json({ error: 'NeuroID lookup failed' });
-  if (!data) return res.status(404).json({ error: 'NeuroID not found' });
+  if (!row || typeof row.user_id !== 'string' || row.neuro_id !== neuroIdFromUserId(row.user_id)) {
+    return res.status(404).json({ error: 'NeuroID not found' });
+  }
 
-  const address = getAddressForCoin(data, coin);
+  const address = typeof row[column] === 'string' ? (row[column] as string) : '';
   if (!address) return res.status(404).json({ error: 'Recipient has no address for this coin' });
 
   await writeAuditLog(auth.user.id, 'neuro_id_resolved', { neuro_id: neuroId, coin }, req);
 
   return res.status(200).json({
-    neuro_id: data.neuro_id,
-    display_name: data.display_name,
+    neuro_id: row.neuro_id,
+    display_name: typeof row.display_name === 'string' ? row.display_name : null,
     coin,
     address,
     internal: true,

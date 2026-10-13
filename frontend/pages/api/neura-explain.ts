@@ -19,6 +19,8 @@ import { checkRateLimit, requireSupabaseUser, writeAuditLog } from '@/lib/server
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MODEL = 'openai/gpt-4o-mini';
 const CHAINS = new Set(['BTC', 'ETH', 'SOL', 'USDT', 'TRX', 'TRC20', 'TON', 'USDT_TON']);
+/** At most one entry per supported asset. */
+const MAX_UNAVAILABLE = 8;
 
 type Lang = 'ru' | 'en';
 
@@ -43,19 +45,59 @@ export function validateFacts(raw: unknown): Record<string, unknown> | null {
 
   if (r.kind === 'recap') {
     if (typeof r.totalEur !== 'number' || !Number.isFinite(r.totalEur)) return null;
-    if (!Array.isArray(r.coins) || r.coins.length === 0 || r.coins.length > 10) return null;
+    // Assets whose balance could not be loaded (lib/neura/facts.ts): symbols
+    // from the allowlist only, at most one per supported asset. They are not
+    // in `coins` and not in `totalEur`.
+    if (r.unavailable !== undefined && !Array.isArray(r.unavailable)) return null;
+    const unavailableRaw = (r.unavailable ?? []) as unknown[];
+    if (unavailableRaw.length > MAX_UNAVAILABLE) return null;
+    const unavailable: string[] = [];
+    for (const u of unavailableRaw) {
+      if (typeof u !== 'string' || !CHAINS.has(u)) return null;
+      if (!unavailable.includes(u)) unavailable.push(u);
+    }
+    // Every asset unavailable (or an empty wallet) leaves `coins` empty: valid,
+    // answered by a fixed text, never by the model inventing a total.
+    if (!Array.isArray(r.coins) || r.coins.length > 10) return null;
     const coins = [];
     for (const c of r.coins as Array<Record<string, unknown>>) {
       if (typeof c?.coin !== 'string' || !CHAINS.has(c.coin)) return null;
+      if (unavailable.includes(c.coin)) return null; // a coin is either loaded or not
       if (typeof c.balance !== 'number' || !Number.isFinite(c.balance)) return null;
       if (typeof c.eur !== 'number' || !Number.isFinite(c.eur)) return null;
       const change = typeof c.change24h === 'number' && Number.isFinite(c.change24h) ? c.change24h : 'unknown';
       coins.push({ coin: c.coin, balance: c.balance, eur: c.eur, change24h: change });
     }
-    return { kind: 'recap', totalEur: r.totalEur, coins };
+    return { kind: 'recap', totalEur: r.totalEur, coins, unavailable };
   }
 
   return null;
+}
+
+/** Display names for the fixed recap text (same names the UI shows). */
+const CHAIN_LABEL: Record<string, string> = {
+  BTC: 'BTC', ETH: 'ETH', SOL: 'SOL', TRX: 'TRX', TON: 'TON',
+  USDT: 'USDT ERC-20', TRC20: 'USDT TRC-20', USDT_TON: 'USDT TON',
+};
+
+/**
+ * Recap with no loaded coin: a fixed, honest answer instead of an LLM call.
+ * Returns null when the model should write the recap.
+ */
+export function fixedRecapReply(facts: Record<string, unknown>, lang: Lang): string | null {
+  if (facts.kind !== 'recap') return null;
+  const coins = facts.coins as unknown[];
+  const unavailable = facts.unavailable as string[];
+  if (coins.length > 0) return null;
+  if (unavailable.length > 0) {
+    const list = unavailable.map((c) => CHAIN_LABEL[c] ?? c).join(', ');
+    return lang === 'en'
+      ? `I couldn't load your balances right now (${list}), so I can't give a portfolio total. Try again in a minute.`
+      : `Сейчас не удалось загрузить балансы (${list}), поэтому итог по портфелю посчитать не могу. Попробуйте через минуту.`;
+  }
+  return lang === 'en'
+    ? 'There are no funds in your wallet right now in any of the supported networks.'
+    : 'Сейчас на кошельке нет средств ни в одной из поддерживаемых сетей.';
 }
 
 function buildPrompt(facts: Record<string, unknown>, lang: Lang): string {
@@ -63,7 +105,13 @@ function buildPrompt(facts: Record<string, unknown>, lang: Lang): string {
     lang === 'en'
       ? 'You are Neura, the assistant inside NeuroWallet. Below are VERIFIED facts as JSON. Write a short, friendly explanation (2–3 sentences) STRICTLY from these facts. Do not add, guess or extrapolate anything not present in the facts. If a value is "unknown", say it is unknown. No investment advice.'
       : 'Ты — Нейра, ассистент внутри NeuroWallet. Ниже ПРОВЕРЕННЫЕ факты в JSON. Составь короткое дружелюбное объяснение (2–3 предложения) СТРОГО из этих фактов. Ничего не добавляй, не угадывай и не экстраполируй. Если значение "unknown" — так и скажи, что оно неизвестно. Без инвестиционных советов.';
-  return `${head}\n\nFACTS:\n${JSON.stringify(facts)}`;
+  const unavailable = facts.kind === 'recap' ? (facts.unavailable as string[]) : [];
+  const partial = unavailable.length === 0
+    ? ''
+    : lang === 'en'
+      ? `\n\nIMPORTANT: the balances of the assets in "unavailable" (${unavailable.join(', ')}) could not be loaded. "totalEur" counts ONLY the assets in "coins" and EXCLUDES them, so it is NOT the whole portfolio. Say that these balances could not be loaded and that the total does not include them. Never guess or state their balances.`
+      : `\n\nВАЖНО: балансы активов из "unavailable" (${unavailable.join(', ')}) загрузить не удалось. "totalEur" считает ТОЛЬКО активы из "coins" и их НЕ включает, это НЕ весь портфель. Скажи, что эти балансы загрузить не удалось и итог их не учитывает. Не угадывай и не называй их балансы.`;
+  return `${head}${partial}\n\nFACTS:\n${JSON.stringify(facts)}`;
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -87,6 +135,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const lang: Lang = body.lang === 'en' ? 'en' : 'ru';
   const facts = validateFacts(body.facts);
   if (!facts) return res.status(400).json({ error: 'Invalid facts' });
+
+  // Nothing loaded (or nothing held): no model call, nothing for it to make up.
+  const fixed = fixedRecapReply(facts, lang);
+  if (fixed) return res.status(200).json({ reply: fixed });
 
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'AI not configured' });

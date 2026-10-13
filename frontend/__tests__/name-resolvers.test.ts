@@ -1,24 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { isValidTonAddress } from '@/lib/crypto/ton-tx';
 
-// ENS: stub only ethers.JsonRpcProvider; keep isAddress/getAddress real.
+// ENS: stub only the shared ETH provider (no live RPC); keep ethers'
+// isAddress/getAddress real.
 const ENS_FIX: Record<string, string | null> = {
   'vitalik.eth': '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
   'notfound.eth': null,
   'bad.eth': '0xnot-an-address',
 };
-vi.mock('ethers', async (orig) => {
-  const actual = (await orig()) as typeof import('ethers');
-  return {
-    ...actual,
-    ethers: {
-      ...actual.ethers,
-      JsonRpcProvider: vi.fn().mockImplementation(() => ({
-        resolveName: (n: string) => Promise.resolve(ENS_FIX[n] ?? null),
-      })),
-    },
-  };
-});
+vi.mock('@/lib/crypto/eth-provider', () => ({
+  getEthProvider: () => ({
+    resolveName: (n: string) => (n === 'boom.eth' ? Promise.reject(new Error('rpc down')) : Promise.resolve(ENS_FIX[n] ?? null)),
+  }),
+}));
 
 import {
   looksLikeEnsName, looksLikeTonDnsName, isResolvableName,
@@ -65,6 +59,9 @@ describe('resolveEns (fail-closed)', () => {
   });
   it('returns null when the resolver yields a non-address (fail-closed)', async () => {
     expect(await resolveEns('bad.eth')).toBeNull();
+  });
+  it('returns null when the ETH RPC fails (fail-closed)', async () => {
+    expect(await resolveEns('boom.eth')).toBeNull();
   });
 });
 

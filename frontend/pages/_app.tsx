@@ -8,7 +8,9 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { LanguageProvider } from '@/contexts/LanguageContext';
 import { DisplayCurrencyProvider } from '@/contexts/DisplayCurrencyContext';
 import { useTelegramInit } from '@/hooks/useTelegram';
-import { clearLegacyXorKeys } from '@/lib/crypto/wallet';
+// Light module on purpose: importing lib/crypto/wallet here pulled ethers,
+// bip39, @ton/ton and bitcoinjs-lib into the shared _app chunk of every page.
+import { clearLegacyXorKeys, purgeExpiredWalletBackup } from '@/lib/legacy-storage-cleanup';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 // Inter self-hosted at build time (next/font): no runtime request to
@@ -18,8 +20,12 @@ const inter = Inter({ subsets: ['latin', 'cyrillic'], weight: ['300', '400', '50
 // Inner component so useTelegramInit can run inside AuthProvider tree
 function AppInner({ Component, pageProps }: AppProps) {
   useTelegramInit();
-  // Purge stale XOR-era blobs (scheme removed in 4b3704e) from localStorage.
-  useEffect(() => clearLegacyXorKeys(), []);
+  // Purge stale XOR-era blobs (scheme removed in 4b3704e) from localStorage,
+  // and a reset backup (nw_wallet_backup_v1) older than its 30 days.
+  useEffect(() => {
+    clearLegacyXorKeys();
+    purgeExpiredWalletBackup();
+  }, []);
   return <Component {...pageProps} />;
 }
 

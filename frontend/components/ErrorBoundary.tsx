@@ -5,37 +5,48 @@
  * white-screens the whole Mini App ("Application error: a client-side
  * exception has occurred") with no way out — fatal for a wallet, and it
  * hides the actual error. This boundary:
- *   1. keeps the app recoverable (Reload / safe reset buttons),
+ *   1. keeps the app recoverable: "Reload" is the primary action;
  *   2. SURFACES the error message + stack on-screen so a tester can report
- *      it (there is no Sentry wired), and also console.errors it,
- *   3. offers a safe reset that clears wallet/PIN state and re-enters the
- *      seed re-import flow (?recover=1) without leaving half-written data.
+ *      it (there is no Sentry wired), and also console.errors it;
+ *   3. offers, as a secondary action behind a two-step confirmation, a reset
+ *      that snapshots the wallet entries (nw_wallet_backup_v1), removes the
+ *      keys from this device and opens the seed re-import (?recover=1).
+ *      A crash does not delete anything by itself, and the app never stores
+ *      the seed, so only the user's written seed phrase can restore access
+ *      after a reset. The copy says exactly that, and that the encrypted
+ *      backup stays on the device for 30 days before it is purged.
  *
- * Intentionally dependency-free (no i18n/router hooks) so it still works
- * even if a provider is what threw. Text is RU-primary + EN subtitle.
+ * Intentionally free of providers/hooks (no LanguageContext, no router) so it
+ * still works even if a provider is what threw. Language is detected the same
+ * way LanguageContext does it; strings come from the static i18n table.
  */
 
 import React from 'react';
+import { translations, type Lang, type TranslationKey } from '@/lib/i18n';
+import { removeWalletFromDevice } from '@/lib/legacy-storage-cleanup';
 
-// Keys the onboarding/import flow and PIN layer write. Kept in sync with
-// lib/crypto/wallet.ts (LS) and lib/pin.ts. Cleared on an explicit safe reset.
-const WALLET_LS_KEYS = [
-  'wallet_eth_address', 'wallet_sol_address', 'wallet_btc_address',
-  'wallet_tron_address', 'wallet_ton_address', 'wallet_keystore',
-  'wallet_sol_enc', 'wallet_btc_enc', 'wallet_tron_enc', 'wallet_ton_enc',
-  'wallet_ton_scheme',
-  'wallet_pin_blob', 'wallet_pin_attempts', 'wallet_pin_lockout_until',
-  // legacy XOR-era blobs, if any lingered
-  'wallet_sol_xor', 'wallet_btc_xor', 'wallet_tron_xor', 'wallet_ton_xor',
-];
+function detectLang(): Lang {
+  try {
+    if (typeof window === 'undefined') return 'ru';
+    const stored = localStorage.getItem('wallet_language');
+    if (stored === 'ru' || stored === 'en') return stored;
+    const tg = (window as Window & { Telegram?: { WebApp?: { initDataUnsafe?: { user?: { language_code?: string } } } } })
+      .Telegram?.WebApp?.initDataUnsafe?.user?.language_code;
+    if (tg) return tg === 'ru' ? 'ru' : 'en';
+    return (navigator.language || '').toLowerCase().startsWith('ru') ? 'ru' : 'en';
+  } catch {
+    return 'ru';
+  }
+}
 
 interface State {
   error: Error | null;
   info: string;
+  confirmReset: boolean;
 }
 
 export class ErrorBoundary extends React.Component<{ children: React.ReactNode }, State> {
-  state: State = { error: null, info: '' };
+  state: State = { error: null, info: '', confirmReset: false };
 
   static getDerivedStateFromError(error: Error): Partial<State> {
     return { error };
@@ -51,18 +62,24 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
     if (typeof window !== 'undefined') window.location.reload();
   };
 
+  private askReset = () => this.setState({ confirmReset: true });
+
+  private cancelReset = () => this.setState({ confirmReset: false });
+
+  /** Only reachable from the confirmation step. */
   private safeReset = () => {
     if (typeof window === 'undefined') return;
-    try {
-      for (const k of WALLET_LS_KEYS) localStorage.removeItem(k);
-    } catch { /* localStorage may be unavailable */ }
+    removeWalletFromDevice(); // snapshot to nw_wallet_backup_v1, then remove
     // Re-enter recovery: seed re-import, bypassing the stale-address bounce.
     window.location.href = '/onboarding?recover=1';
   };
 
   render() {
-    const { error, info } = this.state;
+    const { error, info, confirmReset } = this.state;
     if (!error) return this.props.children;
+
+    const dict = translations[detectLang()] as Record<TranslationKey, string>;
+    const t = (k: TranslationKey): string => dict[k] ?? translations.ru[k];
 
     return (
       <div
@@ -75,10 +92,10 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
       >
         <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
         <p style={{ fontSize: 18, fontWeight: 600, textAlign: 'center' }}>
-          Что-то пошло не так
+          {t('ebTitle')}
         </p>
-        <p style={{ fontSize: 13, color: '#3A6045', marginTop: 4, textAlign: 'center' }}>
-          Something went wrong — the app is recoverable, your seed phrase is safe.
+        <p style={{ fontSize: 13, color: '#7FBF9A', marginTop: 4, textAlign: 'center' }}>
+          {t('ebSubtitle')}
         </p>
 
         <pre
@@ -102,22 +119,52 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
             border: 'none',
           }}
         >
-          Перезагрузить / Reload
+          {t('ebReload')}
         </button>
-        <button
-          onClick={this.safeReset}
-          style={{
-            marginTop: 10, width: '100%', padding: '14px', borderRadius: 16,
-            background: 'transparent', color: '#F7931A', fontWeight: 600, fontSize: 13,
-            border: '1px solid rgba(247,147,26,0.3)',
-          }}
-        >
-          Сбросить и переимпортировать по seed
-        </button>
-        <p style={{ fontSize: 11, color: '#3A6045', marginTop: 8, textAlign: 'center', opacity: 0.7 }}>
-          Сброс очистит локальные данные кошелька на этом устройстве.
-          Нужна seed-фраза для восстановления.
-        </p>
+
+        {confirmReset ? (
+          <div
+            data-testid="eb-reset-confirm"
+            style={{
+              marginTop: 12, width: '100%', padding: 14, borderRadius: 16,
+              background: 'rgba(247,147,26,0.08)', border: '1px solid rgba(247,147,26,0.3)',
+              display: 'flex', flexDirection: 'column', gap: 10,
+            }}
+          >
+            <p style={{ fontSize: 13, color: '#F7931A', lineHeight: 1.45 }}>{t('keysDeleteWarn')}</p>
+            <p style={{ fontSize: 12, color: '#F7931A', lineHeight: 1.45 }}>{t('keysDeleteBackupNote')}</p>
+            <button
+              onClick={this.safeReset}
+              style={{
+                width: '100%', padding: '12px', borderRadius: 12,
+                background: '#F7931A', color: '#080C09', fontWeight: 600, fontSize: 13, border: 'none',
+              }}
+            >
+              {t('keysDeleteConfirm')}
+            </button>
+            <button
+              onClick={this.cancelReset}
+              style={{
+                width: '100%', padding: '10px', borderRadius: 12,
+                background: 'transparent', color: '#00FF7F', fontWeight: 600, fontSize: 13,
+                border: '1px solid rgba(0,255,127,0.18)',
+              }}
+            >
+              {t('keysDeleteCancel')}
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={this.askReset}
+            style={{
+              marginTop: 12, width: '100%', padding: '10px', borderRadius: 12,
+              background: 'transparent', color: '#F7931A', fontWeight: 500, fontSize: 12,
+              border: 'none', textDecoration: 'underline',
+            }}
+          >
+            {t('ebResetCta')}
+          </button>
+        )}
       </div>
     );
   }

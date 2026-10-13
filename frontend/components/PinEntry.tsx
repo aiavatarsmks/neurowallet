@@ -1,20 +1,33 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { verifyPin, getLockoutMs, getRemainingAttempts } from '@/lib/pin';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 interface PinEntryProps {
-  onSuccess: (walletPassword: string) => void;
+  /** Called once the PIN is verified. The PIN unlocks the UI only; it never yields the wallet password. */
+  onSuccess: () => void;
+  /** Optional: switch to demo mode from the lock screen (DEMO_PIN_FIX.md, Fix 1). */
+  onDemo?: () => void;
+  /** Optional: start the "Forgot PIN?" flow (wallet password → new PIN). */
+  onForgotPin?: () => void;
 }
 
 const DIGITS = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
 
-export const PinEntry: React.FC<PinEntryProps> = ({ onSuccess }) => {
+export const PinEntry: React.FC<PinEntryProps> = ({ onSuccess, onDemo, onForgotPin }) => {
   const { t } = useLanguage();
   const [pin,       setPin]       = useState('');
   const [error,     setError]     = useState('');
   const [loading,   setLoading]   = useState(false);
   const [lockSecs,  setLockSecs]  = useState(0);
   const [remaining, setRemaining] = useState(getRemainingAttempts());
+
+  // Parents pass inline callbacks. Keep the latest ones in refs so a parent
+  // re-render during the ~1 s PBKDF2 check does not re-run the verify effect
+  // (which would count one wrong PIN twice).
+  const onSuccessRef = useRef(onSuccess);
+  const tRef = useRef(t);
+  useEffect(() => { onSuccessRef.current = onSuccess; }, [onSuccess]);
+  useEffect(() => { tRef.current = t; }, [t]);
 
   // Lockout countdown
   useEffect(() => {
@@ -44,32 +57,37 @@ export const PinEntry: React.FC<PinEntryProps> = ({ onSuccess }) => {
   // Auto-verify when 4 digits entered
   useEffect(() => {
     if (pin.length !== 4) return;
+    let cancelled = false;
     setLoading(true);
     verifyPin(pin)
-      .then((password) => onSuccess(password))
+      .then(() => { if (!cancelled) onSuccessRef.current(); })
       .catch((e: Error) => {
+        if (cancelled) return;
         setPin('');
         setLoading(false);
         const msg = e.message;
+        const tr = tRef.current;
         if (msg.startsWith('LOCKED:')) {
           const mins = msg.split(':')[1];
           setLockSecs(parseInt(mins, 10) * 60);
-          setError(t('pinLockedMsg').replace('{mins}', mins));
+          setError(tr('pinLockedMsg').replace('{mins}', mins));
         } else if (msg.startsWith('WRONG:')) {
           const left = parseInt(msg.split(':')[1], 10);
           setRemaining(left);
-          setError(t('pinWrongMsg').replace('{n}', String(left)));
+          setError(tr('pinWrongMsg').replace('{n}', String(left)));
         } else {
           setError(msg);
         }
       });
-  }, [pin, onSuccess]);
+    return () => { cancelled = true; };
+  }, [pin]);
 
   const dots = Array.from({ length: 4 }, (_, i) => i < pin.length);
 
   return (
     <div
-      className="min-h-screen flex flex-col items-center justify-center max-w-[430px] mx-auto px-8"
+      data-testid="pin-entry"
+      className="min-h-screen flex flex-col items-center justify-center max-w-[430px] mx-auto px-8 py-10"
       style={{ backgroundColor: '#080C09' }}
     >
       {/* Logo */}
@@ -135,6 +153,40 @@ export const PinEntry: React.FC<PinEntryProps> = ({ onSuccess }) => {
 
       {remaining < 5 && remaining > 0 && !error && (
         <p className="text-[#3A6045] text-xs mt-6">{t('pinAttemptsLeft').replace('{n}', String(remaining))}</p>
+      )}
+
+      {/* Forgot PIN: reset with the wallet password (works during lockout too). */}
+      {onForgotPin && (
+        <button
+          type="button"
+          onClick={onForgotPin}
+          disabled={loading}
+          className="mt-6 text-xs underline disabled:opacity-40"
+          style={{ color: '#7FBF9A' }}
+        >
+          {t('pinForgot')}
+        </button>
+      )}
+
+      {/* Demo entry (DEMO_PIN_FIX.md, Fix 1): the TG auto-login lands real users
+          here, and /auth with its demo button is never reached. */}
+      {onDemo && (
+        <div className="w-full max-w-[280px] mt-8 flex flex-col items-center gap-3">
+          <div className="w-full flex items-center gap-3" aria-hidden="true">
+            <div className="flex-1 h-px" style={{ background: 'rgba(0,255,127,0.12)' }} />
+            <span className="text-[#3A6045] text-xs">{t('pinOr')}</span>
+            <div className="flex-1 h-px" style={{ background: 'rgba(0,255,127,0.12)' }} />
+          </div>
+          <button
+            type="button"
+            onClick={onDemo}
+            disabled={loading}
+            className="w-full py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-95 disabled:opacity-40"
+            style={{ background: 'transparent', border: '1px solid rgba(0,255,127,0.2)', color: '#3A6045' }}
+          >
+            {t('pinDemoCta')}
+          </button>
+        </div>
       )}
     </div>
   );

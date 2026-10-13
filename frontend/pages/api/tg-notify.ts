@@ -1,18 +1,26 @@
 /**
  * pages/api/tg-notify.ts
- * Sends a Telegram message to a user via the bot.
- * Called server-side after a successful transaction.
+ * Template-only Telegram notification about the caller's own sent transaction.
  *
- * Body: { message: string }
- * The recipient is always the authenticated user's own telegram_id taken
- * from the Supabase session (user_metadata) — never from the request body,
- * so the endpoint cannot be used to message arbitrary Telegram accounts.
- * A legacy `telegramId` body field is accepted but ignored.
- * TELEGRAM_BOT_TOKEN is server-only — never NEXT_PUBLIC_.
+ * Body: { kind: 'tx_sent', coin, amount, to, hash, lang?: 'ru'|'en' }
+ *   coin   ∈ ETH | USDT | BTC | SOL | TRX | TRC20 | TON | USDT_TON
+ *   amount   decimal string, /^\d{1,18}(\.\d{1,18})?$/
+ *   to, hash ≤128 chars of [A-Za-z0-9:_\-.]
+ * The server composes the text (lib/server/tg-notify-template.ts) and
+ * HTML-escapes every value. Free text is never forwarded: the old
+ * { message } contract let any caller send arbitrary HTML from the official
+ * bot, so it now gets 400.
+ *
+ * The recipient is app_metadata.telegram_id of the session (written only by
+ * /api/tg-auth with the service role after the initData HMAC check). Body
+ * fields such as telegramId and user_metadata are ignored.
+ * TELEGRAM_BOT_TOKEN is server-only, never NEXT_PUBLIC_.
  */
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { checkRateLimit, requireSupabaseUser, writeAuditLog } from '@/lib/server/api-security';
+import { getVerifiedTelegramId } from '@/lib/server/telegram-id';
+import { composeTxSentMessage, parseTxSentNotice } from '@/lib/server/tg-notify-template';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -36,23 +44,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: 'Bot token not configured' });
   }
 
-  const { message } = req.body as { message?: string };
-  if (!message || typeof message !== 'string') {
-    return res.status(400).json({ error: 'message required' });
+  const parsed = parseTxSentNotice(req.body);
+  if (!parsed.ok) {
+    return res.status(400).json({ error: parsed.error });
   }
+  const notice = parsed.value;
 
-  // Recipient comes exclusively from the session — deny if the account
-  // has no linked Telegram id.
-  const telegramId = Number(auth.user.user_metadata?.telegram_id);
-  if (!telegramId || Number.isNaN(telegramId)) {
+  // Recipient comes exclusively from service-role app_metadata.
+  const telegramId = getVerifiedTelegramId(auth.user);
+  if (!telegramId) {
     return res.status(403).json({ error: 'No Telegram account linked' });
   }
 
+  const text = composeTxSentMessage(notice);
+
   try {
+    // No `to` / `hash` in the audit row: coin + size are enough to trace abuse.
     await writeAuditLog(
       auth.user.id,
       'telegram_notification_requested',
-      { telegram_id: telegramId, message_chars: message.length },
+      { telegram_id: telegramId, kind: notice.kind, coin: notice.coin, message_chars: text.length },
       req,
     );
 
@@ -61,18 +72,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id:    telegramId,
-        text:       message,
+        text,
         parse_mode: 'HTML',
       }),
     });
 
     if (!tgRes.ok) {
       const err = await tgRes.text();
-      console.error('[tg-notify] Telegram API error:', err);
+      console.error('[tg-notify] Telegram API error:', err.slice(0, 300));
       return res.status(500).json({ error: 'Failed to send notification' });
     }
 
-    await writeAuditLog(auth.user.id, 'telegram_notification_sent', { telegram_id: telegramId }, req);
+    await writeAuditLog(auth.user.id, 'telegram_notification_sent', { telegram_id: telegramId, kind: notice.kind }, req);
     return res.status(200).json({ ok: true });
   } catch (err) {
     console.error('[tg-notify] error:', err);

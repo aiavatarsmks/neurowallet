@@ -1,0 +1,38 @@
+name: Chain health
+
+# Daily live check that every chain answers through our own code (balances,
+# prices, fee estimates, TRON energy estimate, tx status). Read-only: nothing is
+# signed or broadcast. A red run means a public provider died or changed its API
+# (like cloudflare-eth.com in 2026) and users are about to see broken balances.
+on:
+  schedule:
+    - cron: '17 5 * * *' # 05:17 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-chains:
+    name: Live chain check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install
+        working-directory: frontend
+        run: npm install
+
+      - name: Live chain tests
+        working-directory: frontend
+        env:
+          LIVE_CHAINS: '1'
+        run: npx vitest run __tests__/live

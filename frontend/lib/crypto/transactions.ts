@@ -8,13 +8,7 @@ import { ethers } from 'ethers';
 import { amountToDecimalString } from '@/lib/display-format';
 import { ed25519 } from '@noble/curves/ed25519';
 import bs58 from 'bs58';
-import {
-  fetchUTXOs,
-  getBtcFeeRate,
-  buildSignedTx,
-  broadcastBtcTx,
-  isValidBtcAddress as _isValidBtcAddress,
-} from './btc-tx';
+import { isValidBtcAddress as _isValidBtcAddress } from './btc-tx';
 import {
   sendUsdtTrc20Raw,
   sendTrxRaw,
@@ -26,46 +20,13 @@ import {
   isValidTonAddress as _isValidTonAddress,
 } from './ton-tx';
 import { decryptBytes } from './aes';
+import { getEthProvider } from './eth-provider';
+import { solRpc } from './sol-rpc';
+import { BroadcastOutcomeUnknownError } from './broadcast-error';
 
-const ETH_RPC   = 'https://cloudflare-eth.com';
-const SOL_RPC   = 'https://api.mainnet-beta.solana.com';
+// ETH RPC: shared FallbackProvider over keyless public endpoints (eth-provider.ts).
 const USDT_ADDR = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
 const USDT_ABI  = ['function transfer(address to, uint256 amount) returns (bool)'];
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export interface EthFeeEstimate {
-  gasLimit: bigint;
-  gasPrice: bigint;
-  feeEth:   number;
-  feeEur:   number;
-}
-
-// ─── ETH fee estimation ───────────────────────────────────────────────────────
-
-export async function estimateEthFee(
-  toAddress: string,
-  amountEth: number,
-): Promise<EthFeeEstimate> {
-  const provider  = new ethers.JsonRpcProvider(ETH_RPC);
-  const value     = ethers.parseEther(amountToDecimalString(amountEth, 18));
-  const [feeData, gasLimit] = await Promise.all([
-    provider.getFeeData(),
-    provider.estimateGas({ to: toAddress, value }),
-  ]);
-  const gasPrice = feeData.gasPrice ?? BigInt(20e9);
-  const feeWei   = gasLimit * gasPrice;
-  const feeEth   = parseFloat(ethers.formatEther(feeWei));
-
-  let feeEur = feeEth * 2800;
-  try {
-    const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=eur');
-    const { ethereum } = await res.json();
-    feeEur = feeEth * (ethereum?.eur ?? 2800);
-  } catch { /* use fallback */ }
-
-  return { gasLimit, gasPrice, feeEth, feeEur };
-}
 
 // ─── Send ETH ─────────────────────────────────────────────────────────────────
 
@@ -76,8 +37,7 @@ export async function sendEth(
   amountEth: number,
 ): Promise<string> {
   const wallet    = await ethers.Wallet.fromEncryptedJson(keystoreJson, password);
-  const provider  = new ethers.JsonRpcProvider(ETH_RPC);
-  const connected = wallet.connect(provider);
+  const connected = wallet.connect(getEthProvider());
 
   const tx = await connected.sendTransaction({
     to:    toAddress,
@@ -87,6 +47,8 @@ export async function sendEth(
   // Возвращаем хеш сразу после broadcast. Раньше ждали tx.wait(): если RPC
   // падал/таймаутил уже ПОСЛЕ отправки, UI показывал ошибку и пользователь
   // мог отправить повторно (двойной платёж). Статус смотрится по хешу.
+  // Broadcast идёт на все ETH-бэкенды сразу; «already known» от отстающего
+  // узла не превращается в ошибку (см. eth-provider.ts).
   return tx.hash;
 }
 
@@ -99,8 +61,7 @@ export async function sendUsdt(
   amountUsdt:  number,
 ): Promise<string> {
   const wallet    = await ethers.Wallet.fromEncryptedJson(keystoreJson, password);
-  const provider  = new ethers.JsonRpcProvider(ETH_RPC);
-  const connected = wallet.connect(provider);
+  const connected = wallet.connect(getEthProvider());
   const usdt      = new ethers.Contract(USDT_ADDR, USDT_ABI, connected);
 
   // USDT has 6 decimals
@@ -116,18 +77,10 @@ export async function sendUsdt(
 // To send: decrypt solEnc blob with password → SOL privkey in memory → zero after use.
 
 async function getSolanaBlockhash(): Promise<string> {
-  const res = await fetch(SOL_RPC, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      jsonrpc: '2.0', id: 1,
-      method: 'getLatestBlockhash',
-      params: [{ commitment: 'finalized' }],
-    }),
-  });
-  const data = await res.json();
-  if (data.error) throw new Error('Solana RPC: ' + data.error.message);
-  return data.result.value.blockhash as string;
+  const r = await solRpc<{ value?: { blockhash?: unknown } }>('getLatestBlockhash', [{ commitment: 'finalized' }]);
+  const blockhash = r?.value?.blockhash;
+  if (typeof blockhash !== 'string' || !blockhash) throw new Error('Solana RPC: malformed blockhash');
+  return blockhash;
 }
 
 /**
@@ -198,6 +151,7 @@ export async function sendSol(
     // 5. Build message and sign
     const message   = buildSolMessage(fromPubkey, toPubkey, lamports, blockhashBytes);
     const signature = ed25519.sign(message, solPrivKey); // Uint8Array(64)
+    solPrivKey.fill(0); // not needed past this point (finally zeroes it again)
 
     // 6. Assemble: [num_sigs=1][signature 64 bytes][message]
     const tx = new Uint8Array(1 + 64 + message.length);
@@ -205,26 +159,59 @@ export async function sendSol(
     tx.set(signature, 1);
     tx.set(message, 65);
 
+    // The tx id (base58 signature, Solana explorer format) is known before
+    // broadcast: it is what the status poller and a lookup use.
+    const sig58 = bs58.encode(signature);
+
     // 7. Broadcast
     const txBase64 = btoa(String.fromCharCode(...tx));
-    const res = await fetch(SOL_RPC, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0', id: 1,
-        method: 'sendTransaction',
-        params: [txBase64, { encoding: 'base64', preflightCommitment: 'finalized' }],
-      }),
-    });
-
-    const data = await res.json();
-    if (data.error) throw new Error(data.error.message || 'Solana RPC error');
-
-    // Return tx signature as base58 string (Solana explorer format)
-    return bs58.encode(signature);
+    // Failover is safe: the same signed bytes give the same signature on any
+    // node. A real node error (e.g. rent-exempt preflight) surfaces as is.
+    try {
+      await solRpc('sendTransaction', [txBase64, { encoding: 'base64', preflightCommitment: 'finalized' }]);
+    } catch (e) {
+      await settleSolSendFailure(e, sig58);
+    }
+    return sig58;
   } finally {
     solPrivKey.fill(0);
   }
+}
+
+/** "This transaction has already been processed": these exact bytes landed (an earlier relay whose answer was lost). */
+const SOL_ALREADY_PROCESSED_RE = /already been processed|AlreadyProcessed/i;
+
+/** Has the cluster seen this signature (processed, confirmed, finalized or failed)? false if unsure. */
+async function solSignatureSeen(sig58: string): Promise<boolean> {
+  try {
+    const r = await solRpc<{ value?: unknown }>('getSignatureStatuses', [[sig58], { searchTransactionHistory: true }]);
+    const first: unknown = Array.isArray(r?.value) ? r.value[0] : null;
+    return !!first && typeof first === 'object';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * sendTransaction failed. Returns normally when the tx is known to be on the
+ * network (the caller then returns the signature); otherwise throws:
+ *  - a real node answer (SolRpcError: preflight failure, blockhash not found)
+ *    is a definitive rejection and is rethrown as is;
+ *  - no endpoint answered (SolRpcUnavailableError): one of them may still have
+ *    relayed the signed bytes. Found by signature → success; otherwise
+ *    BroadcastOutcomeUnknownError(signature), so the UI polls, not re-sends.
+ */
+async function settleSolSendFailure(err: unknown, sig58: string): Promise<void> {
+  const name = (err as { name?: unknown } | null)?.name;
+  if (name === 'SolRpcError') {
+    if (SOL_ALREADY_PROCESSED_RE.test((err as Error).message)) return;
+    throw err;
+  }
+  if (name === 'SolRpcUnavailableError') {
+    if (await solSignatureSeen(sig58)) return;
+    throw new BroadcastOutcomeUnknownError(sig58, 'SOL broadcast outcome unknown: no Solana RPC answered.');
+  }
+  throw err;
 }
 
 // ─── Send USDT TRC-20 (Tron) ─────────────────────────────────────────────────
@@ -261,38 +248,11 @@ export async function sendTrx(
 
 // ─── Send BTC ─────────────────────────────────────────────────────────────────
 //
-// BTC private key stored encrypted independently (wallet_btc_enc, AES-GCM + PBKDF2).
+// Single implementation lives in btc-tx.ts: signs at the fee rate shown in the
+// review (with absolute and fee/amount caps) and falls back to mempool.space for
+// broadcast. Re-exported here so older imports keep working.
 
-export async function sendBtc(
-  btcEncBlob:  string,
-  password:    string,
-  toAddress:   string,
-  amountBtc:   number,
-  fromAddress: string, // our BTC address (for change output)
-): Promise<string> {
-  // 1. Decrypt BTC private key independently
-  const btcPrivKey = await decryptBytes(btcEncBlob, password);
-  try {
-
-    const amountSat = BigInt(Math.round(amountBtc * 1e8));
-    if (amountSat <= 546n) throw new Error('Сумма ниже минимума (546 sat / dust limit).');
-
-    // 2. Fetch UTXOs and fee rate
-    const [utxos, feeRate] = await Promise.all([fetchUTXOs(fromAddress), getBtcFeeRate()]);
-    if (utxos.length === 0) throw new Error('Нет подтверждённых UTXO. Подожди подтверждения входящих транзакций.');
-
-    // 3. Select UTXOs and calculate change
-    // 3. Build and sign raw transaction. The PSBT helper supports old legacy
-    // NeuroWallet BTC addresses and new native SegWit addresses.
-    const rawHex = await buildSignedTx(btcPrivKey, utxos, toAddress, fromAddress, amountSat, feeRate);
-
-    // 4. Broadcast
-    const txid = await broadcastBtcTx(rawHex);
-    return txid;
-  } finally {
-    btcPrivKey.fill(0);
-  }
-}
+export { sendBtc } from './btc-tx';
 
 // ─── Validate addresses ───────────────────────────────────────────────────────
 

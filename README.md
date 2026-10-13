@@ -74,6 +74,8 @@ npm audit --audit-level=high     # CI блокирует merge при high/criti
 | `ETHERSCAN_API_KEY` | история ETH / USDT ERC-20 (без ключа — пусто) |
 | `TONCENTER_API_KEY` | балансы TON / USDT-TON и история TON (без ключа — публичный лимит 1 req/s) |
 | `TRONGRID_API_KEY` | балансы и история TRX / USDT TRC-20 (без ключа — публичные лимиты) |
+| `SOLANA_RPC_URL` | необязательно: платный Solana RPC (Helius/QuickNode), идёт первым в `/api/sol-rpc` |
+| `NEURA_CHAT_DAILY_MAX` | необязательно: общий дневной лимит запросов к Нейре (по умолчанию 5000) |
 
 Ключи блокчейн-провайдеров читаются в `frontend/lib/server/provider-keys.ts`;
 браузер получает балансы TON/TRON через `/api/balances`, а если ключ не задан —

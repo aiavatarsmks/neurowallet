@@ -17,7 +17,8 @@
 ## Репозиторий
 
 ```
-/Users/maksimilin/Desktop/NeuroWallet/MVP/Старое/Разработка и код/repo
+GitHub: aiavatarsmks/neurowallet (основной; локальная копия у Максима:
+/Users/maksimilin/Desktop/NeuroWallet/MVP/Старое/Разработка и код/repo)
 ├── frontend/          # Next.js + Tailwind + TypeScript + Telegram Mini App
 ├── backend/           # Fastify + Prisma + PostgreSQL
 ├── docker-compose.yml # PostgreSQL + pgAdmin
@@ -213,6 +214,8 @@ ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
 ---
 
 ## Актуальный roadmap
+
+**Ревизия 2026-10-13:** состояние кода, закрытые и открытые риски, план до прода и чек-лист для Максима в **`PROD_READINESS_PLAN.md`** (читать первым при новой сессии). Живая проверка всех сетей: `cd frontend && LIVE_CHAINS=1 npx vitest run __tests__/live` (и ежедневно в `.github/workflows/chain-health.yml`).
 
 Актуальный roadmap ведётся в **`IMPLEMENTATION_PLAN.md`**. Читать оба файла вместе: `CLAUDE.md` (инварианты, принципы, «что не делать») + `IMPLEMENTATION_PLAN.md` (фазы, приёмка, порядок работ).
 

@@ -16,8 +16,6 @@
     "@ton/ton": "^16.3.0"
   },
   "overrides": {
-    "next": {
-      "postcss": "^8.5.28"
-    }
+    "postcss": "^8.5.28"
   }
 }

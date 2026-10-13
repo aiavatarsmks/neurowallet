@@ -8,12 +8,13 @@
  *  - the caller MUST show the resolved ADDRESS on review (user confirms the
  *    address, not the alias) and run it through the same risk engine + simulation.
  *
- * Hosts are in the CSP connect-src (cloudflare-eth.com, tonapi.io).
+ * ENS goes through the shared ETH provider (lib/crypto/eth-provider.ts); TON DNS
+ * through tonapi.io. All hosts are in the CSP connect-src.
  */
 import { ethers } from 'ethers';
 import { Address } from '@ton/ton';
+import { getEthProvider } from '@/lib/crypto/eth-provider';
 
-const ETH_RPC = 'https://cloudflare-eth.com';
 const TON_DNS_API = 'https://tonapi.io/v2/dns';
 
 export function looksLikeEnsName(s: string): boolean {
@@ -31,12 +32,9 @@ export async function resolveEns(name: string): Promise<string | null> {
   const n = name.trim().toLowerCase();
   if (!looksLikeEnsName(n)) return null;
   try {
-    // Pass an explicit mainnet Network object as staticNetwork so ethers never
-    // runs its own network-detection step (which was failing against the public
-    // cloudflare-eth RPC). batchMaxCount:1 for broad RPC compatibility.
-    const mainnet = ethers.Network.from(1);
-    const provider = new ethers.JsonRpcProvider(ETH_RPC, mainnet, { staticNetwork: mainnet, batchMaxCount: 1 });
-    const addr = await provider.resolveName(n);
+    // Shared mainnet provider: chainId pinned (no detection step), keyless
+    // public RPCs with failover. The old cloudflare-eth RPC no longer serves eth_call.
+    const addr = await getEthProvider().resolveName(n);
     if (!addr || !ethers.isAddress(addr)) return null;
     return ethers.getAddress(addr); // checksummed
   } catch {

@@ -6,6 +6,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { PinEntry } from '@/components/PinEntry';
 import { PinSetup } from '@/components/PinSetup';
 import { hasPinSetup, verifyWalletPassword } from '@/lib/pin';
+import { removeWalletFromDevice } from '@/lib/legacy-storage-cleanup';
 import { BalanceCard } from '@/components/BalanceCard';
 import { DemoGuide } from '@/components/DemoGuide';
 import { completeDemoTask } from '@/lib/demo-guide';
@@ -20,11 +21,59 @@ import { CardsScreen } from '@/components/CardsScreen';
 import { WalletScreen } from '@/components/WalletScreen';
 import { ReceiveScreen, type ReceiveNetwork } from '@/components/ReceiveScreen';
 import { CryptoSendScreen } from '@/components/CryptoSendScreen';
+import { useSendLocked } from '@/lib/send-lock';
 
+// Static stand-in for the 3D avatar: shown while the three.js chunk loads and
+// instead of it when the user prefers reduced motion. No three.js here.
+const NeuraAvatarStatic: React.FC = () => (
+  <div data-testid="neura-avatar-static" className="relative w-full" style={{ height: '100%' }} aria-hidden="true">
+    <div
+      className="absolute inset-0 pointer-events-none"
+      style={{
+        background:
+          'radial-gradient(ellipse 70% 55% at 50% 50%, rgba(0,255,127,0.13) 0%, rgba(0,255,127,0.04) 50%, transparent 75%)',
+      }}
+    />
+    <svg className="absolute inset-0" width="100%" height="100%" viewBox="0 0 200 200" preserveAspectRatio="xMidYMid meet" fill="none">
+      <ellipse cx="100" cy="100" rx="90" ry="30" stroke="#00FF7F" strokeOpacity="0.55" strokeWidth="1" transform="rotate(-18 100 100)" />
+      <ellipse cx="100" cy="100" rx="96" ry="22" stroke="#00CC60" strokeOpacity="0.35" strokeWidth="0.8" transform="rotate(14 100 100)" />
+      <circle cx="100" cy="100" r="62" fill="#050E07" stroke="#00FF7F" strokeOpacity="0.8" strokeWidth="1.2" />
+      <ellipse cx="100" cy="100" rx="22" ry="62" stroke="#00FF7F" strokeOpacity="0.35" strokeWidth="0.8" />
+      <ellipse cx="100" cy="100" rx="44" ry="62" stroke="#00FF7F" strokeOpacity="0.3" strokeWidth="0.8" />
+      <ellipse cx="100" cy="100" rx="62" ry="20" stroke="#00FF7F" strokeOpacity="0.3" strokeWidth="0.8" />
+      <ellipse cx="100" cy="100" rx="62" ry="42" stroke="#00FF7F" strokeOpacity="0.25" strokeWidth="0.8" />
+      <circle cx="83" cy="93" r="4.5" fill="#00FF7F" />
+      <circle cx="117" cy="93" r="4.5" fill="#00FF7F" />
+    </svg>
+    <div
+      className="absolute bottom-0 left-0 right-0 h-16 pointer-events-none"
+      style={{ background: 'linear-gradient(to bottom, transparent, #080C09)' }}
+    />
+  </div>
+);
+
+// three.js + @react-three/fiber load on demand, only when the avatar is shown.
 const NeuraAvatar = dynamic(
   () => import('@/components/NeuraAvatar').then((m) => m.NeuraAvatar),
-  { ssr: false, loading: () => <div style={{ height: 280 }} /> }
+  { ssr: false, loading: () => <NeuraAvatarStatic /> }
 );
+
+function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReduced(mq.matches);
+    update();
+    if (typeof mq.addEventListener === 'function') {
+      mq.addEventListener('change', update);
+      return () => mq.removeEventListener('change', update);
+    }
+    mq.addListener(update); // older WebKit
+    return () => mq.removeListener(update);
+  }, []);
+  return reduced;
+}
 
 type NavTab = 'home' | 'send' | 'add' | 'cards' | 'wallet';
 type Tab = NavTab | 'profile' | 'receive' | 'crypto-send';
@@ -54,22 +103,24 @@ const BackIcon = () => (
   </svg>
 );
 
-const WALLET_RESET_KEYS = [
-  'wallet_eth_address', 'wallet_sol_address', 'wallet_btc_address',
-  'wallet_tron_address', 'wallet_ton_address', 'wallet_keystore',
-  'wallet_sol_enc', 'wallet_btc_enc', 'wallet_tron_enc', 'wallet_ton_enc',
-  'wallet_ton_scheme',
-  'wallet_pin_blob', 'wallet_pin_attempts', 'wallet_pin_lockout_until',
-  'wallet_sol_xor', 'wallet_btc_xor', 'wallet_tron_xor', 'wallet_ton_xor',
-];
+type PasswordGateMode = 'required' | 'forgot';
 
-const RequiredPinSetupGate: React.FC<{ onReady: (walletPassword: string) => void }> = ({ onReady }) => {
+/**
+ * Wallet password, then a new PIN. Two entry points:
+ *  - 'required': a wallet exists on this device but no PIN is set yet;
+ *  - 'forgot':   "Forgot PIN?" on the lock screen.
+ * The password is only checked (verifyWalletPassword) and then dropped: the
+ * PIN blob no longer stores it (lib/pin.ts).
+ */
+const PasswordPinGate: React.FC<{ mode: PasswordGateMode; onReady: () => void; onBack?: () => void }> = ({ mode, onReady, onBack }) => {
   const router = useRouter();
   const { t } = useLanguage();
   const [password, setPassword] = useState('');
-  const [verifiedPassword, setVerifiedPassword] = useState('');
+  const [verified, setVerified] = useState(false);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const forgot = mode === 'forgot';
 
   const submit = async () => {
     if (!password || checking) return;
@@ -78,29 +129,25 @@ const RequiredPinSetupGate: React.FC<{ onReady: (walletPassword: string) => void
     const ok = await verifyWalletPassword(password);
     setChecking(false);
     if (!ok) { setError(true); return; }
-    setVerifiedPassword(password);
     setPassword('');
+    setVerified(true);
   };
 
+  // Destructive: only after the inline confirmation below. Snapshot first
+  // (nw_wallet_backup_v1), then remove the keys from this device.
   const resetLocalWallet = () => {
-    for (const key of WALLET_RESET_KEYS) localStorage.removeItem(key);
+    removeWalletFromDevice();
     router.push('/onboarding');
   };
 
-  if (verifiedPassword) {
-    return (
-      <PinSetup
-        walletPassword={verifiedPassword}
-        allowSkip={false}
-        onComplete={() => onReady(verifiedPassword)}
-      />
-    );
+  if (verified) {
+    return <PinSetup allowSkip={false} onComplete={onReady} />;
   }
 
   return (
     <main
-      data-testid="pin-setup-required"
-      className="min-h-screen flex flex-col justify-center max-w-[430px] mx-auto px-6"
+      data-testid={forgot ? 'pin-reset' : 'pin-setup-required'}
+      className="min-h-screen flex flex-col justify-center max-w-[430px] mx-auto px-6 py-10"
       style={{ backgroundColor: '#080C09' }}
     >
       <div className="flex flex-col gap-6">
@@ -114,8 +161,8 @@ const RequiredPinSetupGate: React.FC<{ onReady: (walletPassword: string) => void
         </div>
 
         <div>
-          <h1 className="text-white text-2xl font-bold leading-tight">{t('pinSetupRequiredTitle')}</h1>
-          <p className="text-[#3A6045] text-sm leading-relaxed mt-2">{t('pinSetupRequiredText')}</p>
+          <h1 className="text-white text-2xl font-bold leading-tight">{forgot ? t('pinResetTitle') : t('pinSetupRequiredTitle')}</h1>
+          <p className="text-[#3A6045] text-sm leading-relaxed mt-2">{forgot ? t('pinResetText') : t('pinSetupRequiredText')}</p>
         </div>
 
         <div className="flex flex-col gap-3">
@@ -140,24 +187,61 @@ const RequiredPinSetupGate: React.FC<{ onReady: (walletPassword: string) => void
             className="w-full py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95 disabled:opacity-40"
             style={{ background: '#00FF7F', color: '#080C09', boxShadow: '0 0 24px rgba(0,255,127,0.28)' }}
           >
-            {checking ? '…' : t('pinSetupRequiredCta')}
+            {checking ? '…' : forgot ? t('pinResetCta') : t('pinSetupRequiredCta')}
           </button>
 
+          {/* Password forgotten too: re-import the seed. Nothing is deleted
+              here; onboarding asks before replacing a different wallet. */}
           <button
             onClick={() => router.push('/onboarding?recover=1')}
             className="w-full py-3.5 rounded-2xl font-semibold text-sm transition-all active:scale-95"
             style={{ background: 'transparent', border: '1px solid rgba(0,255,127,0.18)', color: '#00FF7F' }}
           >
-            {t('pinSetupRecoverCta')}
+            {forgot ? t('pinResetRecoverCta') : t('pinSetupRecoverCta')}
           </button>
 
-          <button
-            onClick={resetLocalWallet}
-            className="w-full py-3 text-xs font-semibold"
-            style={{ color: '#F7931A' }}
-          >
-            {t('pinSetupResetCta')}
-          </button>
+          {forgot && onBack && (
+            <button
+              onClick={onBack}
+              className="w-full py-3 text-xs font-semibold"
+              style={{ color: '#3A6045' }}
+            >
+              {t('pinResetBack')}
+            </button>
+          )}
+
+          {!forgot && (confirmReset ? (
+            <div
+              data-testid="reset-confirm"
+              className="rounded-2xl p-4 flex flex-col gap-3"
+              style={{ background: 'rgba(247,147,26,0.08)', border: '1px solid rgba(247,147,26,0.3)' }}
+            >
+              <p className="text-sm leading-relaxed" style={{ color: '#F7931A' }}>{t('keysDeleteWarn')}</p>
+              <p className="text-xs leading-relaxed" style={{ color: '#F7931A' }}>{t('keysDeleteBackupNote')}</p>
+              <button
+                onClick={resetLocalWallet}
+                className="w-full py-3 rounded-xl text-sm font-semibold transition-all active:scale-95"
+                style={{ background: '#F7931A', color: '#080C09' }}
+              >
+                {t('keysDeleteConfirm')}
+              </button>
+              <button
+                onClick={() => setConfirmReset(false)}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold"
+                style={{ border: '1px solid rgba(0,255,127,0.18)', color: '#00FF7F' }}
+              >
+                {t('keysDeleteCancel')}
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmReset(true)}
+              className="w-full py-3 text-xs font-semibold"
+              style={{ color: '#F7931A' }}
+            >
+              {t('pinSetupResetCta')}
+            </button>
+          ))}
         </div>
       </div>
     </main>
@@ -167,7 +251,12 @@ const RequiredPinSetupGate: React.FC<{ onReady: (walletPassword: string) => void
 export default function WalletPage() {
   const router = useRouter();
   const { t } = useLanguage();
-  const { user, isDemo, isLoading } = useAuth();
+  const { user, isDemo, isLoading, enterDemo } = useAuth();
+  const reducedMotion = usePrefersReducedMotion();
+  // A transfer is being signed / broadcast (lib/send-lock.ts): every way off
+  // the send screen is disabled until it ends, so the result is never lost in
+  // an unmounted screen and a second send cannot start from a fresh one.
+  const sendLocked = useSendLocked();
   const HEADER_TITLES: Record<Tab, string> = {
     home:          t('headerHome'),
     send:          t('headerSend'),
@@ -185,7 +274,10 @@ export default function WalletPage() {
   // loading placeholder, NEVER wallet content (deny-by-default per CLAUDE.md).
   // Only ever moves to 'open' after localStorage has been read on the client.
   const [pinGate, setPinGate] = useState<PinGate>('checking');
-  const [walletPassword, setWalletPassword] = useState<string | null>(null);
+  // UI unlock flag. The PIN never yields the wallet password any more; every
+  // send asks for the password itself (CryptoSendScreen).
+  const [unlocked, setUnlocked] = useState(false);
+  const [forgotPin, setForgotPin] = useState(false);
   // 2.10 TON-native positioning: Receive defaults to TON (per-coin taps override).
   const [receiveCoin, setReceiveCoin] = useState<ReceiveNetwork>('TON');
   const [cryptoSendCoin, setCryptoSendCoin] = useState<CryptoSendCoin>('ETH');
@@ -222,8 +314,8 @@ export default function WalletPage() {
       setPinGate('setup-required');
       return;
     }
-    setPinGate(walletPassword === null ? 'locked' : 'open');
-  }, [isDemo, walletPassword, user, isLoading, router]);
+    setPinGate(unlocked ? 'open' : 'locked');
+  }, [isDemo, unlocked, user, isLoading, router]);
 
   // Demo-воронка (задача 1.8): отметки задач гида при посещении экранов.
   // ВАЖНО: этот хук ОБЯЗАН объявляться ДО любых ранних return ниже. Иначе
@@ -235,6 +327,21 @@ export default function WalletPage() {
     if (activeTab === 'wallet') completeDemoTask('view_portfolio');
     if (activeTab === 'receive') completeDemoTask('open_receive');
   }, [isDemo, activeTab]);
+
+  // Same reason, Telegram side: closing the Mini App mid-send asks first
+  // (Bot API 6.2+). The app does not wire Telegram's BackButton, so there is
+  // nothing to disable there. Declared before the early returns (hook order).
+  useEffect(() => {
+    if (!sendLocked || typeof window === 'undefined') return;
+    const wa = window.Telegram?.WebApp;
+    let supported = false;
+    try { supported = !!wa?.isVersionAtLeast?.('6.2'); } catch { supported = false; }
+    if (!wa || !supported) return;
+    try { wa.enableClosingConfirmation(); } catch { /* unsupported client */ }
+    return () => {
+      try { wa.disableClosingConfirmation(); } catch { /* unsupported client */ }
+    };
+  }, [sendLocked]);
 
   // Fail-closed loading gate: render the placeholder — never wallet content —
   // until BOTH auth is resolved AND the PIN gate status is known ('checking').
@@ -250,23 +357,39 @@ export default function WalletPage() {
     );
   }
 
-  // PIN gate — shown when the wallet is locked (PIN configured, not unlocked).
-  if (!isDemo && pinGate === 'locked' && walletPassword === null) {
+  // PIN gate: shown when the wallet is locked (PIN configured, not unlocked).
+  if (!isDemo && pinGate === 'locked' && !unlocked) {
+    if (forgotPin) {
+      return (
+        <PasswordPinGate
+          mode="forgot"
+          onReady={() => {
+            setForgotPin(false);
+            setUnlocked(true);
+            setPinGate('open');
+          }}
+          onBack={() => setForgotPin(false)}
+        />
+      );
+    }
     return (
       <PinEntry
-        onSuccess={(pwd) => {
-          setWalletPassword(pwd);
+        onSuccess={() => {
+          setUnlocked(true);
           setPinGate('open');
         }}
+        onDemo={enterDemo}
+        onForgotPin={() => setForgotPin(true)}
       />
     );
   }
 
   if (!isDemo && pinGate === 'setup-required') {
     return (
-      <RequiredPinSetupGate
-        onReady={(pwd) => {
-          setWalletPassword(pwd);
+      <PasswordPinGate
+        mode="required"
+        onReady={() => {
+          setUnlocked(true);
           setPinGate('open');
         }}
       />
@@ -319,8 +442,9 @@ export default function WalletPage() {
       <header className="flex items-center justify-between px-6 pt-14 pb-0">
         {showBack ? (
           <button
-            onClick={() => setActiveTab('home')}
-            className="w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-90"
+            onClick={() => { if (!sendLocked) setActiveTab('home'); }}
+            disabled={sendLocked}
+            className="w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-90 disabled:opacity-40"
             style={{ backgroundColor: '#0D1A10', border: '1px solid rgba(0,255,127,0.15)', color: '#00FF7F' }}
             aria-label={t('ariaBack')}
           >
@@ -341,8 +465,9 @@ export default function WalletPage() {
         {/* Profile / Settings toggle */}
         <button
           type="button"
-          onClick={() => setActiveTab(activeTab === 'profile' ? 'home' : 'profile')}
-          className="w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-90"
+          onClick={() => { if (!sendLocked) setActiveTab(activeTab === 'profile' ? 'home' : 'profile'); }}
+          disabled={sendLocked}
+          className="w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-90 disabled:opacity-40"
           style={{
             backgroundColor: activeTab === 'profile' ? 'rgba(0,255,127,0.15)' : '#0D1A10',
             border: '1px solid rgba(0,255,127,0.15)',
@@ -357,7 +482,7 @@ export default function WalletPage() {
       {/* ── Avatar ─────────────────────────────────────────── */}
       {showAvatar && (
         <div style={{ transition: 'height 0.4s ease', height: avatarHeight, flexShrink: 0, overflow: 'hidden' }}>
-          <NeuraAvatar state={avatarState} />
+          {reducedMotion ? <NeuraAvatarStatic /> : <NeuraAvatar state={avatarState} />}
         </div>
       )}
 
@@ -403,7 +528,8 @@ export default function WalletPage() {
           <section className="px-6">
             <div className="flex items-center justify-between mb-2">
               <p className="font-semibold text-sm" style={{ color: '#00FF7F' }}>{t('transactionsHeader')}</p>
-              <MiniChart width={120} height={40} />
+              {/* MiniChart draws sample data: demo only, never for real balances. */}
+              {isDemo && <MiniChart width={120} height={40} />}
             </div>
             <TxHistory limit={7} />
           </section>
@@ -459,7 +585,11 @@ export default function WalletPage() {
       )}
 
       {/* ── Bottom Nav ─────────────────────────────────────── */}
-      <BottomNav active={navActive} onTabChange={(t) => setActiveTab(t)} />
+      <BottomNav
+        active={navActive}
+        disabled={sendLocked}
+        onTabChange={(tab) => { if (!sendLocked) setActiveTab(tab); }}
+      />
     </div>
   );
 }

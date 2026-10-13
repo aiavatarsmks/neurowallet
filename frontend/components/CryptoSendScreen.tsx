@@ -1,14 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { sendEth, sendUsdt, sendUsdtTrc20, sendTrx, sendSol, sendBtc, sendTon, sendUsdtTon, isValidEthAddress, isValidSolAddress, isValidBtcAddress, isValidTronAddress, isValidTonAddress } from '@/lib/crypto/transactions';
-import { fetchRealBalances, MARKET_REFRESH_MS } from '@/lib/crypto/balances';
+import { sendEth, sendUsdt, sendUsdtTrc20, sendTrx, sendSol, sendTon, sendUsdtTon, isValidEthAddress, isValidSolAddress, isValidBtcAddress, isValidTronAddress, isValidTonAddress } from '@/lib/crypto/transactions';
+// BTC send lives in btc-tx.ts: it signs at the reviewed fee rate (capped).
+import { sendBtc, btcErrorCode, BTC_MAX_FEE_RATE_SAT_VB, type BtcErrorCode } from '@/lib/crypto/btc-tx';
+import { fetchRealBalances, MARKET_REFRESH_MS, resetSharedBalances } from '@/lib/crypto/balances';
+import { isBroadcastOutcomeUnknown } from '@/lib/crypto/broadcast-error';
 import { upgradeStoredKeystoreIfWeak } from '@/lib/crypto/keystore-migration';
+import { sendLock } from '@/lib/send-lock';
+import { recordLastSend, readLastSend, dismissLastSend, type LastSend } from '@/lib/last-send';
 import { track, trackOnce, newTraceId } from '@/lib/analytics';
 import { coinLabel, COIN_PICKER_ORDER } from '@/lib/coin-labels';
 import { DEMO_HOLDING } from '@/lib/demo-data';
 import { sanitizeAmountInput, COIN_DECIMALS, amountToDecimalString } from '@/lib/display-format';
 import { emitNotification } from '@/lib/notifications-client';
+import { buildTxSentNotice, postTxSentNotice } from '@/lib/tg-notify-client';
 import { looksLikeTonDnsName, resolveName, type ResolvableChain } from '@/lib/name-resolvers';
-import { simulateTransfer, isBlocked, estimateFeeNative, FEE_CURRENCY, type SimulationResult, type SimWarning } from '@/lib/crypto/simulate';
+import { simulateTransfer, isBlocked, estimateFeeNative, FEE_CURRENCY, SIM_DETAIL_I18N, type SimulationResult, type SimWarning } from '@/lib/crypto/simulate';
 import { assessRecipient, type RiskAssessment } from '@/lib/risk/engine';
 import { policyEngineEnabled, type PolicyDecision } from '@/lib/policy-engine';
 import { evaluateSend } from '@/lib/policy-check';
@@ -17,8 +23,11 @@ import { txFacts } from '@/lib/neura/facts';
 import { completeDemoTask } from '@/lib/demo-guide';
 import { fetchExplanation } from '@/lib/neura/explain-client';
 import { supabase } from '@/lib/supabase';
+import { TX_STATUS_REASON } from '@/lib/crypto/tx-status';
+import { useTxStatus } from '@/hooks/useTxStatus';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
+import type { TranslationKey } from '@/lib/i18n';
 import { useDisplayCurrency } from '@/contexts/DisplayCurrencyContext';
 
 type Coin = 'BTC' | 'ETH' | 'SOL' | 'USDT' | 'TRX' | 'TRC20' | 'TON' | 'USDT_TON';
@@ -54,11 +63,101 @@ const FEE_ESTIMATE_EUR: Record<Coin, { type: 'range'; min: number; max: number }
   USDT_TON: { type: 'about', value: 0.05 },
 };
 
+const ALL_COINS: Coin[] = ['ETH', 'BTC', 'SOL', 'USDT', 'TRX', 'TRC20', 'TON', 'USDT_TON'];
+
+/**
+ * Explorer page for a broadcast transfer. TON sends return 'ton:seqno:N' (the
+ * hash exists only once processed), so TON links to the sender's address page.
+ */
+function explorerTxUrl(coin: Coin, hash: string): string {
+  if (coin === 'SOL') return `https://solscan.io/tx/${hash}`;
+  if (coin === 'BTC') return `https://blockstream.info/tx/${hash}`;
+  if (coin === 'TRX' || coin === 'TRC20') return `https://tronscan.org/#/transaction/${hash}`;
+  if (coin === 'TON' || coin === 'USDT_TON') {
+    let tonAddr = '';
+    try { tonAddr = localStorage.getItem('wallet_ton_address') ?? ''; } catch { /* storage unavailable */ }
+    return `https://tonscan.org/address/${encodeURIComponent(tonAddr)}`;
+  }
+  return `https://etherscan.io/tx/${hash}`;
+}
+
+function explorerLabelKey(coin: Coin): TranslationKey {
+  if (coin === 'SOL') return 'csViewOnSolscan';
+  if (coin === 'BTC') return 'csViewOnBlockstream';
+  if (coin === 'TRX' || coin === 'TRC20') return 'csViewOnTronscan';
+  if (coin === 'TON' || coin === 'USDT_TON') return 'csViewOnTonscan';
+  return 'csViewOnEtherscan';
+}
+
 function formatFeeEstimate(coin: Coin, formatFiat: (eurValue: number, options?: Intl.NumberFormatOptions) => string): string {
   const fee = FEE_ESTIMATE_EUR[coin];
   if (fee.type === 'range') return `~${formatFiat(fee.min)}–${formatFiat(fee.max)}`;
   if (fee.type === 'less') return `< ${formatFiat(fee.value)}`;
   return `~${formatFiat(fee.value)}`;
+}
+
+const BTC_ERROR_I18N: Record<BtcErrorCode, TranslationKey> = {
+  BTC_FEE_RATE_TOO_HIGH: 'csErrBtcFeeRateTooHigh',
+  BTC_FEE_TOO_HIGH_VS_AMOUNT: 'csErrBtcFeeVsAmount',
+  BTC_INVALID_FEE_RATE: 'csErrBtcInvalidFeeRate',
+  BTC_DUST: 'csErrDust',
+  BTC_NO_UTXO: 'csErrNoUtxo',
+  BTC_INSUFFICIENT_FUNDS: 'csErrBtcInsufficient',
+  BTC_UNSUPPORTED_SOURCE: 'csErrBtcUnsupportedSource',
+  BTC_UTXO_FETCH_FAILED: 'csErrBtcUnavailable',
+  BTC_RAW_TX_FETCH_FAILED: 'csErrBtcUnavailable',
+  BTC_BROADCAST_REJECTED: 'csErrBtcRejected',
+  BTC_BROADCAST_UNAVAILABLE: 'csErrBtcUnavailable',
+};
+
+export interface SendErrorView {
+  field: 'password' | 'send';
+  key: TranslationKey;
+  /** Extra text after the translated message (node reject reason, unmapped lib text). */
+  detail?: string;
+}
+
+/**
+ * Lib error → i18n key. Error codes first (btc-tx.ts), then stable substrings
+ * of the libs' messages, several of which are Russian (transactions.ts,
+ * tron-tx.ts, aes.ts, display-format.ts): mapping them keeps raw Russian text
+ * away from EN users. Unmapped errors fall back to csErrGeneric + detail.
+ */
+export function describeSendError(e: unknown): SendErrorView {
+  const raw = e instanceof Error ? e.message : String(e);
+  const msg = raw.toLowerCase();
+  const send = (key: TranslationKey, detail?: string): SendErrorView => ({ field: 'send', key, detail });
+
+  const btcCode = btcErrorCode(e);
+  if (btcCode) {
+    const detail = btcCode === 'BTC_BROADCAST_REJECTED' ? (e as { detail?: string }).detail?.slice(0, 120) : undefined;
+    return send(BTC_ERROR_I18N[btcCode], detail || undefined);
+  }
+  if (msg.includes('no_keystore')) return send('csErrNoWallet');
+  if (msg.includes('no_sol_enc')) return send('csErrNoSol');
+  if (msg.includes('no_btc_enc')) return send('csErrNoBtc');
+  if (msg.includes('no_tron_enc')) return send('csErrNoTron');
+  if (msg.includes('no_ton_enc')) return send('csErrNoTon');
+  // Только ошибки расшифровки (ethers keystore / aes.ts). Раньше сюда
+  // попадало любое 'invalid' (адрес, сумма) → ложное «неверный пароль».
+  if (msg.includes('incorrect password') || msg.includes('bad mac') || msg.includes('неверный пароль')) {
+    return { field: 'password', key: 'csErrWrongPassword' };
+  }
+  if (msg.includes('insufficient funds for rent')) return send('csErrSolRent');
+  if (msg.includes('insufficient') || msg.includes('not sufficient')) return send('csErrInsufficientFee');
+  if (msg.includes('nonce') || msg.includes('replacement')) return send('csErrPendingTx');
+  // transactions.ts / tron-tx.ts recipient checks ('Неверный SOL-/TRX-адрес получателя.')
+  if (/неверный (sol|trx)-адрес/.test(msg) || msg.includes('has no matching script')) return send('csErrInvalidRecipient');
+  // 'Сумма должна быть больше нуля.' (transactions.ts, tron-tx.ts), 'Некорректная сумма.' (display-format.ts)
+  if (msg.includes('сумма должна быть больше нуля') || msg.includes('некорректная сумма')) return send('csErrInvalidAmount');
+  if (msg.includes('ошибка построения trx')) return send('csErrTronBuild');
+  if (msg.includes('ошибка отправки в сеть tron')) return send('csErrTronBroadcast');
+  if (msg.includes('trongrid') || (msg.includes('tron') && msg.includes('недоступен'))) return send('csErrTrongridDown');
+  if (msg.includes('utxo') || msg.includes('подтверждённых')) return send('csErrNoUtxo');
+  if (msg.includes('dust') || msg.includes('546')) return send('csErrDust');
+  if (msg.includes('blockhash')) return send('csErrSolanaNetwork');
+  if (/\b429\b/.test(msg) || msg.includes('rate limit') || msg.includes('ratelimit')) return send('csErrNetworkBusy');
+  return send('csErrGeneric', raw.slice(0, 100));
 }
 
 /** Клавиатура: скрывать по тапу вне текстового поля (mobile WebView). */
@@ -88,6 +187,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
 }) => {
   const { isDemo } = useAuth();
   const { t, lang } = useLanguage();
+  const numLocale = lang === 'en' ? 'en-US' : 'ru-RU';
   const { formatFiat } = useDisplayCurrency();
   const [coin,     setCoin]     = useState<Coin>(initialCoin);
   const [address,  setAddress]  = useState('');
@@ -100,9 +200,19 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   const [pwError,  setPwError]  = useState('');
   const [sending,  setSending]  = useState(false);
   const [txHash,   setTxHash]   = useState('');
+  // Broadcast outcome unknown (lib/crypto/broadcast-error.ts): the tx was
+  // signed and handed to the network but no node confirmed receipt. The done
+  // screen says so and polls the hash instead of inviting a retry.
+  const [outcomeUnknown, setOutcomeUnknown] = useState(false);
+  // Last broadcast transfer on this device (lib/last-send.ts), shown on the
+  // form with its live status. Real mode only.
+  const [lastSend, setLastSend] = useState<LastSend | null>(null);
   const [sendErr,  setSendErr]  = useState('');
   const [balances, setBalances] = useState<Record<Coin, number>>({ ETH: 0, BTC: 0, SOL: 0, USDT: 0, TRX: 0, TRC20: 0, TON: 0, USDT_TON: 0 });
   const [balReady, setBalReady] = useState(false);
+  // Coins whose balance did not load this round (provider down). Their number
+  // is a last-known value or 0, so we never claim "insufficient funds" for them.
+  const [unknownCoins, setUnknownCoins] = useState<Coin[]>([]);
   const [eurRates, setEurRates] = useState({ eth: 2800, btc: 55000, sol: 120, trx: 0.22, ton: 3.5 });
 
   // Review-симуляция (задача 1.2)
@@ -147,15 +257,28 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   useEffect(() => {
     setCoin(initialCoin);
     setAddress(initialAddress);
-    setAmount(initialAmount);
+    // Same precision rule as typing: the review must show exactly what gets
+    // signed (the libs truncate to the chain's decimals). A non-plain decimal
+    // (e.g. exponent form) is dropped rather than "sanitized" into another number.
+    setAmount(/^\d*\.?\d*$/.test(initialAmount) ? sanitizeAmountInput(initialAmount, COIN_DECIMALS[initialCoin]) : '');
     setStep('form');
     setPassword('');
     setPwError('');
     setSendErr('');
     setTxHash('');
+    setOutcomeUnknown(false);
   }, [initialCoin, initialAddress, initialAmount]);
 
-  // Load real balances once on mount
+  // Previous transfer banner: read once on mount (real mode only).
+  useEffect(() => {
+    setLastSend(isDemo ? null : readLastSend());
+  }, [isDemo]);
+
+  // Load real balances on mount, then every MARKET_REFRESH_MS. `reloadBalancesRef`
+  // lets reset() force a fresh round after a send. A sequence number drops a
+  // slower, older round that resolves after a newer one.
+  const balancesSeqRef = useRef(0);
+  const reloadBalancesRef = useRef<() => void>(() => {});
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (isDemo) {
@@ -173,26 +296,72 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
     const btc  = localStorage.getItem('wallet_btc_address')  || '';
     const tron = localStorage.getItem('wallet_tron_address') || '';
     const ton  = localStorage.getItem('wallet_ton_address')  || '';
-    if (!eth) { setBalReady(true); return; }
+    if (!eth) {
+      reloadBalancesRef.current = () => setBalReady(true);
+      setBalReady(true);
+      return;
+    }
     const loadBalances = () => {
+      const seq = ++balancesSeqRef.current;
       fetchRealBalances(eth, sol, btc, tron, ton)
         .then((b) => {
+          if (seq !== balancesSeqRef.current) return;
           setBalances({ ETH: b.eth, BTC: b.btc, SOL: b.sol, USDT: b.usdt, TRX: b.trx, TRC20: b.usdtTrc, TON: b.ton, USDT_TON: b.usdtTon });
+          setUnknownCoins((b.unavailable ?? []).map((a) => (a === 'USDT_TRC' ? 'TRC20' : a) as Coin));
           setEurRates({ eth: b.ethEur, btc: b.btcEur, sol: b.solEur, trx: b.trxEur, ton: b.tonEur });
           setBalReady(true);
         })
-        .catch(() => setBalReady(true));
+        .catch(() => {
+          if (seq !== balancesSeqRef.current) return;
+          // Nothing loaded this round: the numbers on screen are old, so no
+          // coin's balance is known (never claim sufficient/insufficient on them).
+          setUnknownCoins(ALL_COINS);
+          setBalReady(true);
+        });
     };
 
+    reloadBalancesRef.current = loadBalances;
     loadBalances();
     const timer = window.setInterval(loadBalances, MARKET_REFRESH_MS);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      reloadBalancesRef.current = () => {};
+      balancesSeqRef.current += 1; // results of rounds still in flight are dropped
+    };
   }, [isDemo]);
 
   const data       = COINS[coin];
   const amountNum  = parseFloat(amount) || 0;
+  // Shown to the user: the typed decimal string, never JS number formatting (1e-7).
+  const displayAmount = amount.replace(/\.$/, '').replace(/^\./, '0.') || '0';
   const available  = balances[coin];
-  const insufficient = amountNum > 0 && amountNum > available;
+  const balanceUnknown = !isDemo && unknownCoins.includes(coin);
+  const insufficient = !balanceUnknown && amountNum > 0 && amountNum > available;
+
+  // ── Post-send on-chain status (done screen) ──────────────────────────────
+  // Broadcast ≠ success: a USDT TRC-20 transfer can fail with OUT_OF_ENERGY
+  // (TRX burned), a SOL tx can expire. Read-only polling; demo never polls.
+  // One poller serves both the done screen (this send) and, on the form, the
+  // previous-transfer banner (lib/last-send.ts). Done → "new transfer" keeps
+  // the same hash, so the status carries over without a restart.
+  const statusEnabled = step === 'done' && !isDemo && data.implemented && !!txHash;
+  const bannerStatusEnabled = step === 'form' && !isDemo && !!lastSend;
+  const polledCoin: Coin = statusEnabled ? coin : bannerStatusEnabled && lastSend ? lastSend.coin : coin;
+  const polledHash = statusEnabled ? txHash : bannerStatusEnabled && lastSend ? lastSend.hash : '';
+  const pollEnabled = statusEnabled || bannerStatusEnabled;
+  const tonStatusWallet = pollEnabled && (polledCoin === 'TON' || polledCoin === 'USDT_TON')
+    ? localStorage.getItem('wallet_ton_address') ?? undefined
+    : undefined;
+  const txStatus = useTxStatus({ coin: polledCoin, hash: polledHash, enabled: pollEnabled, tonWalletAddress: tonStatusWallet });
+
+  const statusTrackedRef = useRef('');
+  useEffect(() => {
+    if (!statusEnabled || (txStatus.state !== 'confirmed' && txStatus.state !== 'failed')) return;
+    const key = `${txHash}:${txStatus.state}`;
+    if (statusTrackedRef.current === key) return;
+    statusTrackedRef.current = key;
+    track(txStatus.state === 'confirmed' ? 'send_confirmed' : 'send_failed_onchain', { coin }, traceRef.current || undefined);
+  }, [statusEnabled, txStatus.state, txHash, coin]);
 
   // MAX: для нативной монеты (комиссия платится ею же) резервируем оценку
   // комиссии, иначе review всегда блокирует «недостаточно средств».
@@ -261,6 +430,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           balances,
           eurRates,
           fromBtcAddress: localStorage.getItem('wallet_btc_address') ?? undefined,
+          unknownBalances: unknownCoins,
         }),
         fetchHistory(),
       ]);
@@ -374,6 +544,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
     insufficient_fee_balance: 'csWarnFeeBalance',
     simulation_timeout: 'csWarnSimTimeout',
     simulation_failed: 'csWarnSimFailed',
+    balance_unknown: 'csWarnBalanceUnknown',
   };
 
   const addressValid =
@@ -384,9 +555,10 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
     : isValidBtcAddress(address.trim()); // BTC
 
   // Name resolution (2.6): TON DNS for TON-family coins (verified working).
-  // ENS (.eth) is temporarily gated off — ethers resolveName fails against the
-  // public cloudflare-eth RPC in the browser bundle; needs a reliable ETH RPC
-  // or a raw-eth_call implementation. The resolveEns lib stays (tested) for then.
+  // ENS (.eth) stays gated off here on purpose. The original blocker (the dead
+  // cloudflare-eth RPC) is gone: resolveEns now uses lib/crypto/eth-provider.ts
+  // and resolves live. Turning it on decides where real money goes, so it is an
+  // owner decision after a manual check (see the night audit plan, 2026-10-13).
   const resolvableChain: ResolvableChain | null =
     coin === 'TON' || coin === 'USDT_TON' ? 'ton'
     : null;
@@ -449,10 +621,62 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
     setPwError('');
     setSendErr('');
     setTxHash('');
+    setOutcomeUnknown(false);
+    if (!isDemo) {
+      // The transfer just sent is not in the numbers on screen: the shared
+      // balance cache (10 s) and the 30 s poll would let a second transfer
+      // exceed the real balance. Drop the cache and keep Continue disabled
+      // until a fresh round has loaded.
+      resetSharedBalances();
+      setBalReady(false);
+      reloadBalancesRef.current();
+      setLastSend(readLastSend());
+    }
   };
 
-  // ─── Real ETH send ────────────────────────────────────────────────────────
+  /**
+   * Best-effort Telegram notice in the /api/tg-notify contract:
+   * { kind: 'tx_sent', coin, amount, to, hash, lang }. `amount` is the decimal
+   * string the user typed (never String(number): 1e-7 fails validation). If a
+   * field does not fit the server format, the notice is skipped. Never throws.
+   */
+  const notifyTelegramTxSent = async (hash: string, traceId: string) => {
+    try {
+      if (!localStorage.getItem('tg_user_id')) return;
+      const body = buildTxSentNotice({ coin, amount, to: address.trim(), hash, lang });
+      if (!body) return;
+      const { data: s } = await supabase.auth.getSession();
+      const token = s.session?.access_token;
+      if (!token) return;
+      await postTxSentNotice(body, token, traceId);
+    } catch { /* уведомление не критично */ }
+  };
+
+  // ─── Send (all chains) ────────────────────────────────────────────────────
+  // Re-entrancy guard: decrypting takes seconds (scrypt N=2^17) while the UI
+  // stays responsive, so a double Enter / key repeat / double tap used to start
+  // parallel sends (two distinct TRX / USDT TRC-20 transfers). The ref is set
+  // synchronously, before any await, and cleared only when the attempt ends.
+  // The ref only covers this instance; the app-wide lib/send-lock.ts also
+  // stops a second instance (screen left and reopened mid-send) and lets the
+  // wallet shell disable navigation until the attempt ends.
+  const sendInFlightRef = useRef(false);
   const handleConfirmSend = async () => {
+    if (sendInFlightRef.current) return;
+    if (!sendLock.acquire()) {
+      setSendErr(t('csSendInProgress'));
+      return;
+    }
+    sendInFlightRef.current = true;
+    try {
+      await confirmSendOnce();
+    } finally {
+      sendInFlightRef.current = false;
+      sendLock.release();
+    }
+  };
+
+  const confirmSendOnce = async () => {
     if (isDemo || !data.implemented) {
       // Placeholder for BTC/SOL/USDT — show success screen (no real tx)
       setTxHash(`demo-${coin.toLowerCase()}-${Date.now().toString(36)}`);
@@ -502,7 +726,11 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         const btcAddr = localStorage.getItem('wallet_btc_address');
         if (!btcEnc)  throw new Error('NO_BTC_ENC');
         if (!btcAddr) throw new Error('NO_KEYSTORE');
-        hash = await sendBtc(btcEnc, password, address.trim(), amountNum, btcAddr);
+        // Sign at the fee rate the review showed (sendBtc refuses > cap or a fee
+        // above half the amount); without a reviewed rate it fetches one, capped.
+        hash = await sendBtc(btcEnc, password, address.trim(), amountNum, btcAddr, {
+          feeRateSatVb: sim?.btcFeeRateSatVb,
+        });
       } else if (coin === 'USDT') {
         hash = await sendUsdt(keystore, password, address.trim(), amountNum);
       } else if (coin === 'TRC20') {
@@ -525,7 +753,11 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         // ETH
         hash = await sendEth(keystore, password, address.trim(), amountNum);
       }
+      // Remember it first: if the app is closed or the screen reopened, the
+      // form shows this transfer and its status before anything is resent.
+      recordLastSend({ coin, hash, amount: displayAmount, to: address.trim() });
       setTxHash(hash);
+      setOutcomeUnknown(false);
       setStep('done');
       onAvatarState?.('talking');
       setTimeout(() => onAvatarState?.('idle'), 4000);
@@ -543,63 +775,40 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
       // Fire-and-forget — never blocks or breaks the send flow.
       void upgradeStoredKeystoreIfWeak(password);
 
-      // Push-уведомление в Telegram (если пользователь залогинен через TG)
-      const tgId = typeof window !== 'undefined' ? localStorage.getItem('tg_user_id') : null;
-      if (tgId) {
-        const { data } = await supabase.auth.getSession();
-        const token = data.session?.access_token;
-        const shortAddr = address.trim().slice(0, 6) + '...' + address.trim().slice(-4);
-        const msg = lang === 'en'
-          ? `✅ <b>Transaction sent</b>\n\n💸 ${amountNum} ${coinLabel(coin)}\n📤 To address: <code>${shortAddr}</code>\n🔗 TX: <code>${hash.slice(0, 16)}...</code>`
-          : `✅ <b>Транзакция отправлена</b>\n\n💸 ${amountNum} ${coinLabel(coin)}\n📤 На адрес: <code>${shortAddr}</code>\n🔗 TX: <code>${hash.slice(0, 16)}...</code>`;
-        if (token) {
-          fetch('/api/tg-notify', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
-              'x-trace-id': traceId,
-            },
-            body: JSON.stringify({ message: msg }),
-          }).catch(() => {/* silent — уведомление не критично */});
-        }
-      }
+      // Telegram push (only for Telegram logins). The server composes the text
+      // from validated fields; detached so nothing here can reach the catch
+      // below and report an already broadcast transfer as failed.
+      void notifyTelegramTxSent(hash, traceId);
     } catch (e: unknown) {
+      if (isBroadcastOutcomeUnknown(e)) {
+        // Signed and handed to the network, but no node confirmed receipt.
+        // NOT an error: a retry would be a second, different transfer. Show
+        // the done screen in the "don't resend" state and poll the hash.
+        // Analytics: no new event (server allowlist), send_failed + reason.
+        track('send_failed', { coin, reason_code: 'outcome_unknown' }, traceId);
+        // Draft keeps the hash for reconciliation; 'sent' = handed to the network.
+        finalizeDraft('sent', e.hash || undefined);
+        recordLastSend({ coin, hash: e.hash, amount: displayAmount, to: address.trim() });
+        setTxHash(e.hash);
+        setOutcomeUnknown(true);
+        setStep('done');
+        onAvatarState?.('idle');
+        return;
+      }
       track('send_failed', { coin }, traceId);
       finalizeDraft('failed');
-      const msg = (e instanceof Error ? e.message : String(e)).toLowerCase();
-      if (msg.includes('no_keystore')) {
-        setSendErr(t('csErrNoWallet'));
-      } else if (msg.includes('no_sol_enc')) {
-        setSendErr(t('csErrNoSol'));
-      } else if (msg.includes('incorrect password') || msg.includes('bad mac') || msg.includes('неверный пароль')) {
-        // Только ошибки расшифровки (ethers keystore / aes.ts). Раньше сюда
-        // попадало любое 'invalid' (адрес, сумма) → ложное «неверный пароль».
-        setPwError(t('csErrWrongPassword'));
-      } else if (msg.includes('insufficient funds for rent')) {
-        setSendErr(t('csErrSolRent'));
-      } else if (msg.includes('insufficient') || msg.includes('not sufficient')) {
-        setSendErr(t('csErrInsufficientFee'));
-      } else if (msg.includes('nonce') || msg.includes('replacement')) {
-        setSendErr(t('csErrPendingTx'));
-      } else if (msg.includes('no_btc_enc')) {
-        setSendErr(t('csErrNoBtc'));
-      } else if (msg.includes('no_tron_enc')) {
-        setSendErr(t('csErrNoTron'));
-      } else if (msg.includes('no_ton_enc')) {
-        setSendErr(t('csErrNoTon'));
-      } else if (msg.includes('trongrid') || msg.includes('tron') && msg.includes('недоступен')) {
-        setSendErr(t('csErrTrongridDown'));
-      } else if (msg.includes('utxo') || msg.includes('подтверждённых')) {
-        setSendErr(t('csErrNoUtxo'));
-      } else if (msg.includes('dust') || msg.includes('546')) {
-        setSendErr(t('csErrDust'));
-      } else if (msg.includes('segwit') || msg.includes('bc1')) {
-        setSendErr(e instanceof Error ? e.message : t('csErrSegwit'));
-      } else if (msg.includes('blockhash not found') || msg.includes('blockhash')) {
-        setSendErr(t('csErrSolanaNetwork'));
+      const view = describeSendError(e);
+      const text = t(view.key).replace('{cap}', String(BTC_MAX_FEE_RATE_SAT_VB));
+      if (view.field === 'password') {
+        setPwError(text);
+      } else if (view.key === 'csErrGeneric') {
+        // Unmapped error: show the lib text only if it is readable in the UI
+        // language (lib messages are partly Russian).
+        const detail = view.detail ?? '';
+        const readable = detail && !(lang === 'en' && /[А-Яа-яЁё]/.test(detail));
+        setSendErr(readable ? `${text} ${detail}` : t('csErrGenericRetry'));
       } else {
-        setSendErr(`${t('csErrGeneric')} ${(e instanceof Error ? e.message : String(e)).slice(0, 100)}`);
+        setSendErr(view.detail ? `${text} ${view.detail}` : text);
       }
       onAvatarState?.('idle');
     } finally {
@@ -610,23 +819,104 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   // ─── Done screen ──────────────────────────────────────────────────────────
   if (step === 'done') {
     const shortHash = txHash ? `${txHash.slice(0, 10)}…${txHash.slice(-6)}` : null;
+    const failedOnchain = statusEnabled && txStatus.state === 'failed';
+    const isTonFamily = coin === 'TON' || coin === 'USDT_TON';
+    const isTron = coin === 'TRX' || coin === 'TRC20';
+
+    const failReasonText = (reason?: string): string => {
+      if (reason === 'OUT_OF_ENERGY') return t('csStatusReasonOutOfEnergy');
+      if (reason === 'REVERT' || reason === TX_STATUS_REASON.ETH_REVERTED) return t('csStatusReasonRevert');
+      if (reason === TX_STATUS_REASON.SOL_ERROR) return t('csStatusReasonSol');
+      return t('csStatusReasonCode').replace('{code}', reason || 'FAILED');
+    };
+
+    // Status line under the title. Honest TON wording: seqno moved = the wallet
+    // contract processed the message, not proof the jetton arrived.
+    const statusLine: { text: string; color: string; note?: string } | null = !statusEnabled
+      ? null
+      : txStatus.state === 'confirmed'
+        ? {
+            text: isTonFamily ? t('csStatusProcessed') : t('csStatusConfirmed'),
+            color: '#00FF7F',
+            note: coin === 'USDT_TON' ? t('csStatusUsdtTonNote') : undefined,
+          }
+        : txStatus.state === 'failed'
+          ? {
+              text: t('csStatusFailed').replace('{reason}', failReasonText(txStatus.reason)),
+              color: '#FF5252',
+              note: isTron ? t('csStatusTronFeeSpent') : undefined,
+            }
+          : txStatus.state === 'unknown'
+            ? {
+                text: t('csStatusUnknown'),
+                color: '#F7931A',
+                note: txStatus.reason === TX_STATUS_REASON.SOL_MAYBE_EXPIRED ? t('csStatusSolExpired')
+                  : txStatus.reason === TX_STATUS_REASON.BTC_NOT_FOUND ? t('csStatusNotFound')
+                  : t('csStatusCheckExplorer'),
+              }
+            : {
+                text: t('csStatusPending'),
+                color: '#F7931A',
+                note: txStatus.timedOut ? t('csStatusStopped') : undefined,
+              };
+
+    // Outcome unknown: keep the warning until polling settles it. Confirmed →
+    // the normal success view; failed → the failed view; still open when
+    // polling ends (or no hash to poll) → also point to History.
+    const outcomeSettled = statusEnabled && (txStatus.state === 'confirmed' || txStatus.state === 'failed');
+    const unknownOpen = outcomeUnknown && !outcomeSettled;
+    const unknownStuck = unknownOpen && (!statusEnabled || txStatus.state === 'unknown' || txStatus.timedOut);
+
+    const accent = failedOnchain ? '#FF5252' : unknownOpen ? '#F7931A' : data.color;
     return (
       <div className="flex flex-col items-center justify-center px-6 py-12 text-center gap-6">
         <div
           className="w-20 h-20 rounded-full flex items-center justify-center"
-          style={{ background: data.bgColor, border: `2px solid ${data.color}` }}
+          style={{
+            background: failedOnchain ? 'rgba(255,82,82,0.12)' : unknownOpen ? 'rgba(247,147,26,0.12)' : data.bgColor,
+            border: `2px solid ${accent}`,
+          }}
         >
-          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke={data.color}
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke={accent}
             strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="20 6 9 17 4 12"/>
+            {failedOnchain
+              ? <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>
+              : unknownOpen
+                ? <><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></>
+                : <polyline points="20 6 9 17 4 12"/>}
           </svg>
         </div>
 
-        <div>
-          <p className="text-white text-xl font-bold">{t('csSent').replace('{amt}', String(amountNum)).replace('{coin}', coinLabel(coin))}</p>
-          <p className="text-[#3A6045] text-sm mt-1">
-            {`${recipientName ? `${recipientName} • ` : ''}${isDemo ? t('csTxSentDemo') : t('csTxSentToNetwork')}`}
+        <div data-testid={unknownOpen ? 'send-outcome-unknown' : undefined}>
+          <p className="text-white text-xl font-bold">
+            {failedOnchain
+              ? t('csStatusFailedTitle')
+              : unknownOpen
+                ? t('csOutcomeUnknownTitle')
+                : t('csSent').replace('{amt}', displayAmount).replace('{coin}', coinLabel(coin))}
           </p>
+          {unknownOpen ? (
+            <p className="text-sm mt-2 leading-relaxed" style={{ color: '#F7931A' }}>
+              {t('csOutcomeUnknownText')}
+            </p>
+          ) : (
+            <p className="text-[#3A6045] text-sm mt-1">
+              {`${recipientName ? `${recipientName} • ` : ''}${isDemo ? t('csTxSentDemo') : t('csTxSentToNetwork')}`}
+            </p>
+          )}
+          {statusLine && (
+            <div className="mt-3" role="status" aria-live="polite">
+              <p className="text-sm font-semibold" style={{ color: statusLine.color }}>{statusLine.text}</p>
+              {statusLine.note && (
+                <p className="text-xs mt-1 text-[#7FBF9A] leading-relaxed">{statusLine.note}</p>
+              )}
+            </div>
+          )}
+          {unknownStuck && (
+            <p className="text-xs mt-2 leading-relaxed" style={{ color: '#F7931A' }}>
+              {t('csOutcomeUnknownCheckHistory')}
+            </p>
+          )}
         </div>
 
         {txHash && (
@@ -639,59 +929,48 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
             {/* Demo tx hashes are fake — an explorer link would 404, so hide it. */}
             {!isDemo && (
               <a
-                href={
-                  coin === 'SOL'
-                    ? `https://solscan.io/tx/${txHash}`
-                    : coin === 'BTC'
-                    ? `https://blockstream.info/tx/${txHash}`
-                    : coin === 'TRX' || coin === 'TRC20'
-                    ? `https://tronscan.org/#/transaction/${txHash}`
-                    : coin === 'TON' || coin === 'USDT_TON'
-                    // TON-отправка возвращает ton:seqno:N (хеш появится только после
-                    // обработки) — ведём на страницу своего адреса, там будет tx.
-                    ? `https://tonscan.org/address/${encodeURIComponent(localStorage.getItem('wallet_ton_address') ?? '')}`
-                    : `https://etherscan.io/tx/${txHash}`
-                }
+                href={explorerTxUrl(coin, txHash)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-2 inline-block text-xs font-semibold"
                 style={{ color: '#00FF7F' }}
               >
-                {coin === 'SOL'                        ? t('csViewOnSolscan')
-                 : coin === 'BTC'                      ? t('csViewOnBlockstream')
-                 : coin === 'TRX' || coin === 'TRC20'    ? t('csViewOnTronscan')
-                 : coin === 'TON' || coin === 'USDT_TON' ? t('csViewOnTonscan')
-                 : t('csViewOnEtherscan')}
+                {t(explorerLabelKey(coin))}
               </a>
             )}
           </div>
         )}
 
-        <div
-          className="w-full rounded-2xl p-3.5"
-          style={{ background: 'rgba(0,255,127,0.05)', border: '1px solid rgba(0,255,127,0.12)' }}
-        >
-          <p className="text-[#00FF7F] text-xs font-semibold mb-1">{t('navNeura')}</p>
-          <p className="text-white text-xs leading-relaxed">
-            {txHash
-              ? coin === 'TRX'
-                ? t('csNeuraDoneTrx')
-                : coin === 'TRC20'
-                ? t('csNeuraDoneTrc20')
-                : coin === 'USDT'
-                ? t('csNeuraDoneUsdt')
-                : coin === 'BTC'
-                ? t('csNeuraDoneBtc')
-                : coin === 'SOL'
-                ? t('csNeuraDoneSol')
-                : coin === 'TON'
-                ? t('csNeuraDoneTon')
-                : coin === 'USDT_TON'
-                ? t('csNeuraDoneUsdtTon')
-                : t('csNeuraDoneEth')
-              : t('csNeuraDoneFallback')}
-          </p>
-        </div>
+        {/* The Neura notes describe a sent transfer: not while the outcome is open. */}
+        {!unknownOpen && (
+          <div
+            className="w-full rounded-2xl p-3.5"
+            style={{ background: 'rgba(0,255,127,0.05)', border: '1px solid rgba(0,255,127,0.12)' }}
+          >
+            <p className="text-[#00FF7F] text-xs font-semibold mb-1">{t('navNeura')}</p>
+            <p className="text-white text-xs leading-relaxed">
+              {failedOnchain
+                ? t('csNeuraFailedOnchain')
+                : txHash
+                ? coin === 'TRX'
+                  ? t('csNeuraDoneTrx')
+                  : coin === 'TRC20'
+                  ? t('csNeuraDoneTrc20')
+                  : coin === 'USDT'
+                  ? t('csNeuraDoneUsdt')
+                  : coin === 'BTC'
+                  ? t('csNeuraDoneBtc')
+                  : coin === 'SOL'
+                  ? t('csNeuraDoneSol')
+                  : coin === 'TON'
+                  ? t('csNeuraDoneTon')
+                  : coin === 'USDT_TON'
+                  ? t('csNeuraDoneUsdtTon')
+                  : t('csNeuraDoneEth')
+                : t('csNeuraDoneFallback')}
+            </p>
+          </div>
+        )}
 
         <button
           onClick={reset}
@@ -720,7 +999,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         >
           <div className="flex justify-between text-xs">
             <span className="text-[#3A6045]">{t('csYouSend')}</span>
-            <span className="text-white font-bold">{amountNum} {coinLabel(coin)}</span>
+            <span className="text-white font-bold">{displayAmount} {coinLabel(coin)}</span>
           </div>
           <div className="flex justify-between text-xs">
             <span className="text-[#3A6045]">{t('csToAddress')}</span>
@@ -755,9 +1034,12 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
               type="password"
               value={password}
               onChange={(e) => { setPassword(e.target.value); setPwError(''); }}
-              onKeyDown={(e) => e.key === 'Enter' && password && handleConfirmSend()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && password && !sending && !e.repeat) void handleConfirmSend();
+              }}
+              disabled={sending}
               placeholder={t('csPasswordPlaceholder')}
-              className="w-full bg-transparent text-white text-sm outline-none placeholder:text-[#3A6045]"
+              className="w-full bg-transparent text-white text-sm outline-none placeholder:text-[#3A6045] disabled:opacity-50"
               style={{ caretColor: '#00FF7F' }}
             />
           </div>
@@ -864,7 +1146,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         >
           {([
             [t('csCoin'),   <span key="c" className="flex items-center gap-1.5"><span className="font-bold" style={{ color: data.color }}>{data.icon}</span><span className="text-white">{coinLabel(coin)}</span></span>],
-            [t('csAmount'),    <span key="a" className="text-white font-bold">{amountNum} {coinLabel(coin)}</span>],
+            [t('csAmount'),    <span key="a" className="text-white font-bold">{displayAmount} {coinLabel(coin)}</span>],
             [t('csFee'), feeNode],
             ...(realReview && sim?.balanceAfter != null
               ? [[t('csBalanceAfter'), <span key="ba" className="text-white">{fmtAmount(sim.balanceAfter)} {coinLabel(coin)}</span>]] as [string, React.ReactNode][]
@@ -978,8 +1260,17 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
               : { background: 'rgba(247,147,26,0.06)', border: '1px solid rgba(247,147,26,0.2)' }}
           >
             <p className="text-xs" style={{ color: w.level === 'block' ? '#FF453A' : '#F7931A' }}>
-              {t(WARNING_I18N[w.code])}
+              {t(w.detail ? SIM_DETAIL_I18N[w.detail] : WARNING_I18N[w.code])}
             </p>
+          </div>
+        ))}
+        {realReview && sim !== null && (sim.notices ?? []).map((n) => (
+          <div
+            key={n.detail}
+            className="rounded-2xl p-3"
+            style={{ background: 'rgba(247,147,26,0.06)', border: '1px solid rgba(247,147,26,0.2)' }}
+          >
+            <p className="text-xs" style={{ color: '#F7931A' }}>{t(SIM_DETAIL_I18N[n.detail])}</p>
           </div>
         ))}
 
@@ -1031,8 +1322,65 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
   }
 
   // ─── Form step ────────────────────────────────────────────────────────────
+  // Previous transfer (lib/last-send.ts) with its live status: covers leaving
+  // the screen or closing the app mid-send, so nobody resends blind.
+  const lastSendView = bannerStatusEnabled && lastSend
+    ? (() => {
+        const tonFamily = lastSend.coin === 'TON' || lastSend.coin === 'USDT_TON';
+        const s = txStatus.state;
+        const statusKey: TranslationKey = s === 'confirmed'
+          ? (tonFamily ? 'csLastSendStatusProcessed' : 'csLastSendStatusConfirmed')
+          : s === 'failed' ? 'csLastSendStatusFailed'
+          : s === 'unknown' ? 'csLastSendStatusUnknown'
+          : 'csLastSendStatusPending';
+        const tone = s === 'confirmed'
+          ? { bg: 'rgba(0,255,127,0.05)', border: 'rgba(0,255,127,0.2)' }
+          : s === 'failed'
+            ? { bg: 'rgba(255,82,82,0.06)', border: 'rgba(255,82,82,0.3)' }
+            : { bg: 'rgba(247,147,26,0.06)', border: 'rgba(247,147,26,0.3)' };
+        const line = t('csLastSendLine')
+          .replace('{amt}', lastSend.amount)
+          .replace('{coin}', coinLabel(lastSend.coin))
+          .replace('{to}', lastSend.to)
+          .replace('{status}', t(statusKey));
+        return { line, tone };
+      })()
+    : null;
+
   return (
     <div className="px-6 pt-2 flex flex-col gap-5" onPointerDown={blurOnOutsideTap}>
+      {lastSend && lastSendView && (
+        <div
+          data-testid="last-send-banner"
+          role="status"
+          aria-live="polite"
+          className="rounded-2xl p-3 flex items-start gap-2"
+          style={{ background: lastSendView.tone.bg, border: `1px solid ${lastSendView.tone.border}` }}
+        >
+          <div className="flex-1 min-w-0">
+            <p className="text-white text-xs leading-relaxed break-words">{lastSendView.line}</p>
+            <a
+              href={explorerTxUrl(lastSend.coin, lastSend.hash)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 inline-block text-[11px] font-semibold"
+              style={{ color: '#00FF7F' }}
+            >
+              {t(explorerLabelKey(lastSend.coin))}
+            </a>
+          </div>
+          <button
+            type="button"
+            onClick={() => { dismissLastSend(); setLastSend(null); }}
+            aria-label={t('csLastSendDismiss')}
+            className="w-7 h-7 -mt-1 -mr-1 flex-shrink-0 rounded-full flex items-center justify-center text-sm transition-all active:scale-90"
+            style={{ color: '#7FBF9A' }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <h2 className="text-white text-lg font-bold">{t('csTitle')}</h2>
 
       {/* Coin selector */}
@@ -1070,7 +1418,7 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         <p className="text-[#3A6045] text-xs mt-2">
           {t('csAvailable')}{' '}
           {balReady
-            ? <span className="text-white font-medium">{available.toLocaleString('ru-RU', { maximumFractionDigits: 6 })} {coinLabel(coin)}</span>
+            ? <span className="text-white font-medium">{available.toLocaleString(numLocale, { maximumFractionDigits: 6 })} {coinLabel(coin)}</span>
             : <span className="text-[#3A6045]">{t('csLoadingEllipsis')}</span>
           }
         </p>
@@ -1105,6 +1453,10 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         {resolveErr && (
           <p className="text-xs mt-1" style={{ color: '#FF5252' }}>{resolveErr}</p>
         )}
+        {/* No memo/comment on TON yet: exchange deposits that need one would be lost. */}
+        {(coin === 'TON' || coin === 'USDT_TON') && (
+          <p className="text-[11px] mt-1.5 leading-relaxed" style={{ color: '#F7931A' }}>{t('csTonMemoWarning')}</p>
+        )}
       </div>
 
       {/* Amount */}
@@ -1132,14 +1484,16 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
           </div>
           {amountNum > 0 && (
             <p className="text-sm mt-1.5">
-              {insufficient
+              {balanceUnknown
+                ? <span style={{ color: '#F7931A' }}>{t('csBalanceUnknownInline')}</span>
+                : insufficient
                 ? <span style={{ color: '#FF5252' }}>{t('csInsufficientFunds')}</span>
-                : <span className="text-[#3A6045]">{t('csAvailableInline').replace('{amt}', available.toLocaleString('ru-RU', { maximumFractionDigits: 6 })).replace('{coin}', coinLabel(coin))}</span>
+                : <span className="text-[#3A6045]">{t('csAvailableInline').replace('{amt}', available.toLocaleString(numLocale, { maximumFractionDigits: 6 })).replace('{coin}', coinLabel(coin))}</span>
               }
             </p>
           )}
           {/* MAX button */}
-          {available > 0 && !insufficient && (
+          {available > 0 && !insufficient && !balanceUnknown && (
             <button
               onClick={() => { void handleMax(); }}
               disabled={maxLoading}
@@ -1152,9 +1506,11 @@ export const CryptoSendScreen: React.FC<CryptoSendScreenProps> = ({
         </div>
       </div>
 
+      {/* Real mode: Continue waits for a loaded balance round (after a send,
+          reset() forces a fresh one), so the funds check never runs on old numbers. */}
       <button
         onClick={handleContinue}
-        disabled={(!addressValid && !addressIsName) || !amountNum || insufficient || resolving}
+        disabled={(!addressValid && !addressIsName) || !amountNum || insufficient || resolving || (!isDemo && !balReady)}
         className="w-full py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95 disabled:opacity-30"
         style={{ background: '#00FF7F', color: '#080C09' }}
       >

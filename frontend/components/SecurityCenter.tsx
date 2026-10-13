@@ -29,6 +29,7 @@ interface FeedEvent {
 
 const ACTION_ICON: Record<string, string> = {
   tg_auth_login: '🔑',
+  session_started: '🔐', // email sign-in, written by /api/device-ping
   risk_flagged: '🛡',
   risk_override_confirmed: '⚠️',
   tx_draft_created: '📝',
@@ -65,12 +66,12 @@ export const SecurityCenter: React.FC = () => {
   }, []);
 
   // Флоу установки/смены PIN: пароль кошелька → PinSetup (overlay).
+  // Пароль только проверяется и сразу забывается: PIN-блоб его не хранит.
   const [hasWallet, setHasWallet]   = useState(false);
   const [pinFlow, setPinFlow]       = useState<'none' | 'password' | 'setup'>('none');
   const [pwInput, setPwInput]       = useState('');
   const [pwError, setPwError]       = useState(false);
   const [pwChecking, setPwChecking] = useState(false);
-  const [verifiedPw, setVerifiedPw] = useState('');
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -85,13 +86,11 @@ export const SecurityCenter: React.FC = () => {
     const ok = await verifyWalletPassword(pwInput);
     setPwChecking(false);
     if (!ok) { setPwError(true); return; }
-    setVerifiedPw(pwInput);
     setPwInput('');
     setPinFlow('setup');
   };
 
   const closePinFlow = (saved: boolean) => {
-    setVerifiedPw('');
     setPwInput('');
     setPinFlow('none');
     if (saved) setPinOn(true);
@@ -215,7 +214,6 @@ export const SecurityCenter: React.FC = () => {
       {pinFlow === 'setup' && (
         <div className="fixed inset-0 z-50 overflow-y-auto" style={{ background: '#080C09' }}>
           <PinSetup
-            walletPassword={verifiedPw}
             onComplete={() => closePinFlow(true)}
             onSkip={() => closePinFlow(false)}
           />

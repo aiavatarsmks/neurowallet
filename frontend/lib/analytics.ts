@@ -36,8 +36,10 @@ export type AnalyticsEvent =
   | 'wallet_imported'
   | 'onboarding_completed'
   | 'send_initiated'
-  | 'send_succeeded'
+  | 'send_succeeded'      // broadcast accepted (not yet on-chain)
   | 'send_failed'
+  | 'send_confirmed'      // on-chain status: confirmed / processed (payload: coin)
+  | 'send_failed_onchain' // on-chain status: included but failed, e.g. OUT_OF_ENERGY (payload: coin)
   | 'send_review_shown'
   | 'send_review_blocked'
   | 'risk_flagged'

@@ -53,7 +53,7 @@ describe('POST /api/csp-report', () => {
     expect(res2.statusCode).toBe(204);
 
     // Same (directive, blocked-uri) pair → logged exactly once.
-    const logged = warnSpy.mock.calls.filter((c) => String(c[1]).includes(uri));
+    const logged = warnSpy.mock.calls.filter((c: unknown[]) => String(c[1]).includes(uri));
     expect(logged.length).toBe(1);
   });
 

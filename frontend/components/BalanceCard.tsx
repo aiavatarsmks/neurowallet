@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useDisplayCurrency } from '@/contexts/DisplayCurrencyContext';
-import { fetchRealBalances, MARKET_REFRESH_MS, WalletBalances } from '@/lib/crypto/balances';
+import { fetchRealBalances, MARKET_REFRESH_MS, unavailableLabels, WalletBalances } from '@/lib/crypto/balances';
 import { SUPPORTED_ASSETS, tonNativeFirst, type AssetSymbol } from '@/lib/crypto/assets';
 import { formatPercent } from '@/lib/display-format';
 import {
@@ -151,6 +151,13 @@ export const BalanceCard: React.FC = () => {
 
   const visibleViews: View[] = isDemo ? ['total', 'fiat', 'crypto'] : ['total', 'crypto'];
 
+  // Honest balances: a provider failure shows the last known numbers plus this line, never a silent 0.
+  const staleNote = !isDemo && balances
+    ? balances.unavailable.length > 0
+      ? t('balRefreshFailed').replace('{assets}', unavailableLabels(balances).join(', '))
+      : balances.pricesStale ? t('balPricesStale') : ''
+    : '';
+
   return (
     <div className="px-6 pt-1 pb-4">
       <p className="text-[#3A6045] text-sm font-medium mb-3">
@@ -190,6 +197,10 @@ export const BalanceCard: React.FC = () => {
         >
           {formatFiat(balance)}
         </p>
+      )}
+
+      {staleNote && !loading && view !== 'fiat' && (
+        <p className="text-[#3A6045] text-xs mt-1.5">{staleNote}</p>
       )}
 
       {/* Total / Crypto view — asset mini row */}

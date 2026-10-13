@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '@/lib/supabase';
-import { sanitizeAmountInput } from '@/lib/display-format';
+import { sanitizeAmountInput, COIN_DECIMALS } from '@/lib/display-format';
+import { buildPaymentUri } from '@/lib/payment-uri';
 import { COIN_PICKER_ORDER } from '@/lib/coin-labels';
 import QRCode from 'qrcode';
 import { useAuth } from '@/contexts/AuthContext';
@@ -107,11 +108,22 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
   const address = addresses[network];
   const color   = COLORS[network];
 
+  // ── Платёжная ссылка (задача 1.5) ─────────────────────────────────────────
+  const [reqAmount,  setReqAmount]  = useState('');
+  const [payUrl,     setPayUrl]     = useState('');
+  const [payLoading, setPayLoading] = useState(false);
+  const [payError,   setPayError]   = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  // QR: a payment URI carrying the requested amount (BTC/ETH/TON/SOL) so the
+  // payer's wallet pre-fills it; the text shown and copied stays the address.
+  const qrPayload = buildPaymentUri(network, address, reqAmount);
+
   useEffect(() => {
     let alive = true;
-    if (!address) { setQrDataUrl(''); return; }
+    if (!qrPayload) { setQrDataUrl(''); return; }
 
-    QRCode.toDataURL(address, {
+    QRCode.toDataURL(qrPayload, {
       errorCorrectionLevel: 'M',
       margin: 2,
       width: 190,
@@ -130,7 +142,7 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
     return () => {
       alive = false;
     };
-  }, [address]);
+  }, [qrPayload]);
 
   const copyAddress = () => {
     if (!address) return;
@@ -138,13 +150,6 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
-
-  // ── Платёжная ссылка (задача 1.5) ─────────────────────────────────────────
-  const [reqAmount,  setReqAmount]  = useState('');
-  const [payUrl,     setPayUrl]     = useState('');
-  const [payLoading, setPayLoading] = useState(false);
-  const [payError,   setPayError]   = useState(false);
-  const [linkCopied, setLinkCopied] = useState(false);
 
   const createPayLink = async () => {
     if (isDemo || payLoading) return;
@@ -206,7 +211,13 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
         {([...COIN_PICKER_ORDER] as ReceiveNetwork[]).map((n) => (
           <button
             key={n}
-            onClick={() => { setNetwork(n); setCopied(false); }}
+            onClick={() => {
+              setNetwork(n);
+              setCopied(false);
+              // A link / amount made for another network must not stay on screen.
+              setPayUrl('');
+              setReqAmount((a) => sanitizeAmountInput(a, COIN_DECIMALS[n]));
+            }}
             className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-95 flex items-center justify-center gap-1.5"
             style={{
               background: network === n ? `${COLORS[n]}18` : '#0D1A10',
@@ -275,6 +286,9 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
         >
           <p className="text-[#3A6045] text-[10px] uppercase tracking-wider mb-1.5">{t('receiveAddressLabel')}</p>
           <p className="text-white text-xs font-mono break-all leading-relaxed">{address}</p>
+          {network === 'SOL' && (
+            <p className="text-[#7FBF9A] text-[11px] leading-relaxed mt-2">{t('receiveSolSplNote')}</p>
+          )}
         </div>
 
         {/* Copy button */}
@@ -309,7 +323,7 @@ export const ReceiveScreen: React.FC<ReceiveScreenProps> = ({ initialNetwork = '
               type="text"
               inputMode="decimal"
               value={reqAmount}
-              onChange={(e) => { setReqAmount(sanitizeAmountInput(e.target.value)); setPayUrl(''); }}
+              onChange={(e) => { setReqAmount(sanitizeAmountInput(e.target.value, COIN_DECIMALS[network])); setPayUrl(''); }}
               placeholder={t('receiveRequestAmountPh')}
               className="flex-1 rounded-xl px-3 py-2.5 text-white text-sm bg-transparent outline-none"
               style={{ background: '#101f14', border: '1px solid rgba(0,255,127,0.1)', caretColor: '#00FF7F' }}

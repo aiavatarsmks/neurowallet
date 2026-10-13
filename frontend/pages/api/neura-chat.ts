@@ -1,15 +1,36 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { checkRateLimit, requireSupabaseUser, writeAuditLog } from '@/lib/server/api-security';
+import { checkDailyBudget, checkRateLimit, requireSupabaseUser, writeAuditLog } from '@/lib/server/api-security';
+import { sanitizeHistory, sanitizeWalletContext, type WalletContext } from '@/lib/server/neura-chat-input';
 
 /**
  * pages/api/neura-chat.ts
  * Server-side proxy to OpenRouter (OpenAI-compatible LLM API).
  * The secret key (OPENROUTER_API_KEY) lives only in server env vars —
  * it is never exposed to the browser.
+ *
+ * Cost / injection limits (see lib/server/neura-chat-input.ts):
+ *   - only user/assistant turns, last 12, each truncated to 2000 chars;
+ *   - walletContext: allowlisted numeric fields + per-chain address regexes;
+ *   - request body ≤ 256 KB (Next.js bodyParser; over → 413);
+ *   - 20/min per user, 200/day per user, global NEURA_CHAT_DAILY_MAX/day
+ *     (default 5000). Over a daily cap → 429 { error } with a RU/EN text
+ *     the client shows as Neura's reply.
  */
+
+export const config = {
+  api: { bodyParser: { sizeLimit: '256kb' } },
+};
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MODEL = 'openai/gpt-4o-mini';
+const MAX_PER_MINUTE_PER_USER = 20;
+const MAX_PER_DAY_PER_USER = 200;
+const DEFAULT_MAX_PER_DAY_GLOBAL = 5000;
+
+function globalDailyMax(): number {
+  const v = Number(process.env.NEURA_CHAT_DAILY_MAX);
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : DEFAULT_MAX_PER_DAY_GLOBAL;
+}
 
 type Lang = 'ru' | 'en';
 
@@ -28,6 +49,8 @@ Be concise: 2-4 sentences unless a detailed breakdown is requested.`;
 const ERRORS: Record<Lang, {
   authRequired: string;
   rateLimited: string;
+  dailyLimit: string;
+  budgetExhausted: string;
   noApiKey: string;
   noMessages: string;
   outOfBalance: string;
@@ -37,6 +60,8 @@ const ERRORS: Record<Lang, {
   ru: {
     authRequired: 'Требуется вход в аккаунт.',
     rateLimited: 'Слишком много запросов к AI. Попробуй через минуту.',
+    dailyLimit: 'На сегодня лимит сообщений Нейре исчерпан. Возвращайся завтра 🙂',
+    budgetExhausted: 'Нейра сегодня перегружена. Попробуй, пожалуйста, завтра.',
     noApiKey: 'AI временно не настроен на сервере (нет ключа).',
     noMessages: 'Нет сообщений.',
     outOfBalance: 'AI временно недоступен — на аккаунте OpenRouter закончился баланс.',
@@ -46,6 +71,8 @@ const ERRORS: Record<Lang, {
   en: {
     authRequired: 'You need to sign in.',
     rateLimited: 'Too many AI requests. Try again in a minute.',
+    dailyLimit: "You've used today's message limit for Neura. Come back tomorrow 🙂",
+    budgetExhausted: 'Neura is overloaded today. Please try again tomorrow.',
     noApiKey: 'AI is temporarily not configured on the server (missing key).',
     noMessages: 'No messages.',
     outOfBalance: 'AI is temporarily unavailable — the OpenRouter account ran out of balance.',
@@ -54,20 +81,11 @@ const ERRORS: Record<Lang, {
   },
 };
 
-interface ChatMessage {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
-interface WalletContext {
-  eth?: number; btc?: number; sol?: number; trx?: number; ton?: number; usdt?: number; usdtTrc?: number; usdtTon?: number;
-  ethEur?: number; btcEur?: number; solEur?: number; trxEur?: number; tonEur?: number;
-  ethAddr?: string; btcAddr?: string; solAddr?: string; tronAddr?: string; tonAddr?: string;
-}
-
 function buildSystemPrompt(lang: Lang, ctx?: WalletContext): string {
   let prompt = lang === 'en' ? SYSTEM_PROMPT_EN : SYSTEM_PROMPT_RU;
-  if (ctx && (ctx.eth !== undefined || ctx.btc !== undefined)) {
+  const hasBalances = !!ctx && ['eth', 'btc', 'sol', 'trx', 'ton', 'usdt', 'usdtTrc', 'usdtTon']
+    .some((k) => ctx[k as keyof WalletContext] !== undefined);
+  if (ctx && hasBalances) {
     const lines: string[] = [lang === 'en' ? "\n\nUser's current wallet data:" : '\n\nТекущие данные кошелька пользователя:'];
     if (ctx.btc  !== undefined) lines.push(`• BTC: ${ctx.btc.toFixed(6)} BTC (~€${((ctx.btc || 0) * (ctx.btcEur || 0)).toFixed(2)})`);
     if (ctx.eth  !== undefined) lines.push(`• ETH: ${ctx.eth.toFixed(4)} ETH (~€${((ctx.eth || 0) * (ctx.ethEur || 0)).toFixed(2)})`);
@@ -96,7 +114,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const body = req.body as { messages?: ChatMessage[]; walletContext?: WalletContext; lang?: Lang };
+  const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
   const lang: Lang = body.lang === 'en' ? 'en' : 'ru';
   const errors = ERRORS[lang];
 
@@ -107,7 +125,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(401).json({ error: errors.authRequired });
   }
 
-  if (!(await checkRateLimit(`neura-chat:${auth.user.id}`, 20))) {
+  if (!(await checkRateLimit(`neura-chat:${auth.user.id}`, MAX_PER_MINUTE_PER_USER))) {
     return res.status(429).json({ error: errors.rateLimited });
   }
 
@@ -116,18 +134,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: errors.noApiKey });
   }
 
-  const history = Array.isArray(body.messages) ? body.messages.slice(-12) : [];
-  const systemPrompt = buildSystemPrompt(lang, body.walletContext);
-
+  const { messages: history, truncated } = sanitizeHistory(body.messages);
   if (history.length === 0) {
     return res.status(400).json({ error: errors.noMessages });
   }
+  const walletContext = sanitizeWalletContext(body.walletContext);
+
+  // Daily caps are spent only by well-formed requests. Per-user first, so one
+  // account can't drain the global budget on its own.
+  if (!(await checkDailyBudget(`neura-chat-user:${auth.user.id}`, MAX_PER_DAY_PER_USER))) {
+    return res.status(429).json({ error: errors.dailyLimit });
+  }
+  if (!(await checkDailyBudget('neura-chat', globalDailyMax()))) {
+    return res.status(429).json({ error: errors.budgetExhausted });
+  }
 
   try {
+    const systemPrompt = buildSystemPrompt(lang, walletContext);
+
     await writeAuditLog(
       auth.user.id,
       'ai_chat_requested',
-      { message_count: history.length, has_wallet_context: Boolean(body.walletContext) },
+      { message_count: history.length, truncated, has_wallet_context: Boolean(walletContext) },
       req,
     );
 

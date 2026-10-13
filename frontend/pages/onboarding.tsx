@@ -2,13 +2,29 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { generateNewWalletMnemonic, importWalletFromMnemonic, saveWalletToStorage } from '@/lib/crypto/wallet';
+import { generateNewWalletMnemonic, importWalletFromMnemonic, saveWalletToStorage, ethAddressFromMnemonic } from '@/lib/crypto/wallet';
+import { backupWalletStorage, importOverwriteKind, readStoredEthAddress } from '@/lib/legacy-storage-cleanup';
+import { clearPin } from '@/lib/pin';
 import { tonMnemonicEnabled } from '@/lib/ton-mnemonic-config';
 import { track } from '@/lib/analytics';
 import { getPendingClaim, completeClaim, clearPendingClaim } from '@/lib/claim-client';
 import { PinSetup } from '@/components/PinSetup';
 
-type Step = 'choice' | 'show-mnemonic' | 'verify-mnemonic' | 'import-mnemonic' | 'set-password' | 'generating' | 'pin-setup';
+type Step = 'choice' | 'show-mnemonic' | 'verify-mnemonic' | 'import-mnemonic' | 'confirm-replace' | 'set-password' | 'generating' | 'pin-setup';
+
+// Seed copied with "Copy all" is wiped from the clipboard after this delay.
+const CLIPBOARD_CLEAR_MS = 60_000;
+
+function shortAddr(a: string): string {
+  return a.length > 14 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a;
+}
+
+/** Best-effort: overwrite the clipboard with an empty string. Never throws. */
+function wipeClipboard(): void {
+  try {
+    void navigator.clipboard?.writeText('').catch(() => { /* not focused / no permission */ });
+  } catch { /* clipboard API unavailable */ }
+}
 
 const EyeIcon = ({ open }: { open: boolean }) => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -58,14 +74,41 @@ export default function OnboardingWalletPage() {
   const [canContinue, setCanContinue] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [clipboardPending, setClipboardPending] = useState(false);
+  const clipboardTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // A wallet already on this device that create/import would replace.
+  // 'create' / 'import' = what the user was doing when we stopped to ask.
+  const [replaceIntent, setReplaceIntent] = useState<'create' | 'import'>('import');
+  const [replaceConfirmed, setReplaceConfirmed] = useState(false);
+  const [existingEth, setExistingEth] = useState<string | null>(null);
 
   const handleCopyMnemonic = () => {
-    if (!mnemonic) return;
+    if (!mnemonic || !navigator.clipboard) return;
     navigator.clipboard.writeText(mnemonic).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    });
+      // The phrase must not stay on the clipboard: other apps and keyboards
+      // can read it. Overwrite it after 60 s (best-effort).
+      if (clipboardTimer.current) clearTimeout(clipboardTimer.current);
+      setClipboardPending(true);
+      clipboardTimer.current = setTimeout(() => {
+        clipboardTimer.current = null;
+        wipeClipboard();
+        setClipboardPending(false);
+      }, CLIPBOARD_CLEAR_MS);
+    }).catch(() => { /* copy failed: nothing to wipe */ });
   };
+
+  // Leaving the page with a wipe still pending: cancel the timer and wipe now
+  // rather than leave the phrase on the clipboard.
+  useEffect(() => () => {
+    if (clipboardTimer.current) {
+      clearTimeout(clipboardTimer.current);
+      clipboardTimer.current = null;
+      wipeClipboard();
+    }
+  }, []);
 
   // Verification step state
   const [verifyIndices, setVerifyIndices]   = useState<number[]>([]);
@@ -103,8 +146,17 @@ export default function OnboardingWalletPage() {
     }
   }, [isLoading, user, isDemo, router.isReady, router.query.recover, router]);
 
-  const handleCreateNew = useCallback(async () => {
+  const handleCreateNew = useCallback(async (replaceAlreadyConfirmed = false) => {
     if (creating) return;
+    // A new wallet always differs from the one on this device: ask first.
+    const existing = readStoredEthAddress();
+    if (existing && !replaceAlreadyConfirmed && !replaceConfirmed) {
+      setExistingEth(existing);
+      setReplaceIntent('create');
+      setError('');
+      setStep('confirm-replace');
+      return;
+    }
     setCreating(true);
     setError('');
     try {
@@ -119,7 +171,7 @@ export default function OnboardingWalletPage() {
     } finally {
       setCreating(false);
     }
-  }, [creating, t]);
+  }, [creating, replaceConfirmed, t]);
 
   const handleImport = () => {
     setStep('import-mnemonic');
@@ -138,9 +190,47 @@ export default function OnboardingWalletPage() {
       setError(tx24('onbWordCountError'));
       return;
     }
-    setMnemonic(importMnemonicInput.trim().toLowerCase());
+    const phrase = importMnemonicInput.trim().toLowerCase();
+    // ?recover=1 with a wallet already here: a phrase for the SAME wallet
+    // proceeds silently, a DIFFERENT one needs an explicit confirmation.
+    const existing = readStoredEthAddress();
+    if (existing) {
+      let derived: string;
+      try {
+        derived = ethAddressFromMnemonic(phrase);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : t('onbGenError'));
+        return;
+      }
+      if (importOverwriteKind(derived, existing) === 'different') {
+        setMnemonic(phrase);
+        setExistingEth(existing);
+        setReplaceIntent('import');
+        setReplaceConfirmed(false);
+        setError('');
+        setStep('confirm-replace');
+        return;
+      }
+    }
+    setMnemonic(phrase);
     setStep('set-password');
     setError('');
+  };
+
+  const handleReplaceConfirm = () => {
+    setReplaceConfirmed(true);
+    setError('');
+    if (replaceIntent === 'create') {
+      void handleCreateNew(true);
+    } else {
+      setStep('set-password');
+    }
+  };
+
+  const handleReplaceBack = () => {
+    setReplaceConfirmed(false);
+    setError('');
+    setStep(replaceIntent === 'create' ? 'choice' : 'import-mnemonic');
   };
 
   const handleMnemonicConfirm = () => {
@@ -180,10 +270,29 @@ export default function OnboardingWalletPage() {
     setError('');
 
     try {
+      // Last check before anything is overwritten (cheap, no encryption yet).
+      // create/import already asked; this only catches a path that did not.
+      if (importOverwriteKind(ethAddressFromMnemonic(mnemonic)) === 'different' && !replaceConfirmed) {
+        setExistingEth(readStoredEthAddress());
+        setReplaceIntent('import');
+        setStep('confirm-replace');
+        return;
+      }
       const wallet = await importWalletFromMnemonic(mnemonic, password);
+      // Snapshot the current wallet (if any) into nw_wallet_backup_v1 first.
+      backupWalletStorage();
       // Addresses + encrypted blobs + TON scheme (never the phrase itself).
       saveWalletToStorage(wallet);
+      // A PIN left from the previous wallet is stale (and a pre-v2 blob holds
+      // the OLD password). Drop it; the next step sets a fresh one, and if the
+      // app is closed first, /wallet asks for the password and a new PIN.
+      clearPin();
       track(importMnemonicInput.trim() ? 'wallet_imported' : 'wallet_created');
+      // Saved: drop the phrase and the password from React state.
+      setMnemonic('');
+      setImportMnemonicInput('');
+      setPassword('');
+      setConfirmPassword('');
 
       // Claim-link handoff (2.8): if this wallet was created to claim a link,
       // record the activation and complete the (demo) claim. Fire-and-forget.
@@ -213,7 +322,6 @@ export default function OnboardingWalletPage() {
   if (step === 'pin-setup') {
     return (
       <PinSetup
-        walletPassword={password}
         onComplete={() => { track('onboarding_completed', { pin: true }); router.push('/wallet'); }}
         allowSkip={false}
       />
@@ -345,6 +453,9 @@ export default function OnboardingWalletPage() {
                 </>
               )}
             </button>
+            {clipboardPending && (
+              <p className="text-[#3A6045] text-[11px] text-center mt-2">{t('onbClipboardClears')}</p>
+            )}
           </div>
 
           <button
@@ -466,6 +577,44 @@ export default function OnboardingWalletPage() {
             style={{ background: '#00FF7F', color: '#080C09', boxShadow: '0 0 24px rgba(0,255,127,0.35)' }}
           >
             {t('onbImportContinue')}
+          </button>
+        </div>
+      )}
+
+      {/* ── STEP: Confirm replacing the wallet on this device ── */}
+      {step === 'confirm-replace' && (
+        <div data-testid="confirm-replace" className="flex flex-col flex-1 pb-10 gap-5" style={{ paddingTop: safeTop }}>
+          <h1 className="text-white text-2xl font-bold">{t('onbReplaceTitle')}</h1>
+
+          <div
+            className="rounded-2xl p-4 flex flex-col gap-2"
+            style={{ background: 'rgba(247,147,26,0.08)', border: '1px solid rgba(247,147,26,0.3)' }}
+          >
+            <p className="text-sm font-semibold leading-relaxed" style={{ color: '#F7931A' }}>
+              {replaceIntent === 'create' ? t('onbReplaceCreateWarn') : t('onbReplaceImportWarn')}
+            </p>
+            {existingEth && (
+              <p className="text-[#7FBF9A] text-xs font-mono break-all">
+                {t('onbReplaceCurrent').replace('{addr}', shortAddr(existingEth))}
+              </p>
+            )}
+            <p className="text-[#7FBF9A] text-xs leading-relaxed">{t('onbReplaceKeysWarn')}</p>
+            <p className="text-[#7FBF9A] text-xs leading-relaxed">{t('keysDeleteBackupNote')}</p>
+          </div>
+
+          <button
+            onClick={handleReplaceConfirm}
+            className="w-full py-4 rounded-2xl font-semibold text-sm transition-all active:scale-95"
+            style={{ background: '#F7931A', color: '#080C09' }}
+          >
+            {t('onbReplaceConfirm')}
+          </button>
+          <button
+            onClick={handleReplaceBack}
+            className="w-full py-3.5 rounded-2xl font-semibold text-sm transition-all active:scale-95"
+            style={{ background: 'transparent', border: '1px solid rgba(0,255,127,0.18)', color: '#00FF7F' }}
+          >
+            {t('onbBack')}
           </button>
         </div>
       )}

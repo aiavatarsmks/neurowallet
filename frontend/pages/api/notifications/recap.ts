@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { requireSupabaseUser, checkRateLimit } from '@/lib/server/api-security';
 import { generateWeeklyRecap } from '@/lib/server/recap';
 import { weeklyRecapEnabled, type Lang } from '@/lib/recap-content';
+import { getVerifiedTelegramId } from '@/lib/server/telegram-id';
 
 /**
  * POST /api/notifications/recap — build & deliver the caller's weekly AI recap.
@@ -32,12 +33,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const body = (req.body ?? {}) as { lang?: string };
   const lang: Lang = body.lang === 'en' ? 'en' : 'ru';
-  const telegramId = Number(auth.user.user_metadata?.telegram_id);
 
   const result = await generateWeeklyRecap({
     userId: auth.user.id,
     lang,
-    telegramId: Number.isFinite(telegramId) && telegramId ? telegramId : null,
+    // app_metadata only (service-role written by tg-auth); user_metadata is user-writable.
+    telegramId: getVerifiedTelegramId(auth.user),
     req,
   });
 

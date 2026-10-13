@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fetchRealBalances, MARKET_REFRESH_MS, WalletBalances } from '@/lib/crypto/balances';
+import { fetchRealBalances, MARKET_REFRESH_MS, unavailableLabels, WalletBalances } from '@/lib/crypto/balances';
 import { SUPPORTED_ASSETS, type AssetSymbol, type CryptoAssetMeta } from '@/lib/crypto/assets';
 import { DEMO_HOLDINGS, demoValueEUR, DEMO_CHART_BARS, DEMO_FIAT_TOTAL_EUR } from '@/lib/demo-data';
 import { useAuth } from '@/contexts/AuthContext';
@@ -23,6 +23,7 @@ const DEMO_ASSETS = DEMO_HOLDINGS.map((h) => ({
   priceEUR: h.priceEUR,
 }));
 
+// Decorative sparkline from the demo dataset: not real price history, so demo mode only.
 const CHART_BARS = DEMO_CHART_BARS;
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -40,6 +41,13 @@ interface AssetRow {
   icon:      string;
 }
 
+/** What the last refresh could not deliver (real mode). */
+interface Freshness {
+  unavailable: WalletBalances['unavailable'];
+  pricesStale: boolean;
+  btcPending:  number;
+}
+
 interface WalletScreenProps {
   onSendCrypto:    (symbol: string) => void;
   onReceiveCrypto: (symbol: string) => void;
@@ -54,6 +62,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
   const [assets,  setAssets]  = useState<AssetRow[]>(DEMO_ASSETS);
   const [loading, setLoading] = useState(false);
   const [isReal,  setIsReal]  = useState(false);
+  const [fresh,   setFresh]   = useState<Freshness | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -61,6 +70,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
       setAssets(DEMO_ASSETS);
       setIsReal(false);
       setLoading(false);
+      setFresh(null);
       return;
     }
     const eth  = localStorage.getItem('wallet_eth_address')  || '';
@@ -112,6 +122,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
           priceEUR: prices[asset.symbol],
           change24h: changes[asset.symbol],
         })));
+        setFresh({ unavailable: b.unavailable, pricesStale: b.pricesStale, btcPending: b.btcPending });
         setLoading(false);
       }).catch(() => setLoading(false));
     };
@@ -125,6 +136,14 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
 
   const cryptoTotal = visibleAssets.reduce((s, a) => s + a.valueEUR, 0);
   const FIAT        = isReal ? 0 : DEMO_FIAT_TOTAL_EUR;
+
+  // Honest balances: a provider failure shows the last known numbers plus this line, never a silent 0.
+  const staleNote = isReal && fresh
+    ? fresh.unavailable.length > 0
+      ? t('balRefreshFailed').replace('{assets}', unavailableLabels(fresh).join(', '))
+      : fresh.pricesStale ? t('balPricesStale') : ''
+    : '';
+  const btcPending = isReal && fresh ? fresh.btcPending : 0;
 
   return (
     <div className="px-6 pt-2 pb-6 flex flex-col gap-5">
@@ -152,21 +171,27 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
           </p>
         )}
 
-        {/* Mini chart */}
-        <div className="mt-3 h-12 flex items-end gap-px">
-          {CHART_BARS.map((h, i) => (
-            <div
-              key={i}
-              className="flex-1 rounded-sm"
-              style={{
-                height: `${h}%`,
-                background: i === CHART_BARS.length - 1
-                  ? '#00FF7F'
-                  : `rgba(0,255,127,${0.15 + i * 0.035})`,
-              }}
-            />
-          ))}
-        </div>
+        {staleNote && !loading && (
+          <p className="text-[#3A6045] text-xs mt-1.5">{staleNote}</p>
+        )}
+
+        {/* Mini chart: demo only (decorative bars, not real price history) */}
+        {isDemo && (
+          <div className="mt-3 h-12 flex items-end gap-px">
+            {CHART_BARS.map((h, i) => (
+              <div
+                key={i}
+                className="flex-1 rounded-sm"
+                style={{
+                  height: `${h}%`,
+                  background: i === CHART_BARS.length - 1
+                    ? '#00FF7F'
+                    : `rgba(0,255,127,${0.15 + i * 0.035})`,
+                }}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Fiat row (hidden when real wallet active) */}
@@ -220,6 +245,11 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onSendCrypto, onRece
                       ? '...'
                       : `${formatCryptoAmount(asset.amount)} ${asset.unit} · 1 ${asset.unit} ≈ ${symbol}${convertFromEur(asset.priceEUR).toLocaleString('ru-RU', { maximumFractionDigits: asset.priceEUR < 1 ? 4 : 2 })}`}
                   </p>
+                  {asset.symbol === 'BTC' && btcPending > 0 && !loading && (
+                    <p className="text-[#3A6045] text-xs">
+                      {t('walletBtcPending').replace('{amount}', formatCryptoAmount(btcPending))}
+                    </p>
+                  )}
                 </div>
                 <div className="text-right flex-shrink-0">
                   <p className="text-white text-sm font-semibold">

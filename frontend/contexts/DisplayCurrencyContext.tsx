@@ -1,9 +1,12 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+// Light module: importing lib/crypto/balances here pulled the chain libs into _app.
+import { getCachedUsdPerEur, PRICES_UPDATED_EVENT } from '@/lib/price-rate';
 
 export type DisplayCurrency = 'EUR' | 'USD';
 
 const STORAGE_KEY = 'nw_display_currency';
-const EUR_TO_USD = 1.08;
+/** Used only until the price feed has supplied a live rate (CoinGecko bitcoin.usd / bitcoin.eur). */
+export const FALLBACK_USD_PER_EUR = 1.08;
 
 interface DisplayCurrencyContextValue {
   currency: DisplayCurrency;
@@ -17,24 +20,42 @@ const DisplayCurrencyContext = createContext<DisplayCurrencyContextValue | undef
 
 function initialCurrency(): DisplayCurrency {
   if (typeof window === 'undefined') return 'EUR';
-  return localStorage.getItem(STORAGE_KEY) === 'USD' ? 'USD' : 'EUR';
+  try {
+    return localStorage.getItem(STORAGE_KEY) === 'USD' ? 'USD' : 'EUR';
+  } catch {
+    return 'EUR';
+  }
 }
 
 export const DisplayCurrencyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currency, setCurrencyState] = useState<DisplayCurrency>('EUR');
+  const [usdPerEur, setUsdPerEur] = useState<number | null>(null);
 
   useEffect(() => {
     setCurrencyState(initialCurrency());
   }, []);
 
+  // Live EUR→USD rate: read the price cache now and whenever balances.ts caches fresh prices.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const read = () => setUsdPerEur(getCachedUsdPerEur());
+    read();
+    window.addEventListener(PRICES_UPDATED_EVENT, read);
+    return () => window.removeEventListener(PRICES_UPDATED_EVENT, read);
+  }, []);
+
   const setCurrency = useCallback((next: DisplayCurrency) => {
     setCurrencyState(next);
-    if (typeof window !== 'undefined') localStorage.setItem(STORAGE_KEY, next);
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(STORAGE_KEY, next);
+    } catch { /* private mode: the choice just isn't remembered */ }
   }, []);
 
   const value = useMemo<DisplayCurrencyContextValue>(() => {
     const symbol = currency === 'USD' ? '$' : '€';
-    const convertFromEur = (eurValue: number) => currency === 'USD' ? eurValue * EUR_TO_USD : eurValue;
+    const rate = usdPerEur ?? FALLBACK_USD_PER_EUR;
+    const convertFromEur = (eurValue: number) => currency === 'USD' ? eurValue * rate : eurValue;
     const formatFiat = (eurValue: number, options: Intl.NumberFormatOptions = {}) => {
       const formatted = convertFromEur(eurValue).toLocaleString('ru-RU', {
         minimumFractionDigits: 2,
@@ -44,7 +65,7 @@ export const DisplayCurrencyProvider: React.FC<{ children: React.ReactNode }> = 
       return `${symbol}${formatted}`;
     };
     return { currency, setCurrency, symbol, formatFiat, convertFromEur };
-  }, [currency, setCurrency]);
+  }, [currency, setCurrency, usdPerEur]);
 
   return (
     <DisplayCurrencyContext.Provider value={value}>
