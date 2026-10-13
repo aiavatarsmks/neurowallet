@@ -6,6 +6,7 @@ import {
   isDeterministicChainError,
   ETH_RPC_URLS,
 } from '@/lib/crypto/eth-provider';
+import { BroadcastOutcomeUnknownError, isBroadcastOutcomeUnknown } from '@/lib/crypto/broadcast-error';
 
 // ─── Mock JSON-RPC backend ────────────────────────────────────────────────────
 // A real ethers JsonRpcProvider with only the HTTP layer (_send) replaced, so
@@ -225,9 +226,13 @@ describe('eth-provider: broadcast', () => {
     expect(await broadcastToBackends([node({ eth_sendRawTransaction: poor }), node()], raw)).toBe(Transaction.from(raw).hash);
   });
 
-  it('all backends unreachable → rejects', async () => {
+  it('all backends unreachable and the tx is not found → BroadcastOutcomeUnknownError(keccak256(signed))', async () => {
     const raw = await signedTx();
-    await expect(broadcastToBackends([node({ eth_sendRawTransaction: down })], raw)).rejects.toThrow(/ECONNREFUSED/);
+    const err = await broadcastToBackends([node({ eth_sendRawTransaction: down })], raw).catch((e) => e);
+    expect(err).toBeInstanceOf(BroadcastOutcomeUnknownError);
+    expect(isBroadcastOutcomeUnknown(err)).toBe(true);
+    expect(err.hash).toBe(keccak256(raw));
+    expect(err.hash).toBe(Transaction.from(raw).hash);
   });
 
   it('Wallet.sendTransaction through the provider: chainId 1, pending nonce, hash right after broadcast', async () => {
@@ -247,6 +252,109 @@ describe('eth-provider: broadcast', () => {
     const p = createEthProvider([node({ eth_blockNumber: down }), node({ eth_blockNumber: internal })]);
     const tx = await p.broadcastTransaction(raw);
     expect(tx.hash).toBe(Transaction.from(raw).hash);
+  });
+});
+
+// ─── Lost broadcast answers: look up by hash, never invite a paid retry ───────
+
+describe('eth-provider: broadcast outcome unknown', () => {
+  const timeout = (): never => { throw Object.assign(new Error('request timeout'), { code: 'TIMEOUT' }); };
+  const rateLimited = (): never => { throw Object.assign(new Error('bad response (status=429)'), { code: 'SERVER_ERROR' }); };
+
+  /** A node that already holds this tx (relayed it, then its answer was lost). */
+  function holder(raw: string, over: Record<string, Handler> = {}): MockRpc {
+    const hash = Transaction.from(raw).hash!;
+    return node({
+      eth_getTransactionByHash: () => ({
+        hash, blockHash: null, blockNumber: null, transactionIndex: null, type: '0x2', nonce: '0x5',
+        from: wallet.address, to: TO, value: '0x1', gas: '0x5208', input: '0x', chainId: '0x1',
+        maxFeePerGas: '0x77359400', maxPriorityFeePerGas: '0x3b9aca00', accessList: [],
+        r: '0x' + '01'.repeat(32), s: '0x' + '02'.repeat(32), v: '0x0', yParity: '0x0',
+      }),
+      ...over,
+    });
+  }
+
+  it('one backend relayed, then every backend timed out or answered 429 → the lookup finds it → success', async () => {
+    const raw = await signedTx();
+    const backends = [
+      holder(raw, { eth_sendRawTransaction: timeout }),
+      node({ eth_sendRawTransaction: rateLimited }),
+      node({ eth_sendRawTransaction: down }),
+    ];
+    expect(await broadcastToBackends(backends, raw)).toBe(Transaction.from(raw).hash);
+    expect(backends.flatMap((b) => b.calls)).toContain('eth_getTransactionByHash');
+  });
+
+  it('timeouts / 429 / -32603 everywhere and the tx is nowhere → unknown, not an ordinary error', async () => {
+    const raw = await signedTx();
+    const backends = [
+      node({ eth_sendRawTransaction: timeout }),
+      node({ eth_sendRawTransaction: rateLimited }),
+      node({ eth_sendRawTransaction: internal }),
+    ];
+    await expect(broadcastToBackends(backends, raw)).rejects.toMatchObject({
+      name: 'BroadcastOutcomeUnknownError', hash: Transaction.from(raw).hash,
+    });
+  });
+
+  it('the lookup itself fails everywhere → still unknown (never a plain error)', async () => {
+    const raw = await signedTx();
+    const backends = [node({ eth_sendRawTransaction: timeout, eth_getTransactionByHash: down })];
+    await expect(broadcastToBackends(backends, raw)).rejects.toBeInstanceOf(BroadcastOutcomeUnknownError);
+  });
+
+  it('"intrinsic gas too low" / "invalid sender" are definitive rejections, not unknown', async () => {
+    const raw = await signedTx();
+    for (const msg of ['intrinsic gas too low: have 20000, want 21000', 'invalid sender']) {
+      const reject = () => { throw new RpcError(-32000, msg); };
+      const err = await broadcastToBackends([node({ eth_sendRawTransaction: timeout }), node({ eth_sendRawTransaction: reject })], raw)
+        .catch((e) => e);
+      expect(isBroadcastOutcomeUnknown(err)).toBe(false);
+      expect(JSON.stringify(err.error ?? err.info)).toContain(msg.split(':')[0]);
+    }
+  });
+
+  it('insufficient funds from one node while another timed out but holds the tx → success (lookup wins)', async () => {
+    const raw = await signedTx();
+    const poor = () => { throw new RpcError(-32000, 'insufficient funds for gas * price + value'); };
+    const backends = [holder(raw, { eth_sendRawTransaction: timeout }), node({ eth_sendRawTransaction: poor })];
+    expect(await broadcastToBackends(backends, raw)).toBe(Transaction.from(raw).hash);
+  });
+
+  it('insufficient funds everywhere → the rejection, no lookup needed', async () => {
+    const raw = await signedTx();
+    const poor = () => { throw new RpcError(-32000, 'insufficient funds for gas * price + value'); };
+    const backends = [node({ eth_sendRawTransaction: poor }), node({ eth_sendRawTransaction: poor })];
+    await expect(broadcastToBackends(backends, raw)).rejects.toSatisfy((e) => isError(e, 'INSUFFICIENT_FUNDS'));
+    expect(backends.flatMap((b) => b.calls)).not.toContain('eth_getTransactionByHash');
+  });
+
+  it('"nonce too low" + a timeout, tx not found by a node that answered → NONCE_EXPIRED (real conflict)', async () => {
+    const raw = await signedTx();
+    const nonceLow = () => { throw new RpcError(-32000, 'nonce too low'); };
+    const backends = [node({ eth_sendRawTransaction: timeout }), node({ eth_sendRawTransaction: nonceLow })];
+    await expect(broadcastToBackends(backends, raw)).rejects.toSatisfy((e) => isError(e, 'NONCE_EXPIRED'));
+  });
+
+  it('"nonce too low" but nobody could answer the lookup → unknown (the used nonce may be ours)', async () => {
+    const raw = await signedTx();
+    const nonceLow = () => { throw new RpcError(-32000, 'nonce too low'); };
+    const backends = [
+      node({ eth_sendRawTransaction: timeout, eth_getTransactionByHash: down }),
+      node({ eth_sendRawTransaction: nonceLow, eth_getTransactionByHash: internal }),
+    ];
+    await expect(broadcastToBackends(backends, raw)).rejects.toBeInstanceOf(BroadcastOutcomeUnknownError);
+  });
+
+  it('Wallet.sendTransaction / sendEth surface the unknown outcome with the hash of what was signed', async () => {
+    const raws: string[] = [];
+    const backend = node({ eth_sendRawTransaction: (_m, ps) => { raws.push(ps[0] as string); return timeout(); } });
+    const p = createEthProvider([backend]);
+    const err = await wallet.connect(p).sendTransaction({ to: TO, value: 1n }).catch((e) => e);
+    expect(err).toBeInstanceOf(BroadcastOutcomeUnknownError);
+    expect(raws).toHaveLength(1);
+    expect(err.hash).toBe(keccak256(raws[0]));
   });
 });
 
@@ -286,5 +394,20 @@ describe('sendEth / sendUsdt', () => {
     expect(tx.to).toBe('0xdAC17F958D2ee523a2206206994597C13D831ec7');
     expect(tx.chainId).toBe(1n);
     expect(tx.data.startsWith('0xa9059cbb')).toBe(true); // transfer(address,uint256)
+  });
+
+  it('sendUsdt: a lost broadcast answer reaches the caller as BroadcastOutcomeUnknownError with the signed hash', async () => {
+    const raws: string[] = [];
+    const backend = node({ eth_sendRawTransaction: (_m, ps) => { raws.push(ps[0] as string); throw new Error('socket hang up'); } });
+    vi.doMock('@/lib/crypto/eth-provider', async (orig) => {
+      const actual = (await orig()) as typeof import('@/lib/crypto/eth-provider');
+      const shared = actual.createEthProvider([backend]);
+      return { ...actual, getEthProvider: () => shared };
+    });
+    const { sendUsdt } = await import('@/lib/crypto/transactions');
+    const keystore = await encryptKeystoreJson({ address: wallet.address, privateKey: wallet.privateKey }, 'pw', { scrypt: { N: 16 } });
+    const err = await sendUsdt(keystore, 'pw', TO, 12.5).catch((e) => e);
+    expect(isBroadcastOutcomeUnknown(err)).toBe(true);
+    expect(err.hash).toBe(Transaction.from(raws[0]).hash);
   });
 });
