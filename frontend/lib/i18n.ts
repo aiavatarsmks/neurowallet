@@ -504,6 +504,11 @@ export const translations = {
     // ── Language switcher ─────────────────────────────────────────────────────
     languageRu: 'RU',
     languageEn: 'EN',
+
+    // ── night-eth-balances ──
+    balRefreshFailed: 'Не удалось обновить: {assets}. Показаны последние данные.',
+    balPricesStale: 'Курсы не обновились, показаны последние известные',
+    walletBtcPending: '+{amount} BTC ожидает подтверждения',
   },
   en: {
     // ── Landing / onboarding carousel (pages/index.tsx) ──────────────────────
@@ -1008,6 +1013,11 @@ export const translations = {
     // ── Language switcher ─────────────────────────────────────────────────────
     languageRu: 'RU',
     languageEn: 'EN',
+
+    // ── night-eth-balances ──
+    balRefreshFailed: "Couldn't refresh: {assets}. Showing last known data.",
+    balPricesStale: "Prices didn't refresh, showing last known",
+    walletBtcPending: '+{amount} BTC pending confirmation',
   },
 } as const;
 
